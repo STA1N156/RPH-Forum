@@ -6,7 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package.json ./
-RUN npm install --production
+RUN npm install --production && npm install @img/sharp-linux-x64 --no-save
 
 COPY server.js database.js ./
 COPY public/ ./public/
