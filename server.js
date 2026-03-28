@@ -195,7 +195,7 @@ function recordLoginAttempt(ip, username, success) {
 }
 
 // ============== Auth Routes ==============
-app.post('/api/auth/login', loginLimiter, (req, res) => {
+app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
         return res.status(400).json({ error: '请输入用户名和密码' });
@@ -203,27 +203,17 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
 
     const ip = req.ip;
 
-    // Check brute force
-    const bruteCheck = checkBruteForce(ip, username);
-    if (bruteCheck.blocked) {
-        return res.status(429).json({ error: bruteCheck.reason });
-    }
-
     const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
     if (!user) {
-        recordLoginAttempt(ip, username, false);
-        // Constant-time response to prevent user enumeration
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
     const valid = bcrypt.compareSync(password, user.password_hash);
     if (!valid) {
-        recordLoginAttempt(ip, username, false);
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
     // Success
-    recordLoginAttempt(ip, username, true);
     db.prepare('UPDATE admin_users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
     logOperation({ userType: 'admin', userId: user.id, username: user.username, action: 'admin_login', targetType: 'user', targetId: String(user.id), ip, details: { role: 'admin' } });
 
@@ -279,31 +269,24 @@ app.post('/api/user/register', userRegisterLimiter, (req, res) => {
     }
 });
 
-app.post('/api/user/login', loginLimiter, (req, res) => {
+app.post('/api/user/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
         return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
     const ip = req.ip;
-    const bruteCheck = checkBruteForce(ip, 'user:' + username);
-    if (bruteCheck.blocked) {
-        return res.status(429).json({ error: bruteCheck.reason });
-    }
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user) {
-        recordLoginAttempt(ip, 'user:' + username, false);
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
     const valid = bcrypt.compareSync(password, user.password_hash);
     if (!valid) {
-        recordLoginAttempt(ip, 'user:' + username, false);
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
-    recordLoginAttempt(ip, 'user:' + username, true);
     db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
     logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'login', targetType: 'user', targetId: String(user.id), ip });
 
