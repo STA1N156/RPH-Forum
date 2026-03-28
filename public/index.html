@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -1935,8 +1935,25 @@
                     return result;
                 };
 
-                const previewCard = (card) => {
+                const previewCard = async (card) => {
                     mobileScrollBlur.value = 0; // 重置模糊值
+                    
+                    // 按需加载完整卡片数据
+                    if (!card.data) {
+                        try {
+                            const headers = {};
+                            if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                            else if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                            const resp = await fetch(API_BASE + '/api/cards/' + card.id, { headers });
+                            if (resp.ok) {
+                                const fullCard = await resp.json();
+                                card.data = fullCard.data;
+                            }
+                        } catch (e) {
+                            console.error('Load card data error:', e);
+                        }
+                    }
+                    
                     const raw = card.data || {};
                     // 兼容处理：如果数据在 raw.data (V2) 中，则取 raw.data，否则取 raw (V1)
                     const content = raw.data || raw;
@@ -2363,6 +2380,25 @@
                         card.downloads_count--;
                         return;
                     }
+                    
+                    // 按需加载完整卡片数据
+                    if (!card.data) {
+                        try {
+                            const headers = {};
+                            if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                            else if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                            const resp = await fetch(API_BASE + '/api/cards/' + card.id, { headers });
+                            if (resp.ok) {
+                                const fullCard = await resp.json();
+                                card.data = fullCard.data;
+                            }
+                        } catch (e) {
+                            console.error('Load card data error:', e);
+                            showToast('加载卡片数据失败', 'error');
+                            return;
+                        }
+                    }
+
                     const img = new Image();
                     img.crossOrigin = "Anonymous";
                     img.src = card.avatar_url || card.avatar;
