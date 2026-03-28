@@ -1,20 +1,17 @@
-FROM node:18-alpine AS builder
+FROM node:18-slim AS builder
 
 WORKDIR /app
 
 # Install build dependencies for better-sqlite3 and sharp
-RUN apk add --no-cache python3 make g++ vips-dev
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package.json ./
 RUN npm install --production
 
 # --- Production stage ---
-FROM node:18-alpine
+FROM node:18-slim
 
 WORKDIR /app
-
-# Runtime dependency for sharp
-RUN apk add --no-cache vips
 
 # Copy only compiled node_modules and app files
 COPY --from=builder /app/node_modules ./node_modules
