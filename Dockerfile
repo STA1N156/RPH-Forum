@@ -1,21 +1,14 @@
-FROM node:18-slim AS builder
+FROM node:18-slim
 
 WORKDIR /app
 
-# Install build dependencies for better-sqlite3 and sharp
+# Install build dependencies for better-sqlite3
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 COPY package.json ./
 RUN npm install --production
 
-# --- Production stage ---
-FROM node:18-slim
-
-WORKDIR /app
-
-# Copy only compiled node_modules and app files
-COPY --from=builder /app/node_modules ./node_modules
-COPY package.json server.js database.js ./
+COPY server.js database.js ./
 COPY public/ ./public/
 
 # Create data directory for SQLite persistence
