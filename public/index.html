@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -240,12 +240,16 @@
             padding: 0 !important;
             margin: 0 !important;
             max-width: none;
+            min-width: 0;
             overflow: hidden !important;
+            isolation: isolate;
         }
         .html-card-container iframe {
             width: 100%;
+            max-width: 100%;
             border: none;
             display: block;
+            overflow: hidden;
         }
     </style>
 </head>
@@ -518,7 +522,7 @@
                             </div>
                             
                             <!-- Description -->
-                            <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words prose prose-sm max-w-none [&_*]:inline [&_p]:my-0 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_ul]:my-0 [&_li]:my-0 [&_strong]:font-medium [&_strong]:text-black overflow-hidden relative" :class="card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]'" v-html="renderMarkdown(card.description || '暂无描述')"></div>
+                            <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]'">{{ renderCardPreview(card.description || '暂无描述') }}</div>
                         </div>
 
                         <!-- Like & Comment counts -->
@@ -2144,7 +2148,7 @@
                     };
 
                     const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
-                    const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;word-wrap:break-word !important;box-sizing:border-box !important;overflow:hidden !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;} img,video,canvas,svg{max-width:100% !important;height:auto !important;} table{display:block !important;overflow-x:auto !important;max-width:100% !important;} pre{white-space:pre-wrap !important;word-wrap:break-word !important;max-width:100% !important;} .container, .reality-panel {max-width:100% !important; width:100% !important; margin: 0 !important; border-radius: 0 !important; box-shadow: none !important; border: none !important;} body > div:first-child { margin: 0 !important; max-width: 100% !important; }' + hudCSS + '</style>';
+                    const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;max-width:100% !important;min-width:0 !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;box-sizing:border-box !important;overflow-x:hidden !important;overflow-y:hidden !important;} body{position:relative !important;isolation:isolate !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;max-width:100% !important;} img,video,canvas,svg,iframe{max-width:100% !important;height:auto !important;} table{display:block !important;width:100% !important;overflow-x:auto !important;max-width:100% !important;-webkit-overflow-scrolling:touch !important;} pre,code{white-space:pre-wrap !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;max-width:100% !important;} .container, .reality-panel, main, section, article, aside, header, footer, div {max-width:100% !important; width:auto !important;} .container, .reality-panel {width:100% !important; margin:0 !important; border-radius:0 !important; box-shadow:none !important; border:none !important;} body > div:first-child {margin:0 !important; max-width:100% !important;} ' + hudCSS + '</style>';
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const scriptShim = `
@@ -2166,25 +2170,30 @@
                                     const body = document.body;
                                     const html = document.documentElement;
                                     if (!body || !html) { isUpdating = false; return; }
-                                    let maxBottom = 0;
-                                    for (let i = 0; i < body.children.length; i++) {
-                                        const child = body.children[i];
-                                        if (['SCRIPT','STYLE','LINK'].includes(child.tagName)) continue;
-                                        
-                                        // 忽略 fixed 元素，防止底部固定的模态框导致无限拉长
-                                        const style = window.getComputedStyle(child);
+                                    const bodyRect = body.getBoundingClientRect();
+                                    let maxBottom = bodyRect.height;
+                                    const nodes = body.querySelectorAll('*');
+                                    for (let i = 0; i < nodes.length; i++) {
+                                        const node = nodes[i];
+                                        if (['SCRIPT','STYLE','LINK'].includes(node.tagName)) continue;
+                                        const style = window.getComputedStyle(node);
                                         if (style.position === 'fixed') continue;
-
-                                        const rect = child.getBoundingClientRect();
-                                        const offsetBottom = child.offsetTop + child.offsetHeight;
-                                        const itemMax = Math.max(rect.bottom, offsetBottom);
-                                        if (itemMax > maxBottom) maxBottom = itemMax;
+                                        const rect = node.getBoundingClientRect();
+                                        if (!rect.width && !rect.height) continue;
+                                        const nodeBottom = rect.bottom - bodyRect.top;
+                                        if (nodeBottom > maxBottom) maxBottom = nodeBottom;
                                     }
-                                    const style = window.getComputedStyle(body);
-                                    const marginBottom = parseFloat(style.marginBottom) || 0;
-                                    const finalMaxBottom = maxBottom + marginBottom;
-                                    const scrollHeight = body.scrollHeight;
-                                    let newHeight = Math.max(finalMaxBottom, scrollHeight) + 4;
+                                    const measurements = [
+                                        body.scrollHeight,
+                                        body.offsetHeight,
+                                        html.scrollHeight,
+                                        html.offsetHeight,
+                                        html.clientHeight,
+                                        Math.ceil(bodyRect.height),
+                                        Math.ceil(html.getBoundingClientRect().height),
+                                        Math.ceil(maxBottom)
+                                    ];
+                                    let newHeight = Math.max.apply(null, measurements) + 8;
                                     if (Math.abs(newHeight - lastHeight) > 0) {
                                         lastHeight = newHeight;
                                         window.frameElement.style.height = newHeight + 'px';
@@ -2472,6 +2481,26 @@
 
                     // Standard Markdown
                     return DOMPurify.sanitize(marked.parse(text), cleanConfig);
+                };
+
+                const renderCardPreview = (text) => {
+                    if (!text) return '暂无描述';
+                    const trimmed = String(text).trim();
+                    if (!trimmed) return '暂无描述';
+
+                    const htmlLike = /(<!doctype html>|<html\b[^>]*>|^\s*<(div|table|section|article|aside|header|footer|style|script|iframe)\b)/i.test(trimmed) && !trimmed.includes('```');
+                    const source = htmlLike ? trimmed : DOMPurify.sanitize(marked.parse(trimmed), { FORCE_BODY: true });
+                    const container = document.createElement('div');
+                    container.innerHTML = source;
+                    const plainText = (container.textContent || container.innerText || '')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    if (!plainText) {
+                        return htmlLike ? '该角色卡包含自定义界面，请点进详情查看完整效果。' : '暂无描述';
+                    }
+
+                    return plainText.length > 140 ? plainText.slice(0, 140) + '…' : plainText;
                 };
 
                 // --- Export Logic from Reference ---
@@ -2786,7 +2815,7 @@
                     selectedCard, previewCard, formatDate, downloadCard, deleteCard, moveCard,
                     toasts, currentTab, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     handleMobileScroll,
-                    isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown,
+                    isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
                     comments, loadingComments, newComment, submitComment, deleteComment, likeComment, likeCard, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
