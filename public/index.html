@@ -444,7 +444,7 @@
                         <div class="absolute inset-0 flex items-center justify-center">
                             <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
                         </div>
-                        <img :src="card.thumbnail_url || card.avatar_url || defaultAvatar" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="$event.target.style.opacity = 1" @error="if ($event.target.dataset.fallback) return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar; $event.target.style.opacity = 1" style="opacity: 0">
+                        <img :src="card.thumbnail_url || card.avatar_url || defaultAvatar" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="$event.target.style.opacity = 1" @error="if ($event.target.dataset.fullAvatarTried !== '1' && card.avatar_url && $event.target.src !== card.avatar_url) { $event.target.dataset.fullAvatarTried = '1'; $event.target.src = card.avatar_url; return; } if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar; $event.target.style.opacity = 1" style="opacity: 0">
                         
                         <!-- Download Count (Admin Only) - Moved to Avatar Bottom Right -->
                         <div v-if="isAdmin" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
@@ -483,7 +483,7 @@
                                     </button>
 
                                     <!-- Delete Button (Only for my uploads or Admin) -->
-                                    <button v-if="myUploadedIds.includes(card.id) || isAdmin"
+                                        <button v-if="(isLoggedIn && currentUser && card.uploader_user_id === currentUser.id) || isAdmin"
                                             @click.stop="deleteCard(card)"
                                             class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0 -mt-1 -mr-1"
                                             title="删除">
@@ -933,7 +933,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         下载角色卡
                     </button>
-                    <button v-if="myUploadedIds.includes(selectedCard.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -1109,7 +1109,7 @@
                             <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             下载角色卡
                         </button>
-                        <button v-if="myUploadedIds.includes(selectedCard.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
+                        <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
