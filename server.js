@@ -315,7 +315,9 @@ function hashCardData(data) {
 
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
-        const sortField = req.query.sort === 'hot' ? 'likes_count' : 'created_at';
+        const orderByClause = req.query.sort === 'hot'
+            ? '((IFNULL(cc.downloads_count, 0) * 0.7) + (IFNULL(cc.likes_count, 0) * 0.3)) DESC, cc.downloads_count DESC, cc.likes_count DESC, cc.created_at DESC'
+            : 'cc.created_at DESC';
         const userId = req.user?.id ?? req.admin?.id ?? null;
         const cards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
@@ -324,7 +326,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id) AS comment_count
              FROM character_cards cc
              LEFT JOIN card_likes cl ON cl.card_id = cc.id AND cl.user_id = ?
-             ORDER BY cc.${sortField} DESC`
+             ORDER BY ${orderByClause}`
         ).all(userId);
         res.json(cards);
     } catch (err) {
