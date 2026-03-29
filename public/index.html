@@ -382,7 +382,7 @@
                     <div class="relative flex-shrink-0">
                         <button @click.stop="showSortDropdown = !showSortDropdown" class="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 rounded-xl text-xs font-bold transition-all hover:bg-gray-200">
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            <svg v-else class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                            <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                             <span :class="cardSort === 'hot' ? 'text-rose-500' : 'text-primary-600'">{{ cardSort === 'latest' ? '最新' : '热门' }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
@@ -392,7 +392,7 @@
                                 最新
                             </button>
                             <button @click="cardSort = 'hot'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'hot' ? 'text-rose-500' : 'text-gray-500'">
-                                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                                 热门
                             </button>
                         </div>
@@ -760,29 +760,33 @@
             </div>
         </div>
 
-        <div v-if="previewOpening.active" class="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-            <div class="w-full max-w-sm rounded-[2rem] overflow-hidden bg-white shadow-2xl border border-white/60">
-                <div class="aspect-[3/4] bg-gray-100 relative overflow-hidden">
-                    <img :src="previewOpening.imageUrl || defaultAvatar" class="absolute inset-0 w-full h-full object-cover" />
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent"></div>
-                    <div class="absolute inset-0 flex items-center justify-center">
-                        <div class="rounded-full bg-white/20 backdrop-blur-md p-4 border border-white/30">
-                            <div class="animate-spin rounded-full h-10 w-10 border-4 border-white/70 border-t-transparent"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="px-6 py-5 text-center">
-                    <h3 class="text-xl font-black text-gray-900 truncate">{{ previewOpening.name }}</h3>
-                    <p class="mt-2 text-sm text-gray-500">正在进入详情页并准备资源，请稍候。</p>
-                </div>
+        <div v-if="previewOpening.active && !selectedCard" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gray-900/95 backdrop-blur-xl animate-fade-in">
+            <div class="relative mb-8">
+                <div class="w-20 h-20 border-[3px] border-white/10 rounded-full"></div>
+                <div class="w-20 h-20 border-[3px] border-primary-500 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
             </div>
+            <p class="text-xl font-bold text-white mb-3 tracking-wide">正在准备详情界面</p>
+            <p class="text-sm text-gray-400 max-w-[280px] text-center leading-relaxed">正在请求数据，请稍候...</p>
         </div>
 
         <!-- Preview Modal (Full Screen Mobile Scroll & Parallax) -->
         <div v-if="selectedCard" class="fixed inset-0 z-50 flex md:items-center justify-center bg-black/60 animate-fade-in md:p-4 md:backdrop-blur-sm md:transition-all md:duration-300">
             
+            <!-- Global Detail Loading Overlay -->
+            <div v-if="previewAsset.loading" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gray-900/95 backdrop-blur-xl animate-fade-in">
+                <div class="relative mb-8">
+                    <div class="w-20 h-20 border-[3px] border-white/10 rounded-full"></div>
+                    <div class="w-20 h-20 border-[3px] border-primary-500 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+                </div>
+                <p class="text-xl font-bold text-white mb-3 tracking-wide">正在准备详情界面</p>
+                <p class="text-sm text-gray-400 max-w-[280px] text-center leading-relaxed">资源正在加载，请稍等...</p>
+                <button @click="selectedCard = null; stopPreviewOpening()" class="mt-10 px-8 py-3 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all text-sm font-medium border border-white/5 hover:border-white/20 active:scale-95">
+                    取消进入
+                </button>
+            </div>
+
             <!-- Mobile Container (Parallax Scroll) -->
-            <div class="md:hidden w-full h-full relative overflow-y-auto scroll-smooth-mobile no-scrollbar animate-slide-up-mobile"
+            <div v-if="!previewAsset.loading" class="md:hidden w-full h-full relative overflow-y-auto scroll-smooth-mobile no-scrollbar animate-slide-up-mobile"
                  @scroll="handleMobileScroll">
                 
                 <!-- Close Button -->
@@ -796,13 +800,6 @@
                          id="mobile-bg-img"
                          class="w-full h-full object-cover object-top mobile-bg-img"
                          style="opacity: 1">
-                    <div v-if="previewAsset.loading" class="absolute inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center px-6">
-                        <div class="max-w-xs text-center text-white">
-                            <div class="mx-auto mb-4 animate-spin rounded-full h-10 w-10 border-4 border-white/50 border-t-transparent"></div>
-                            <p class="text-base font-bold">正在加载原图</p>
-                            <p class="mt-2 text-sm text-white/80 leading-relaxed">原图或内嵌 UI 可能较复杂，网络较慢时需要等待几秒，请稍候。</p>
-                        </div>
-                    </div>
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
                 </div>
 
@@ -822,34 +819,19 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
-                            <div v-if="previewAsset.error || selectedCardHasComplexUi" class="mt-4 text-sm rounded-2xl border px-4 py-3"
-                                 :class="previewAsset.error ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'">
-                                {{ previewAsset.error || '这张角色卡可能包含较复杂的原图或内嵌 UI，首次打开与下载前请等待资源准备完成。' }}
+                            <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
+                                {{ previewAsset.error }}
                             </div>
-                            <div v-if="selectedCard.creator_notes" class="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-blue-800 text-sm leading-relaxed flex items-start gap-3">
-                                <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                <div class="flex-1 flex flex-col gap-2">
+                            <div v-if="selectedCard.creator_notes" class="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-blue-800 text-sm leading-relaxed">
+                                <div class="flex flex-col gap-2">
                                     <div v-if="selectedCard.clean_notes">{{ selectedCard.clean_notes }}</div>
-                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="overflow-hidden rounded-2xl border border-blue-100/80 bg-white/70">
-                                        <button @click="mobileDetailTagsExpanded = !mobileDetailTagsExpanded" class="w-full p-3 text-left">
-                                            <div class="flex items-start justify-between gap-3">
-                                                <div class="flex-1 min-w-0 overflow-hidden">
-                                                    <div class="flex flex-wrap gap-2 overflow-hidden">
-                                                        <span v-for="tag in mobileDetailVisibleTags" :key="tag"
-                                                              class="max-w-full break-all px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
-                                                            {{ tag }}
-                                                        </span>
-                                                        <span v-if="mobileDetailHiddenTagCount > 0 && !mobileDetailTagsExpanded"
-                                                              class="px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-100 text-blue-700">
-                                                            +{{ mobileDetailHiddenTagCount }}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <span class="flex-shrink-0 text-[11px] font-bold tracking-wide text-blue-500 mt-0.5">
-                                                    {{ mobileDetailTagsExpanded ? '收起' : '展开' }}
-                                                </span>
-                                            </div>
-                                        </button>
+                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="rounded-2xl border border-blue-100/80 bg-white/70 p-3">
+                                        <div class="flex flex-wrap gap-2">
+                                            <span v-for="tag in selectedCard.tags" :key="tag"
+                                                  class="max-w-full break-all px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
+                                                {{ tag }}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -995,17 +977,10 @@
             </div>
 
             <!-- Desktop Container (Unchanged) -->
-            <div class="hidden md:flex bg-white w-full h-auto max-h-[90vh] max-w-6xl rounded-[2.5rem] flex-row shadow-2xl overflow-hidden animate-scale-in relative">
+            <div v-if="!previewAsset.loading" class="hidden md:flex bg-white w-full h-auto max-h-[90vh] max-w-6xl rounded-[2.5rem] flex-row shadow-2xl overflow-hidden animate-scale-in relative">
                 
                 <!-- Left: Image Section -->
                 <div class="relative w-2/5 h-auto flex-shrink-0 bg-gray-100">
-                    <div v-if="previewAsset.loading" class="absolute inset-0 z-10 bg-white/70 backdrop-blur-[2px] flex items-center justify-center px-6">
-                        <div class="max-w-xs text-center text-gray-700">
-                            <div class="mx-auto mb-4 animate-spin rounded-full h-10 w-10 border-4 border-primary-300 border-t-transparent"></div>
-                            <p class="text-lg font-bold">正在加载原图</p>
-                            <p class="mt-2 text-sm text-gray-500 leading-relaxed">原图或内嵌 UI 可能较复杂，网络较慢时需要等待，请稍候。</p>
-                        </div>
-                    </div>
                     <img :src="previewAsset.imageUrl || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar" class="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-300" style="opacity: 1">
                 </div>
 
@@ -1023,15 +998,13 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl md:text-4xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
-                            <div v-if="previewAsset.error || selectedCardHasComplexUi" class="mt-4 text-sm rounded-2xl border px-4 py-3"
-                                 :class="previewAsset.error ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'">
-                                {{ previewAsset.error || '这张角色卡可能包含较复杂的原图或内嵌 UI，首次打开与下载前请等待资源准备完成。' }}
+                            <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
+                                {{ previewAsset.error }}
                             </div>
                             
                             <!-- Creator Notes Content (Visible in Preview) -->
-                            <div v-if="selectedCard.creator_notes" class="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-blue-800 text-sm leading-relaxed flex items-start gap-3">
-                                <svg class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                <div class="flex-1 flex flex-col gap-2">
+                            <div v-if="selectedCard.creator_notes" class="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-blue-800 text-sm leading-relaxed">
+                                <div class="flex flex-col gap-2">
                                     <div v-if="selectedCard.clean_notes">{{ selectedCard.clean_notes }}</div>
                                     <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="flex flex-wrap gap-2">
                                         <span v-for="tag in selectedCard.tags" :key="tag"
@@ -1267,7 +1240,6 @@
                 const uploadingCard = ref(null);
                 const isUploading = ref(false);
                 const selectedCard = ref(null);
-                const mobileDetailTagsExpanded = ref(false);
                 const previewOpening = reactive({
                     active: false,
                     name: '',
@@ -1286,7 +1258,7 @@
                 const toasts = ref([]);
                 const windowWidth = ref(window.innerWidth);
                 let mobileScrollTicking = false;
-                const PREVIEW_OPENING_MIN_MS = 220;
+                const PREVIEW_OPENING_MIN_MS = 1300;
 
                 const handleMobileScroll = (e) => {
                     if (mobileScrollTicking) return;
@@ -1602,12 +1574,6 @@
                     if (windowWidth.value < 640) return 3;
                     if (windowWidth.value < 1024) return 5;
                     return 8;
-                });
-
-                const mobileDetailCollapsedTagCount = computed(() => {
-                    if (windowWidth.value < 390) return 4;
-                    if (windowWidth.value < 640) return 5;
-                    return 6;
                 });
 
                 const visiblePopularTags = computed(() => {
@@ -2359,19 +2325,6 @@
                     return true;
                 });
 
-                const mobileDetailVisibleTags = computed(() => {
-                    const tags = selectedCard.value?.tags || [];
-                    if (mobileDetailTagsExpanded.value) {
-                        return tags;
-                    }
-                    return tags.slice(0, mobileDetailCollapsedTagCount.value);
-                });
-
-                const mobileDetailHiddenTagCount = computed(() => {
-                    const total = selectedCard.value?.tags?.length || 0;
-                    return Math.max(0, total - mobileDetailVisibleTags.value.length);
-                });
-
                 const downloadButtonLabel = computed(() => {
                     if (selectedCard.value) {
                         const isOwner = isCardOwnedByCurrentUser(selectedCard.value);
@@ -2406,9 +2359,9 @@
                 const createIframe = (rawHtml) => {
                     const iframe = document.createElement('iframe');
                     iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block';
-                    iframe.style.height = 'auto';
+                    iframe.style.height = '1px';
                     iframe.style.overflow = 'hidden';
-                    iframe.style.transition = 'height 0.2s ease-out';
+                    iframe.style.transition = 'none';
                     iframe.style.marginBottom = '0';
                     iframe.setAttribute('scrolling', 'no');
                     iframe.sandbox = 'allow-scripts allow-forms allow-popups allow-modals allow-same-origin';
@@ -2442,57 +2395,62 @@
                                 }
                             };
                             let lastHeight = 0;
-                            let isUpdating = false;
-                            function updateHeight() {
-                                if (!window.frameElement || isUpdating) return;
-                                isUpdating = true;
-                                requestAnimationFrame(() => {
-                                    const body = document.body;
-                                    const html = document.documentElement;
-                                    if (!body || !html) { isUpdating = false; return; }
-                                    const bodyRect = body.getBoundingClientRect();
-                                    let maxBottom = bodyRect.height;
-                                    const nodes = body.querySelectorAll('*');
-                                    for (let i = 0; i < nodes.length; i++) {
-                                        const node = nodes[i];
-                                        if (['SCRIPT','STYLE','LINK'].includes(node.tagName)) continue;
-                                        const style = window.getComputedStyle(node);
-                                        if (style.position === 'fixed') continue;
-                                        const rect = node.getBoundingClientRect();
-                                        if (!rect.width && !rect.height) continue;
-                                        const nodeBottom = rect.bottom - bodyRect.top;
-                                        if (nodeBottom > maxBottom) maxBottom = nodeBottom;
-                                    }
-                                    const measurements = [
-                                        body.scrollHeight,
-                                        body.offsetHeight,
-                                        html.scrollHeight,
-                                        html.offsetHeight,
-                                        html.clientHeight,
-                                        Math.ceil(bodyRect.height),
-                                        Math.ceil(html.getBoundingClientRect().height),
-                                        Math.ceil(maxBottom)
-                                    ];
-                                    let newHeight = Math.max.apply(null, measurements) + 8;
-                                    if (Math.abs(newHeight - lastHeight) > 0) {
-                                        lastHeight = newHeight;
-                                        window.frameElement.style.height = newHeight + 'px';
-                                    }
-                                    isUpdating = false;
+                            let heightFrame = 0;
+                            function readHeight() {
+                                const body = document.body;
+                                const html = document.documentElement;
+                                if (!body || !html) return 0;
+                                return Math.max(
+                                    body.scrollHeight,
+                                    body.offsetHeight,
+                                    body.clientHeight,
+                                    html.scrollHeight,
+                                    html.offsetHeight,
+                                    html.clientHeight
+                                );
+                            }
+                            function applyHeight(force) {
+                                if (!window.frameElement) return;
+                                const measuredHeight = Math.max(1, Math.ceil(readHeight()));
+                                if (!force && Math.abs(measuredHeight - lastHeight) < 2) return;
+                                lastHeight = measuredHeight;
+                                window.frameElement.style.height = measuredHeight + 'px';
+                            }
+                            function scheduleHeightUpdate(force) {
+                                if (heightFrame) cancelAnimationFrame(heightFrame);
+                                heightFrame = requestAnimationFrame(() => {
+                                    heightFrame = 0;
+                                    applyHeight(force);
                                 });
                             }
-                            window.addEventListener('load', () => { updateHeight(); setTimeout(updateHeight, 200); });
-                            window.addEventListener('resize', updateHeight);
-                            window.addEventListener('click', () => { setTimeout(updateHeight, 100); setTimeout(updateHeight, 300); });
+                            window.addEventListener('load', () => { scheduleHeightUpdate(true); setTimeout(() => scheduleHeightUpdate(true), 200); });
+                            window.addEventListener('resize', () => scheduleHeightUpdate(false));
+                            window.addEventListener('click', () => { setTimeout(() => scheduleHeightUpdate(false), 100); setTimeout(() => scheduleHeightUpdate(false), 300); });
                             window.addEventListener('DOMContentLoaded', () => {
-                                document.querySelectorAll('img').forEach(img => img.addEventListener('load', updateHeight));
-                                updateHeight();
+                                document.querySelectorAll('img').forEach(img => img.addEventListener('load', () => scheduleHeightUpdate(true)));
+                                scheduleHeightUpdate(true);
                             });
                             if (window.ResizeObserver) {
-                                const ro = new ResizeObserver(entries => { for(let e of entries) if(e.target===document.body) updateHeight(); });
-                                if (document.body) ro.observe(document.body);
-                                else window.addEventListener('DOMContentLoaded', () => ro.observe(document.body));
-                            } else { setInterval(updateHeight, 1000); }
+                                const ro = new ResizeObserver(() => scheduleHeightUpdate(false));
+                                const observeTargets = () => {
+                                    if (document.documentElement) ro.observe(document.documentElement);
+                                    if (document.body) ro.observe(document.body);
+                                };
+                                if (document.body) observeTargets();
+                                else window.addEventListener('DOMContentLoaded', observeTargets, { once: true });
+                            }
+                            if (window.MutationObserver) {
+                                const mo = new MutationObserver(() => scheduleHeightUpdate(false));
+                                const observeMutations = () => {
+                                    if (document.body) {
+                                        mo.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+                                    }
+                                };
+                                if (document.body) observeMutations();
+                                else window.addEventListener('DOMContentLoaded', observeMutations, { once: true });
+                            } else {
+                                setInterval(() => scheduleHeightUpdate(false), 1500);
+                            }
                         <\/script>
                     `;
                     
@@ -3063,7 +3021,6 @@
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab], () => { currentPage.value = 1; });
                 watch(selectedCard, (card) => {
-                    mobileDetailTagsExpanded.value = false;
                     if (!card) {
                         clearPreviewAsset();
                     }
@@ -3129,7 +3086,6 @@
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits,
                     previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
-                    mobileDetailTagsExpanded, mobileDetailVisibleTags, mobileDetailHiddenTagCount,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
                     handleUserAuth, handleUserLogout,
