@@ -467,6 +467,103 @@ async function resolveAvatarAsset(avatarUrl) {
     return fetchRemoteAvatarAsset(avatarUrl);
 }
 
+const DOWNLOAD_LINK_TTL_SECONDS = 60;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_IHDR_END_OFFSET = 33;
+const crc32Table = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+    let current = i;
+    for (let bit = 0; bit < 8; bit++) {
+        current = (current & 1) ? (0xEDB88320 ^ (current >>> 1)) : (current >>> 1);
+    }
+    crc32Table[i] = current >>> 0;
+}
+
+function crc32(buffer) {
+    let crc = 0xFFFFFFFF;
+    for (const value of buffer) {
+        crc = (crc >>> 8) ^ crc32Table[(crc ^ value) & 0xFF];
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function sanitizeDownloadFilename(name) {
+    const baseName = String(name || 'character-card')
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replace(/\s+/g, ' ')
+        .slice(0, 120) || 'character-card';
+    return `${baseName}.png`;
+}
+
+function createAttachmentDisposition(filename) {
+    const asciiFallback = filename
+        .replace(/[^\x20-\x7E]/g, '_')
+        .replace(/["]/g, '_') || 'character-card.png';
+    return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+function createCardDownloadToken(cardId, fileName) {
+    return jwt.sign(
+        { role: 'card-download', cardId, fileName },
+        JWT_SECRET,
+        { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
+    );
+}
+
+function buildCardMetadataChunk(cardData) {
+    const payload = Buffer.from(JSON.stringify(cardData ?? null), 'utf8').toString('base64');
+    const chunkData = Buffer.concat([
+        Buffer.from('chara\0', 'latin1'),
+        Buffer.from(payload, 'utf8')
+    ]);
+    const chunkType = Buffer.from('tEXt', 'ascii');
+    const chunkLength = Buffer.alloc(4);
+    chunkLength.writeUInt32BE(chunkData.length, 0);
+    const chunkCrc = Buffer.alloc(4);
+    chunkCrc.writeUInt32BE(crc32(Buffer.concat([chunkType, chunkData])), 0);
+    return Buffer.concat([chunkLength, chunkType, chunkData, chunkCrc]);
+}
+
+function injectCardMetadataIntoPng(pngBuffer, cardData) {
+    const source = Buffer.isBuffer(pngBuffer) ? pngBuffer : Buffer.from(pngBuffer);
+    if (source.length < PNG_IHDR_END_OFFSET || !source.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+        throw new Error('下载图片不是有效的 PNG 文件');
+    }
+
+    const metadataChunk = buildCardMetadataChunk(cardData);
+    return Buffer.concat([
+        source.subarray(0, PNG_IHDR_END_OFFSET),
+        metadataChunk,
+        source.subarray(PNG_IHDR_END_OFFSET)
+    ]);
+}
+
+async function buildCardDownloadFile(card) {
+    const safeAvatarUrl = sanitizeAvatarUrl(card.avatar_url, card.id);
+    let pngBuffer = null;
+
+    if (!safeAvatarUrl) {
+        if (!sharp) {
+            throw new Error('sharp 不可用，无法生成下载卡图片');
+        }
+        const placeholder = buildPlaceholderSvg(card.name, card.id, 800, 1067, 320);
+        pngBuffer = await sharp(Buffer.from(placeholder)).png().toBuffer();
+    } else {
+        const asset = await resolveAvatarAsset(safeAvatarUrl);
+        const contentType = String(asset.contentType || '').toLowerCase();
+        if (sharp) {
+            pngBuffer = await sharp(asset.buffer).png().toBuffer();
+        } else if (contentType.includes('png')) {
+            pngBuffer = Buffer.from(asset.buffer);
+        } else {
+            throw new Error('sharp 不可用，无法转换下载卡图片');
+        }
+    }
+
+    return injectCardMetadataIntoPng(pngBuffer, card.data);
+}
+
 function cacheThumbnail(cardId, body, contentType, cacheControl) {
     if (thumbnailCache.size >= THUMBNAIL_MAX_CACHE) {
         const firstKey = thumbnailCache.keys().next().value;
@@ -797,7 +894,7 @@ app.put('/api/cards/:id', (req, res) => {
 app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, uploader_user_id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT id, name, uploader_user_id FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
         let newCredits = null;
@@ -821,13 +918,57 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         recordDownload();
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: req.ip });
 
-        res.json({ success: true, new_credits: newCredits });
+        const fileName = sanitizeDownloadFilename(card.name);
+        const downloadToken = createCardDownloadToken(id, fileName);
+        res.json({
+            success: true,
+            new_credits: newCredits,
+            download_url: `/api/cards/${id}/download/file?token=${encodeURIComponent(downloadToken)}`
+        });
     } catch (err) {
         if (err.statusCode) {
             return res.status(err.statusCode).json({ error: err.message });
         }
         console.error('Download count error:', err);
         res.status(500).json({ error: '更新下载次数失败' });
+    }
+});
+
+app.get('/api/cards/:id/download/file', async (req, res) => {
+    try {
+        const token = typeof req.query.token === 'string' ? req.query.token : '';
+        if (!token) {
+            return res.status(401).json({ error: '下载链接无效或已过期' });
+        }
+
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.role !== 'card-download' || decoded.cardId !== req.params.id) {
+            return res.status(403).json({ error: '下载链接无效或已过期' });
+        }
+
+        const card = db.prepare('SELECT id, name, avatar_url, data FROM character_cards WHERE id = ?').get(req.params.id);
+        if (!card) {
+            return res.status(404).json({ error: '卡片不存在' });
+        }
+
+        try {
+            card.data = card.data ? JSON.parse(card.data) : null;
+        } catch {
+            card.data = null;
+        }
+
+        const fileBuffer = await buildCardDownloadFile(card);
+        const fileName = sanitizeDownloadFilename(decoded.fileName || card.name);
+        res.set('Content-Type', 'image/png');
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Disposition', createAttachmentDisposition(fileName));
+        res.send(fileBuffer);
+    } catch (err) {
+        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: '下载链接无效或已过期' });
+        }
+        console.error('Download file error:', err);
+        res.status(500).json({ error: '生成下载文件失败' });
     }
 });
 
