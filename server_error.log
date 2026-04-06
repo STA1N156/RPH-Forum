@@ -1,4 +1,0 @@
-[Security] Using the default admin password. Set ADMIN_PASSWORD before deploying to production.
-[Audit] Card upload rejected for user admin: [ 'description: custom' ]
-[Audit] Card upload rejected for user admin: [ 'description: custom' ]
-[Audit] Card upload rejected for user admin: [ 'description: custom' ]
