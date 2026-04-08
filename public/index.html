@@ -1644,7 +1644,11 @@
 
                     // Sorting
                     if (cardSort.value === 'hot') {
-                        result.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+                        result.sort((a, b) => {
+                            const scoreA = (a.downloads_count || 0) * 0.5 + (a.comment_count || 0) * 0.3 + (a.views_count || 0) * 0.2;
+                            const scoreB = (b.downloads_count || 0) * 0.5 + (b.comment_count || 0) * 0.3 + (b.views_count || 0) * 0.2;
+                            return scoreB - scoreA;
+                        });
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     }
@@ -2306,6 +2310,16 @@
                         
                         // Load comments
                         fetchComments(card.id);
+
+                        // Track card view count
+                        try {
+                            fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                            // Update view count in card list
+                            const listCard = cards.value.find(c => c.id === card.id);
+                            if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
+                        } catch (e) {
+                            console.error('Track view error:', e);
+                        }
                     } finally {
                         const elapsed = Date.now() - openingStartedAt;
                         if (elapsed < PREVIEW_OPENING_MIN_MS) {
@@ -2514,6 +2528,11 @@
                     }
                     if (newComment.content.trim().length < 5) {
                         showToast('评论不能少于5个字', 'warning');
+                        return;
+                    }
+                    // Anti-spam: block 5+ consecutive identical characters
+                    if (/(.)\1{4,}/.test(newComment.content.trim())) {
+                        showToast('评论包含过多连续重复字符，请修改后再提交', 'warning');
                         return;
                     }
                     if (!selectedCard.value) return;

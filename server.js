@@ -316,12 +316,13 @@ function hashCardData(data) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const orderByClause = req.query.sort === 'hot'
-            ? '((IFNULL(cc.downloads_count, 0) * 0.7) + (IFNULL(cc.likes_count, 0) * 0.3)) DESC, cc.downloads_count DESC, cc.likes_count DESC, cc.created_at DESC'
+            ? '((IFNULL(cc.downloads_count, 0) * 0.5) + (IFNULL(comment_count, 0) * 0.3) + (IFNULL(cc.views_count, 0) * 0.2)) DESC, cc.downloads_count DESC, cc.created_at DESC'
             : 'cc.created_at DESC';
         const userId = req.user?.id ?? req.admin?.id ?? null;
         const cards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.likes_count,
+                    cc.views_count,
                     CASE WHEN cl.id IS NOT NULL THEN 1 ELSE 0 END AS user_liked,
                     (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id) AS comment_count
              FROM character_cards cc
@@ -1071,6 +1072,12 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         if (content.length > 5000) {
             return res.status(400).json({ error: '评论内容过长（最多5000字）' });
         }
+
+        // Anti-spam: block 5+ consecutive identical characters
+        const repeatedCharRegex = /(.)\1{4,}/;
+        if (repeatedCharRegex.test(content.trim())) {
+            return res.status(400).json({ error: '评论内容包含过多连续重复字符，请修改后再提交' });
+        }
         
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
@@ -1590,6 +1597,21 @@ app.post('/api/track/visit', (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: '记录失败' });
+    }
+});
+
+// Card view count tracking
+app.post('/api/cards/:id/view', (req, res) => {
+    try {
+        const { id } = req.params;
+        const card = db.prepare('SELECT id FROM character_cards WHERE id = ?').get(id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+        db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
+        const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+        res.json({ success: true, views_count: updated.views_count });
+    } catch (err) {
+        console.error('Card view count error:', err);
+        res.status(500).json({ error: '记录浏览量失败' });
     }
 });
 
