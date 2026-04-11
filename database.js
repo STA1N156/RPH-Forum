@@ -139,6 +139,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';

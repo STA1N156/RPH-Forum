@@ -34,6 +34,49 @@ if (IS_PRODUCTION && !EXPLICIT_JWT_SECRET) {
     console.warn('[Security] JWT_SECRET is not set. Falling back to a derived secret from ADMIN_PASSWORD. Set JWT_SECRET explicitly for independent secret rotation.');
 }
 
+// ============== Brute Force Config ==============
+const LOGIN_WINDOW_MINUTES = 1;
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 1;
+
+// ============== Captcha Store ==============
+const captchaTokens = new Map(); // token -> { createdAt, used }
+
+// ============== Upload Rate Limiting ==============
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const UPLOAD_RATE_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_UPLOADS_PER_WINDOW = 2;
+const uploadRateMap = new Map(); // key (userId or ip) -> [timestamp, ...]
+
+function checkUploadRate(key) {
+    const now = Date.now();
+    let timestamps = uploadRateMap.get(key) || [];
+    timestamps = timestamps.filter(t => now - t < UPLOAD_RATE_WINDOW_MS);
+    uploadRateMap.set(key, timestamps);
+    if (timestamps.length >= MAX_UPLOADS_PER_WINDOW) {
+        return false;
+    }
+    return true;
+}
+
+function recordUpload(key) {
+    const now = Date.now();
+    let timestamps = uploadRateMap.get(key) || [];
+    timestamps = timestamps.filter(t => now - t < UPLOAD_RATE_WINDOW_MS);
+    timestamps.push(now);
+    uploadRateMap.set(key, timestamps);
+}
+
+// Periodic cleanup of stale upload rate entries
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamps] of uploadRateMap) {
+        const active = timestamps.filter(t => now - t < UPLOAD_RATE_WINDOW_MS);
+        if (active.length === 0) uploadRateMap.delete(key);
+        else uploadRateMap.set(key, active);
+    }
+}, 5 * 60 * 1000);
+
 // ============== Middleware ==============
 app.use(helmet({
     contentSecurityPolicy: false, // Allow CDN scripts in frontend
@@ -205,17 +248,26 @@ app.post('/api/auth/login', async (req, res) => {
 
     const ip = req.ip;
 
+    // Brute force protection for admin login
+    const bruteCheck = checkBruteForce(ip, username);
+    if (bruteCheck.blocked) {
+        return res.status(429).json({ error: bruteCheck.reason });
+    }
+
     const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
     if (!user) {
+        recordLoginAttempt(ip, username, false);
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
+        recordLoginAttempt(ip, username, false);
         return res.status(401).json({ error: '用户名或密码错误' });
     }
 
     // Success
+    recordLoginAttempt(ip, username, true);
     db.prepare('UPDATE admin_users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
     logOperation({ userType: 'admin', userId: user.id, username: user.username, action: 'admin_login', targetType: 'user', targetId: String(user.id), ip, details: { role: 'admin' } });
 
@@ -227,10 +279,52 @@ app.get('/api/auth/me', authenticateAdmin, (req, res) => {
     res.json({ user: req.admin });
 });
 
+// ============== Captcha ==============
+app.get('/api/captcha/generate', (req, res) => {
+    const sliderX = 40 + Math.floor(Math.random() * 160); // target position 40-200
+    const token = crypto.randomUUID();
+    captchaTokens.set(token, { sliderX, createdAt: Date.now(), used: false });
+    // Cleanup old tokens (> 5min)
+    for (const [k, v] of captchaTokens) {
+        if (Date.now() - v.createdAt > 5 * 60 * 1000) captchaTokens.delete(k);
+    }
+    res.json({ token, sliderX });
+});
+
+app.post('/api/captcha/verify', (req, res) => {
+    const { token, x } = req.body;
+    const record = captchaTokens.get(token);
+    if (!record) return res.status(400).json({ error: '验证码已过期，请重试', valid: false });
+    if (record.used) return res.status(400).json({ error: '验证码已使用，请重试', valid: false });
+    if (Date.now() - record.createdAt > 60000) {
+        captchaTokens.delete(token);
+        return res.status(400).json({ error: '验证码已过期，请重试', valid: false });
+    }
+    const tolerance = 5;
+    if (Math.abs(Number(x) - record.sliderX) <= tolerance) {
+        record.used = true;
+        res.json({ valid: true });
+    } else {
+        captchaTokens.delete(token);
+        res.json({ valid: false, error: '验证失败，请重试' });
+    }
+});
+
 // ============== User Registration & Login ==============
 app.post('/api/user/register', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password, captchaToken } = req.body;
+
+        // Validate captcha
+        if (!captchaToken) {
+            return res.status(400).json({ error: '请完成滑块验证' });
+        }
+        const captchaRecord = captchaTokens.get(captchaToken);
+        if (!captchaRecord || !captchaRecord.used) {
+            return res.status(400).json({ error: '滑块验证未通过，请重试' });
+        }
+        captchaTokens.delete(captchaToken);
+
         if (!username || !password) {
             return res.status(400).json({ error: '请输入用户名和密码' });
         }
@@ -247,9 +341,10 @@ app.post('/api/user/register', async (req, res) => {
         }
 
         const hash = await bcrypt.hash(password, 12);
+        const now = new Date().toISOString();
         const result = db.prepare(
-            'INSERT INTO users (username, password_hash, download_credits) VALUES (?, ?, 1)'
-        ).run(username, hash);
+            'INSERT INTO users (username, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?)'
+        ).run(username, hash, now);
 
         const user = db.prepare('SELECT id, username, download_credits, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: req.ip });
@@ -315,20 +410,30 @@ function hashCardData(data) {
 
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
-        const orderByClause = req.query.sort === 'hot'
-            ? '((IFNULL(cc.downloads_count, 0) * 0.5) + (IFNULL(comment_count, 0) * 0.3) + (IFNULL(cc.views_count, 0) * 0.2)) DESC, cc.downloads_count DESC, cc.created_at DESC'
-            : 'cc.created_at DESC';
-        const userId = req.user?.id ?? req.admin?.id ?? null;
+        const sortMode = req.query.sort || 'latest';
+        const heatExpr = '((IFNULL(cc.views_count, 0) * 1.0) + (IFNULL(comment_count, 0) * 1.5) + (IFNULL(cc.downloads_count, 0) * 2.5))';
+        let whereClause = '';
+        let orderByClause = 'cc.created_at DESC';
+
+        if (sortMode === 'hot') {
+            orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
+        } else if (sortMode === 'daily') {
+            whereClause = "WHERE cc.created_at >= datetime('now', '-1 day')";
+            orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
+        } else if (sortMode === 'weekly') {
+            whereClause = "WHERE cc.created_at >= datetime('now', '-7 days')";
+            orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
+        }
+
         const cards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
-                    cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.likes_count,
-                    cc.views_count,
-                    CASE WHEN cl.id IS NOT NULL THEN 1 ELSE 0 END AS user_liked,
+                    cc.downloads_count, cc.uploader_user_id, cc.created_at,
+                    cc.views_count, cc.is_featured,
                     (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id) AS comment_count
              FROM character_cards cc
-             LEFT JOIN card_likes cl ON cl.card_id = cc.id AND cl.user_id = ?
+             ${whereClause}
              ORDER BY ${orderByClause}`
-        ).all(userId);
+        ).all();
         res.json(cards);
     } catch (err) {
         console.error('Fetch cards error:', err);
@@ -712,13 +817,11 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
 
 app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
     try {
-        const userId = req.user?.id ?? req.admin?.id ?? null;
         const card = db.prepare(
-            `SELECT cc.*, CASE WHEN cl.id IS NOT NULL THEN 1 ELSE 0 END AS user_liked
+            `SELECT cc.*
              FROM character_cards cc
-             LEFT JOIN card_likes cl ON cl.card_id = cc.id AND cl.user_id = ?
              WHERE cc.id = ?`
-        ).get(userId, req.params.id);
+        ).get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
         res.json(card);
@@ -733,6 +836,24 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         const { name, description, avatar_url, data, creator_notes } = req.body;
         if (!name) {
             return res.status(400).json({ error: '卡片名称不能为空' });
+        }
+
+        // File size check: estimate original size from base64 avatar_url
+        if (avatar_url && typeof avatar_url === 'string' && avatar_url.startsWith('data:')) {
+            const base64Part = avatar_url.split(',')[1] || '';
+            const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
+            if (estimatedBytes > MAX_UPLOAD_SIZE_BYTES) {
+                return res.status(400).json({ error: `文件大小超过 10MB 限制 (${(estimatedBytes / 1024 / 1024).toFixed(1)}MB)` });
+            }
+        }
+
+        // Upload rate limiting (admin exempt)
+        if (!req.admin) {
+            const rateKey = req.user ? `user:${req.user.id}` : `ip:${req.ip}`;
+            if (!checkUploadRate(rateKey)) {
+                return res.status(429).json({ error: '上传太频繁，每分钟最多上传 2 张角色卡，请稍后再试' });
+            }
+            recordUpload(rateKey);
         }
 
         // Duplicate detection via stable hash of card data (atomic via UNIQUE index)
@@ -892,6 +1013,30 @@ app.put('/api/cards/:id', (req, res) => {
         }
         console.error('Update card error:', err);
         res.status(500).json({ error: '更新卡片失败' });
+    }
+});
+
+// ============== Card Featured Toggle (Admin Only) ==============
+app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const card = db.prepare('SELECT id, name, is_featured FROM character_cards WHERE id = ?').get(id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        const newFeatured = card.is_featured ? 0 : 1;
+        db.prepare('UPDATE character_cards SET is_featured = ? WHERE id = ?').run(newFeatured, id);
+
+        logOperation({
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: newFeatured ? 'feature' : 'unfeature',
+            targetType: 'card', targetId: id, ip: req.ip,
+            details: { name: card.name }
+        });
+
+        res.json({ id, is_featured: newFeatured });
+    } catch (err) {
+        console.error('Feature card error:', err);
+        res.status(500).json({ error: '操作失败' });
     }
 });
 
@@ -1621,6 +1766,132 @@ app.get('/api/stats/visits', (req, res) => {
         res.json({ totalVisits: total });
     } catch (err) {
         res.status(500).json({ error: '获取访问量失败' });
+    }
+});
+
+// ============== Data Export/Import ==============
+app.get('/api/admin/export', authenticateAdmin, (req, res) => {
+    try {
+        const data = {
+            export_version: 2,
+            export_date: new Date().toISOString(),
+            users: db.prepare('SELECT * FROM users').all(),
+            character_cards: db.prepare('SELECT * FROM character_cards').all(),
+            character_comments: db.prepare('SELECT * FROM character_comments').all(),
+            comment_likes: db.prepare('SELECT * FROM comment_likes').all(),
+            card_likes: db.prepare('SELECT * FROM card_likes').all(),
+            settings: db.prepare('SELECT * FROM settings').all()
+        };
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=rph-forum-backup-${new Date().toISOString().slice(0,10)}.json`);
+        res.json(data);
+    } catch (err) {
+        console.error('Export error:', err);
+        res.status(500).json({ error: '导出失败: ' + err.message });
+    }
+});
+
+app.post('/api/admin/import', authenticateAdmin, (req, res) => {
+    try {
+        const data = req.body;
+        if (!data || !data.export_version) {
+            return res.status(400).json({ error: '无效的备份文件格式' });
+        }
+
+        const importTransaction = db.transaction(() => {
+            // Clear existing data in order (respect foreign keys)
+            db.exec('DELETE FROM comment_likes');
+            db.exec('DELETE FROM card_likes');
+            db.exec('DELETE FROM character_comments');
+            db.exec('DELETE FROM character_cards');
+            db.exec('DELETE FROM users');
+
+            // Import users (preserve IDs and password hashes)
+            if (data.users && data.users.length > 0) {
+                const insertUser = db.prepare(
+                    `INSERT INTO users (id, username, password_hash, download_credits, created_at, last_login)
+                     VALUES (?, ?, ?, ?, ?, ?)`
+                );
+                for (const u of data.users) {
+                    insertUser.run(u.id, u.username, u.password_hash, u.download_credits ?? 1, u.created_at, u.last_login);
+                }
+            }
+
+            // Import character cards
+            if (data.character_cards && data.character_cards.length > 0) {
+                const insertCard = db.prepare(
+                    `INSERT INTO character_cards (id, name, description, avatar_url, data, creator_notes, downloads_count, uploader_user_id, created_at, data_hash, likes_count, views_count, is_featured)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                );
+                for (const c of data.character_cards) {
+                    insertCard.run(c.id, c.name, c.description, c.avatar_url, c.data, c.creator_notes,
+                        c.downloads_count || 0, c.uploader_user_id, c.created_at, c.data_hash || null, c.likes_count || 0, c.views_count || 0, c.is_featured || 0);
+                }
+            }
+
+            // Import comments
+            if (data.character_comments && data.character_comments.length > 0) {
+                const insertComment = db.prepare(
+                    `INSERT INTO character_comments (id, card_id, user_id, nickname, content, likes_count, created_at, reply_to_id, reply_to_name)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                );
+                for (const cm of data.character_comments) {
+                    insertComment.run(cm.id, cm.card_id, cm.user_id, cm.nickname || '匿名用户', cm.content,
+                        cm.likes_count || 0, cm.created_at, cm.reply_to_id || null, cm.reply_to_name || null);
+                }
+            }
+
+            // Import comment likes
+            if (data.comment_likes && data.comment_likes.length > 0) {
+                const insertCL = db.prepare(
+                    `INSERT INTO comment_likes (id, comment_id, user_id, created_at) VALUES (?, ?, ?, ?)`
+                );
+                for (const cl of data.comment_likes) {
+                    insertCL.run(cl.id, cl.comment_id, cl.user_id, cl.created_at);
+                }
+            }
+
+            // Import card likes
+            if (data.card_likes && data.card_likes.length > 0) {
+                const insertCardLike = db.prepare(
+                    `INSERT INTO card_likes (id, card_id, user_id, created_at) VALUES (?, ?, ?, ?)`
+                );
+                for (const cl of data.card_likes) {
+                    insertCardLike.run(cl.id, cl.card_id, cl.user_id, cl.created_at);
+                }
+            }
+
+            // Import settings (upsert)
+            if (data.settings && data.settings.length > 0) {
+                const upsertSetting = db.prepare(
+                    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+                );
+                for (const s of data.settings) {
+                    upsertSetting.run(s.key, s.value, s.updated_at || new Date().toISOString());
+                }
+            }
+        });
+
+        importTransaction();
+
+        const stats = {
+            users: data.users?.length || 0,
+            cards: data.character_cards?.length || 0,
+            comments: data.character_comments?.length || 0,
+            settings: data.settings?.length || 0
+        };
+
+        logOperation({
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: 'import', ip: req.ip,
+            details: { stats }
+        });
+
+        res.json({ success: true, message: '数据导入成功', stats });
+    } catch (err) {
+        console.error('Import error:', err);
+        res.status(500).json({ error: '导入失败: ' + err.message });
     }
 });
 

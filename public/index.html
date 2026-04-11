@@ -296,19 +296,7 @@
                         <svg class="w-6 h-6 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                         <div v-if="isAdmin" class="absolute inset-0 bg-yellow-400 opacity-20 animate-pulse"></div>
                     </div>
-                    <!-- Tabs in Header -->
-                    <div class="flex bg-gray-100 p-1 rounded-xl gap-1 ml-1">
-                        <button @click="currentTab = 'all'"
-                                class="px-3 py-1.5 rounded-lg text-sm font-bold transition-all"
-                                :class="currentTab === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-                            广场
-                        </button>
-                        <button @click="currentTab = 'mine'"
-                                class="px-3 py-1.5 rounded-lg text-sm font-bold transition-all"
-                                :class="currentTab === 'mine' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-                            我的
-                        </button>
-                    </div>
+
                     <span v-if="isAdmin" class="hidden sm:inline-block text-[10px] font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full border border-yellow-100 ml-2 cursor-pointer" @click="handleAdminLogout" title="点击退出管理员模式">ADMIN 模式</span>
                 </div>
                 
@@ -322,15 +310,33 @@
                         上传
                     </button>
                     <!-- User Auth Button -->
-                    <div v-if="isLoggedIn" class="flex items-center gap-1">
+                    <!-- User Menu (Logged In) -->
+                    <div v-if="isLoggedIn" class="relative flex items-center gap-1">
                         <div class="hidden sm:flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100">
                             <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                             <span class="text-xs font-bold text-blue-600">{{ downloadCredits }}</span>
                         </div>
-                        <button @click="handleUserLogout" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100 transition-all" :title="currentUser.username">
+                        <button @click.stop="showUserMenu = !showUserMenu" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100 transition-all" :title="currentUser.username">
                             <div class="w-6 h-6 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-xs font-black">{{ currentUser.username.charAt(0).toUpperCase() }}</div>
                             <span class="hidden sm:inline text-xs">{{ currentUser.username }}</span>
+                            <svg class="w-3 h-3 text-gray-400 transition-transform" :class="{ 'rotate-180': showUserMenu }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                         </button>
+                        <!-- Dropdown -->
+                        <div v-if="showUserMenu" class="absolute right-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 animate-scale-in">
+                            <button @click="currentTab = 'mine'; showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                我的卡片
+                            </button>
+                            <button @click="currentTab = 'all'; showUserMenu = false" v-if="currentTab === 'mine'" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
+                                返回广场
+                            </button>
+                            <div class="border-t border-gray-100 my-1"></div>
+                            <button @click="handleUserLogout(); showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                                退出登录
+                            </button>
+                        </div>
                     </div>
                     <button v-else @click="showUserAuthModal = true; userAuthMode = 'login'" class="flex items-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-sm font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all active:scale-95">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
@@ -392,18 +398,31 @@
                     <div class="relative flex-shrink-0">
                         <button @click.stop="showSortDropdown = !showSortDropdown" class="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 rounded-xl text-xs font-bold transition-all hover:bg-gray-200">
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                            <span :class="cardSort === 'hot' ? 'text-rose-500' : 'text-primary-600'">{{ cardSort === 'latest' ? '最新' : '热门' }}</span>
+                            <svg v-else-if="cardSort === 'featured'" class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
+                            <span class="text-gray-700">{{ {latest: '最新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行'}[cardSort] }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
-                        <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[5rem]">
-                            <button @click="cardSort = 'latest'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'latest' ? 'text-primary-600' : 'text-gray-500'">
+                        <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[6rem]">
+                            <button @click="cardSort = 'latest'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'latest' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 最新
                             </button>
-                            <button @click="cardSort = 'hot'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'hot' ? 'text-rose-500' : 'text-gray-500'">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                                热门
+                            <button @click="cardSort = 'featured'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'featured' ? 'text-amber-500' : 'text-gray-500'">
+                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                精选
+                            </button>
+                            <button @click="cardSort = 'hot'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'hot' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
+                                最热门
+                            </button>
+                            <button @click="cardSort = 'daily'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'daily' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                日排行
+                            </button>
+                            <button @click="cardSort = 'weekly'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'weekly' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                周排行
                             </button>
                         </div>
                     </div>
@@ -458,19 +477,27 @@
             <!-- Card List -->
             <div v-else class="flex flex-col gap-4 animate-fade-in">
 
-                <div v-for="card in pagedCards" :key="card.id"
-                     @click="previewCard(card)"
-                     class="group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
+                    <div v-for="card in pagedCards" :key="card.id"
+                         @click="isR18Card(card) && !r18Confirmed ? showR18Disclaimer() : previewCard(card)"
+                         class="group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
+                    <!-- Featured Badge (Card Top-Left Corner) -->
+                    <div v-if="card.is_featured" class="absolute top-2.5 left-2.5 z-10">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            精选
+                        </span>
+                    </div>
+
                     <!-- Avatar (3:4 Ratio, Zero Padding) -->
                     <div class="relative w-[7.5rem] sm:w-48 flex-shrink-0 bg-gray-100">
                         <div class="absolute inset-0 flex items-center justify-center">
                             <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
                         </div>
-                        <img :src="card.thumbnail_url || card.avatar_url || defaultAvatar" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="$event.target.style.opacity = 1" @error="if ($event.target.dataset.fullAvatarTried !== '1' && card.avatar_url && $event.target.src !== card.avatar_url) { $event.target.dataset.fullAvatarTried = '1'; $event.target.src = card.avatar_url; return; } if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar; $event.target.style.opacity = 1" style="opacity: 0">
+                        <img :src="card.thumbnail_url || card.avatar_url || defaultAvatar" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="$event.target.style.opacity = 1" @error="if ($event.target.dataset.fullAvatarTried !== '1' && card.avatar_url && $event.target.src !== card.avatar_url) { $event.target.dataset.fullAvatarTried = '1'; $event.target.src = card.avatar_url; return; } if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar; $event.target.style.opacity = 1" style="opacity: 0">
                         
-                        <!-- Download Count (Admin Only) - Moved to Avatar Bottom Right -->
-                        <div v-if="isAdmin" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
+                        <!-- Download Count - Admin or card owner in Mine tab -->
+                        <div v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             {{ card.downloads_count || 0 }}
                         </div>
@@ -480,22 +507,20 @@
                     <div class="flex-1 p-3 sm:p-5 flex flex-col min-w-0">
                         <div class="flex flex-col gap-2">
                             <div class="flex justify-between items-start gap-2">
-                                <h3 class="flex-1 min-w-0 font-bold text-lg sm:text-xl text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 leading-tight break-words">{{ card.name }}</h3>
+                                <div class="flex-1 min-w-0">
+                                    <h3 :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 leading-tight break-words">{{ card.name }}</h3>
+                                </div>
                                 
                                 <div class="flex items-center gap-1 flex-shrink-0 ml-1">
-                                    <!-- Move Up/Down (Admin Only) -->
-                                    <div v-if="isAdmin" class="flex items-center gap-0.5">
-                                        <button @click.stop="moveCard(card, -1)"
-                                                class="p-1 text-gray-300 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
-                                                title="上移">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
-                                        </button>
-                                        <button @click.stop="moveCard(card, 1)"
-                                                class="p-1 text-gray-300 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
-                                                title="下移">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                        </button>
-                                    </div>
+
+                                    <!-- Feature Toggle Button (Admin Only) -->
+                                    <button v-if="isAdmin"
+                                            @click.stop="toggleFeatured(card)"
+                                            class="p-1.5 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
+                                            :class="card.is_featured ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'"
+                                            :title="card.is_featured ? '取消精选' : '设为精选'">
+                                        <svg class="w-5 h-5" viewBox="0 0 24 24" :fill="card.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                    </button>
 
                                     <!-- Edit Button (Owner or Admin) -->
                                     <button v-if="(isLoggedIn && currentUser && card.uploader_user_id === currentUser.id) || isAdmin"
@@ -518,7 +543,7 @@
                             <!-- Creator Note & Tags -->
                             <div class="flex flex-col gap-1 mt-1.5">
                                 <!-- Tags -->
-                                <div v-if="card.tags && card.tags.length > 0" class="flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
+                                <div v-if="card.tags && card.tags.length > 0" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
                                     <span v-for="tag in card.tags" :key="tag"
                                           class="px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 bg-blue-50 text-blue-600 leading-none flex-shrink-0">
                                         {{ tag }}
@@ -532,22 +557,25 @@
                             </div>
                             
                             <!-- Description -->
-                            <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]'">{{ renderCardPreview(card.description || '暂无描述') }}</div>
+                            <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="[card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]', { 'blur-sm select-none': isR18Card(card) && !r18Confirmed }]">{{ renderCardPreview(card.description || '暂无描述') }}</div>
                         </div>
 
-                        <!-- Like & Comment counts -->
+                        <!-- Heat & Comment counts -->
                         <div class="mt-auto pt-2 flex items-center justify-end gap-2">
                             <span class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-gray-400">
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                                 <span>{{ card.comment_count || 0 }}</span>
                             </span>
-                            <button @click.stop="likeCard(card)"
-                                    class="flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition-all hover:scale-105 active:scale-95"
-                                    :class="card.user_liked ? 'text-rose-500 bg-rose-50' : 'text-gray-400 hover:text-rose-400 hover:bg-rose-50'">
-                                <svg class="w-3.5 h-3.5 flex-shrink-0" :fill="card.user_liked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                                <span>{{ card.likes_count || 0 }}</span>
-                            </button>
+                            <span class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-orange-400">
+                                <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
+                                <span>{{ computeHeat(card) }}</span>
+                            </span>
                         </div>
+                    </div>
+
+                    <!-- R18 Full Card Overlay -->
+                    <div v-if="isR18Card(card) && !r18Confirmed" class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                        <svg class="w-10 h-10 text-red-400 drop-shadow-lg" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
                     </div>
                 </div>
             </div>
@@ -819,6 +847,12 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
+                            <div v-if="selectedCard.is_featured" class="mt-3 flex items-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200">
+                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                    精选角色卡
+                                </span>
+                            </div>
                             <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
                                 {{ previewAsset.error }}
                             </div>
@@ -970,6 +1004,9 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         {{ downloadButtonLabel }}
                     </button>
+                    <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </button>
                     <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
@@ -998,6 +1035,12 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl md:text-4xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
+                            <div v-if="selectedCard.is_featured" class="mt-3 flex items-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200">
+                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                    精选角色卡
+                                </span>
+                            </div>
                             <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
                                 {{ previewAsset.error }}
                             </div>
@@ -1147,6 +1190,9 @@
                             <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             {{ downloadButtonLabel }}
                         </button>
+                        <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                            <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        </button>
                         <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
@@ -1172,19 +1218,70 @@
                 </form>
             </div>
         </div>
+        <!-- R18 Disclaimer Modal -->
+        <div v-if="showR18Modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]" @mousedown.self="showR18Modal = false">
+            <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-scale-in">
+                <div class="flex flex-col items-center mb-4">
+                    <div class="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mb-3">
+                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900 text-center">R18 内容警告</h3>
+                </div>
+                <div class="text-sm text-gray-600 space-y-2 mb-5">
+                    <p>您即将查看包含成人内容（R18）的角色卡。继续操作即表示您确认：</p>
+                    <ul class="list-disc pl-5 space-y-1 text-xs text-gray-500">
+                        <li>您已年满 18 周岁</li>
+                        <li>您所在地区法律允许查看此类内容</li>
+                        <li>您自愿查看，平台不承担任何责任</li>
+                    </ul>
+                </div>
+                <div class="flex gap-3">
+                    <button @click="showR18Modal = false" class="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">取消</button>
+                    <button @click="confirmR18()" :disabled="r18Countdown > 0" class="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        {{ r18Countdown > 0 ? '确认查看 (' + r18Countdown + 's)' : '确认查看' }}
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- User Auth Modal (Login/Register) -->
         <div v-if="showUserAuthModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100]" @mousedown.self="showUserAuthModal = false">
             <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-scale-in">
                 <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">{{ userAuthMode === 'register' ? '注册账号' : '登录' }}</h3>
-                <p class="text-xs text-gray-400 text-center mb-4">{{ userAuthMode === 'register' ? '注册即送 1 次下载机会' : '登录后评论和点赞可获取下载次数' }}</p>
+                <p class="text-xs text-gray-400 text-center mb-4">{{ userAuthMode === 'register' ? '注册即送 1 次下载机会' : '登录后评论可获取下载次数' }}</p>
                 <form @submit.prevent="handleUserAuth" class="space-y-3">
                     <input v-model="userAuthForm.username" type="text" placeholder="用户名（2-20个字符）" autocomplete="username"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <input v-model="userAuthForm.password" type="password" :placeholder="userAuthMode === 'register' ? '密码（至少6位）' : '密码'" autocomplete="current-password"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <div v-if="userAuthError" class="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{{ userAuthError }}</div>
-                    <button type="submit" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors">
+
+                    <!-- Slider Captcha (register only) -->
+                    <div v-if="userAuthMode === 'register'" class="space-y-2">
+                        <div class="text-xs text-gray-500 flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            安全验证
+                        </div>
+                        <div class="relative bg-gray-100 rounded-xl h-10 select-none overflow-hidden" ref="captchaTrackRef">
+                            <!-- Target slot -->
+                            <div v-if="captchaState.targetX > 0 && !captchaState.verified" class="absolute top-0 h-full w-10 border-2 border-dashed border-primary-300 rounded-lg bg-primary-50/50" :style="{ left: captchaState.targetX + 'px' }"></div>
+                            <!-- Success overlay -->
+                            <div v-if="captchaState.verified" class="absolute inset-0 bg-green-50 flex items-center justify-center gap-1.5 z-10 rounded-xl">
+                                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span class="text-xs font-medium text-green-600">验证通过</span>
+                            </div>
+                            <!-- Slider thumb -->
+                            <div v-if="!captchaState.verified" class="absolute top-0 left-0 h-full w-10 bg-white border-2 border-primary-400 rounded-xl shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors hover:border-primary-500 z-20"
+                                :style="{ transform: 'translateX(' + captchaState.currentX + 'px)' }"
+                                @mousedown="startCaptchaDrag" @touchstart.prevent="startCaptchaDrag">
+                                <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </div>
+                        </div>
+                        <div v-if="!captchaState.verified && captchaState.currentX < 5" class="text-xs text-gray-400 text-center">向右拖动滑块到指定位置</div>
+                        <div v-if="captchaState.error" class="text-red-500 text-xs">{{ captchaState.error }}</div>
+                    </div>
+
+                    <button type="submit" :disabled="userAuthMode === 'register' && !captchaState.verified" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                         {{ userAuthMode === 'register' ? '注册' : '登录' }}
                     </button>
                     <div class="text-center text-xs text-gray-400">
@@ -1237,6 +1334,7 @@
                 const downloadCredits = computed(() => currentUser.value ? currentUser.value.download_credits : parseInt(safeStorage.getItem('download_credits') || '0'));
                 const showUploadModal = ref(false);
                 const showSearchModal = ref(false);
+                const showUserMenu = ref(false);
                 const uploadingCard = ref(null);
                 const isUploading = ref(false);
                 const selectedCard = ref(null);
@@ -1256,6 +1354,41 @@
                 });
                 const isDownloadingCard = ref(false);
                 const toasts = ref([]);
+
+                // R18 Content Control
+                const r18ConfirmedRaw = ref(safeStorage.getItem('r18_confirmed') === 'true');
+                const r18Confirmed = computed(() => isLoggedIn.value && r18ConfirmedRaw.value);
+                const showR18Modal = ref(false);
+                const isR18Card = (card) => {
+                    if (!card || !card.tags || !Array.isArray(card.tags)) return false;
+                    return card.tags.some(tag => /^r18$/i.test(tag));
+                };
+                const r18Countdown = ref(0);
+                let r18Timer = null;
+                const showR18Disclaimer = () => {
+                    if (!isLoggedIn.value) {
+                        showUserAuthModal.value = true;
+                        userAuthMode.value = 'register';
+                        return;
+                    }
+                    showR18Modal.value = true;
+                    r18Countdown.value = 5;
+                    if (r18Timer) clearInterval(r18Timer);
+                    r18Timer = setInterval(() => {
+                        r18Countdown.value--;
+                        if (r18Countdown.value <= 0) {
+                            clearInterval(r18Timer);
+                            r18Timer = null;
+                        }
+                    }, 1000);
+                };
+                const confirmR18 = () => {
+                    if (r18Countdown.value > 0) return;
+                    r18ConfirmedRaw.value = true;
+                    safeStorage.setItem('r18_confirmed', 'true');
+                    showR18Modal.value = false;
+                    if (r18Timer) { clearInterval(r18Timer); r18Timer = null; }
+                };
                 const windowWidth = ref(window.innerWidth);
                 let previewOpenRequestId = 0;
                 let mobileScrollTicking = false;
@@ -1358,6 +1491,86 @@
                 const userAuthForm = reactive({ username: '', password: '' });
                 const userAuthError = ref('');
 
+                // Captcha state
+                const captchaTrackRef = ref(null);
+                const captchaState = reactive({
+                    token: '',
+                    targetX: 0,
+                    currentX: 0,
+                    dragging: false,
+                    verified: false,
+                    error: ''
+                });
+
+                const resetCaptcha = async () => {
+                    captchaState.token = '';
+                    captchaState.targetX = 0;
+                    captchaState.currentX = 0;
+                    captchaState.dragging = false;
+                    captchaState.verified = false;
+                    captchaState.error = '';
+                    try {
+                        const resp = await fetch(API_BASE + '/api/captcha/generate');
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            captchaState.token = data.token;
+                            // Scale sliderX to fit track width (track ~300px, slider 40px)
+                            const trackEl = captchaTrackRef.value;
+                            const trackWidth = trackEl ? trackEl.offsetWidth : 300;
+                            captchaState.targetX = Math.round(data.sliderX / 240 * (trackWidth - 40));
+                        }
+                    } catch {}
+                };
+
+                const startCaptchaDrag = (e) => {
+                    if (captchaState.verified) return;
+                    captchaState.dragging = true;
+                    captchaState.error = '';
+                    const startClientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+                    const startX = captchaState.currentX;
+                    const trackEl = captchaTrackRef.value;
+                    const maxX = trackEl ? trackEl.offsetWidth - 40 : 260;
+
+                    const onMove = (ev) => {
+                        const clientX = ev.type === 'touchmove' ? ev.touches[0].clientX : ev.clientX;
+                        const dx = clientX - startClientX;
+                        captchaState.currentX = Math.max(0, Math.min(maxX, startX + dx));
+                    };
+
+                    const onEnd = async () => {
+                        captchaState.dragging = false;
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onEnd);
+                        document.removeEventListener('touchmove', onMove);
+                        document.removeEventListener('touchend', onEnd);
+
+                        // Auto-verify with server
+                        try {
+                            const resp = await fetch(API_BASE + '/api/captcha/verify', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ token: captchaState.token, x: Math.round(captchaState.currentX / ((trackEl ? trackEl.offsetWidth : 300) - 40) * 240) })
+                            });
+                            const data = await resp.json();
+                            if (data.valid) {
+                                captchaState.verified = true;
+                                captchaState.error = '';
+                            } else {
+                                captchaState.error = data.error || '验证失败，请重试';
+                                await resetCaptcha();
+                            }
+                        } catch {
+                            captchaState.error = '网络错误';
+                            await resetCaptcha();
+                        }
+                    };
+
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onEnd);
+                    document.addEventListener('touchmove', onMove, { passive: false });
+                    document.addEventListener('touchend', onEnd);
+                };
+
                 // Check existing token on load
                 const checkAdminToken = async () => {
                     if (!adminToken.value) return;
@@ -1447,12 +1660,19 @@
 
                 const handleUserAuth = async () => {
                     userAuthError.value = '';
-                    const url = userAuthMode.value === 'register' ? '/api/user/register' : '/api/user/login';
+                    const isRegister = userAuthMode.value === 'register';
+                    if (isRegister && !captchaState.verified) {
+                        userAuthError.value = '请先完成滑块验证';
+                        return;
+                    }
+                    const url = isRegister ? '/api/user/register' : '/api/user/login';
+                    const body = { username: userAuthForm.username, password: userAuthForm.password };
+                    if (isRegister) body.captchaToken = captchaState.token;
                     try {
                         const resp = await fetch(API_BASE + url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username: userAuthForm.username, password: userAuthForm.password })
+                            body: JSON.stringify(body)
                         });
                         const data = await resp.json();
                         if (!resp.ok) {
@@ -1467,6 +1687,7 @@
                         userAuthForm.password = '';
                         if (userAuthMode.value === 'register') {
                             showToast('注册成功！赠送 1 次下载机会', 'success');
+                            captchaState.verified = false;
                         } else {
                             showToast('登录成功', 'success');
                         }
@@ -1479,6 +1700,8 @@
                     userToken.value = '';
                     currentUser.value = null;
                     safeStorage.removeItem('user_token');
+                    r18ConfirmedRaw.value = false;
+                    safeStorage.removeItem('r18_confirmed');
                     showToast('已退出登录', 'info');
                 };
 
@@ -1642,13 +1865,23 @@
                         );
                     }
 
-                    // Sorting
-                    if (cardSort.value === 'hot') {
-                        result.sort((a, b) => {
-                            const scoreA = (a.downloads_count || 0) * 0.5 + (a.comment_count || 0) * 0.3 + (a.views_count || 0) * 0.2;
-                            const scoreB = (b.downloads_count || 0) * 0.5 + (b.comment_count || 0) * 0.3 + (b.views_count || 0) * 0.2;
-                            return scoreB - scoreA;
-                        });
+                    // Sorting & filtering by time range
+                    const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + (c.comment_count || 0) * 1.5 + (c.downloads_count || 0) * 2.5;
+                    const sortMode = cardSort.value;
+
+                    if (sortMode === 'featured') {
+                        result = result.filter(c => c.is_featured);
+                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    } else if (sortMode === 'daily') {
+                        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                        result = result.filter(c => new Date(c.created_at) >= oneDayAgo);
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'weekly') {
+                        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        result = result.filter(c => new Date(c.created_at) >= oneWeekAgo);
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'hot') {
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     }
@@ -1897,6 +2130,14 @@
                     const file = event.target.files[0];
                     if (!file) return;
 
+                    // File size check: 10 MB limit
+                    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+                    if (file.size > MAX_FILE_SIZE) {
+                        showToast(`文件大小 (${(file.size / 1024 / 1024).toFixed(1)}MB) 超过 10MB 限制，请压缩后重试`, 'error');
+                        event.target.value = '';
+                        return;
+                    }
+
                     const reader = new FileReader();
                     reader.onload = async (e) => {
                         try {
@@ -1998,7 +2239,10 @@
                                 creator_notes: uploadingCard.value.creator_notes
                             })
                         });
-                        if (!resp.ok) throw new Error('上传失败');
+                        if (!resp.ok) {
+                            const errData = await resp.json().catch(() => null);
+                            throw new Error(errData?.error || '上传失败');
+                        }
                         const data = await resp.json();
                         
                         if (data && data.length > 0) {
@@ -2027,59 +2271,30 @@
                     }
                 };
 
-                const moveCard = async (card, direction) => {
-                    if (!isAdmin.value) return;
-                    
-                    const list = filteredCards.value;
-                    const index = list.findIndex(c => c.id === card.id);
-                    const targetIndex = index + direction;
-                    
-                    if (targetIndex < 0 || targetIndex >= list.length) return;
-                    
-                    const targetCard = list[targetIndex];
-                    const time1 = card.created_at;
-                    const time2 = targetCard.created_at;
 
-                    // If times are identical, we need to nudge one slightly to ensure order
-                    let newTime1 = time2;
-                    let newTime2 = time1;
-                    if (time1 === time2) {
-                        const d = new Date(time1);
-                        d.setMilliseconds(d.getMilliseconds() + (direction < 0 ? 1 : -1));
-                        newTime1 = d.toISOString();
-                    }
-
+                const toggleFeatured = async (card) => {
                     try {
-                        // Use two independent update operations
-                        const [res1, res2] = await Promise.all([
-                            fetch(API_BASE + '/api/cards/' + card.id, {
-                                method: 'PUT',
-                                headers: adminAuthHeaders(),
-                                body: JSON.stringify({ created_at: newTime1 })
-                            }).then(r => r.json()),
-                            fetch(API_BASE + '/api/cards/' + targetCard.id, {
-                                method: 'PUT',
-                                headers: adminAuthHeaders(),
-                                body: JSON.stringify({ created_at: newTime2 })
-                            }).then(r => r.json())
-                        ]);
-                        
-                        if (!res1?.length || !res2?.length) {
-                            throw new Error('排序更新失败');
+                        const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/feature', {
+                            method: 'PUT',
+                            headers: adminAuthHeaders()
+                        });
+                        if (!resp.ok) {
+                            const errData = await resp.json().catch(() => null);
+                            throw new Error(errData?.error || '操作失败');
                         }
-
-                        // Update local state
-                        const c1 = cards.value.find(c => c.id === card.id);
-                        const c2 = cards.value.find(c => c.id === targetCard.id);
-                        if (c1) c1.created_at = newTime1;
-                        if (c2) c2.created_at = newTime2;
-
-                        showToast('排序已更新', 'success');
+                        const result = await resp.json();
+                        // Update card in local list
+                        const idx = cards.value.findIndex(c => c.id === card.id);
+                        if (idx !== -1) {
+                            cards.value[idx] = { ...cards.value[idx], is_featured: result.is_featured };
+                        }
+                        // Update selected card if viewing detail
+                        if (selectedCard.value && selectedCard.value.id === card.id) {
+                            selectedCard.value = { ...selectedCard.value, is_featured: result.is_featured };
+                        }
+                        showToast(result.is_featured ? '已设为精选' : '已取消精选', 'success');
                     } catch (err) {
-                        console.error('Move error:', err);
-                        showToast('排序失败: ' + err.message, 'error');
-                        // Refresh to sync with DB if something went wrong
-                        fetchCards();
+                        showToast('精选操作失败: ' + err.message, 'error');
                     }
                 };
 
@@ -2601,35 +2816,8 @@
                     newComment.reply_to_name = '';
                 };
 
-                const likeCard = async (card) => {
-                    if (!isLoggedIn.value) {
-                        showUserAuthModal.value = true;
-                        userAuthMode.value = 'login';
-                        showToast('请先登录后再点赞', 'warning');
-                        return;
-                    }
-                    try {
-                        const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/like', {
-                            method: 'POST',
-                            headers: userAuthHeaders()
-                        });
-                        if (!resp.ok) {
-                            const err = await resp.json();
-                            throw new Error(err.error || '操作失败');
-                        }
-                        const data = await resp.json();
-
-                        // Update card in list
-                        const idx = cards.value.findIndex(c => c.id === card.id);
-                        if (idx !== -1) {
-                            cards.value[idx] = { ...cards.value[idx], likes_count: data.likes_count, user_liked: data.liked ? 1 : 0 };
-                        }
-
-                        showToast(data.liked ? '点赞成功' : '已取消点赞', data.liked ? 'success' : 'info');
-                    } catch (err) {
-                        console.error('Card like error:', err);
-                        showToast(err.message, 'error');
-                    }
+                const computeHeat = (card) => {
+                    return Math.round((card.views_count || 0) * 1.0 + (card.comment_count || 0) * 1.5 + (card.downloads_count || 0) * 2.5);
                 };
 
                 const likeComment = async (comment) => {
@@ -2787,7 +2975,7 @@
                                 showUserAuthModal.value = true;
                                 showToast('请登录后获取下载次数', 'warning', 4000);
                             } else {
-                            showToast('下载次数不足！评论1次，点赞1次可获得更多', 'warning', 4000);
+                            showToast('下载次数不足！评论可获得更多下载次数', 'warning', 4000);
                             }
                             return;
                         }
@@ -2973,6 +3161,12 @@
 
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab], () => { currentPage.value = 1; });
+                watch(() => showUserAuthModal.value, (val) => {
+                    if (val && userAuthMode.value === 'register') resetCaptcha();
+                });
+                watch(() => userAuthMode.value, (val) => {
+                    if (val === 'register' && showUserAuthModal.value) resetCaptcha();
+                });
                 watch(selectedCard, (card) => {
                     if (!card) {
                         clearPreviewAsset();
@@ -3012,7 +3206,7 @@
                     window.addEventListener('resize', handleWindowResize);
                     window.addEventListener('focus', handleWindowFocus);
                     document.addEventListener('visibilitychange', handleVisibilityChange);
-                    document.addEventListener('click', () => { showSortDropdown.value = false; });
+                    document.addEventListener('click', () => { showSortDropdown.value = false; showUserMenu.value = false; });
                     window.addEventListener('message', (event) => {
                         if (event.data && event.data.type === 'slash_command') {
                             showToast(`触发指令：${event.data.content}`, 'success');
@@ -3028,20 +3222,23 @@
 
                 return {
                     cards, cardSort, showSortDropdown, loading, searchQuery, filteredCards, pagedCards, defaultAvatar,
-                    showUploadModal, showSearchModal, uploadingCard, isUploading, handleFileSelect, confirmUpload, handleUploadClick,
-                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, moveCard,
+                    showUploadModal, showSearchModal, showUserMenu, uploadingCard, isUploading, handleFileSelect, confirmUpload, handleUploadClick,
+                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured,
                     previewOpening, stopPreviewOpening,
                     toasts, currentTab, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     handleMobileScroll,
                     isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
-                    comments, loadingComments, newComment, submitComment, deleteComment, likeComment, likeCard, replyToComment, cancelReply,
+                    comments, loadingComments, newComment, submitComment, deleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
-                    downloadCredits,
+                    downloadCredits, computeHeat,
                     previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
                     handleUserAuth, handleUserLogout,
+                    captchaTrackRef, captchaState, startCaptchaDrag, resetCaptcha,
+                    // R18
+                    r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18, r18Countdown,
                     // Edit Card
                     editingCard, showEditModal, isEditUploading, startEditCard, handleEditFileSelect, confirmEditCard,
                     // Visit Tracking
