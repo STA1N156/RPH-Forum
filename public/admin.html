@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理后台 - 角色卡广�?/title>
+    <title>管理后台 - 角色卡广场</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
@@ -25,35 +25,35 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                         </svg>
                     </div>
-                    <h1 class="text-2xl font-bold text-gray-900">管理员登�?/h1>
-                    <p class="text-gray-500 mt-2">角色卡广�?· 管理后台</p>
+                    <h1 class="text-2xl font-bold text-gray-900">管理员登录</h1>
+                    <p class="text-gray-500 mt-2">角色卡广场 · 管理后台</p>
                 </div>
                 <form @submit.prevent="handleLogin">
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">用户�?/label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
                             <input v-model="loginForm.username" type="text" required autocomplete="username"
                                 class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                                placeholder="请输入管理员用户�?>
+                                placeholder="请输入管理员用户名">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
                             <input v-model="loginForm.password" type="password" required autocomplete="current-password"
                                 class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                                placeholder="请输入密�?>
+                                placeholder="请输入密码">
                         </div>
                         <div v-if="loginError" class="bg-red-50 text-red-600 text-sm p-3 rounded-xl">
                             {{ loginError }}
                         </div>
                         <button type="submit" :disabled="loginLoading"
                             class="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                            <span v-if="loginLoading">登录�?..</span>
-                            <span v-else>�?�?/span>
+                            <span v-if="loginLoading">登录中...</span>
+                            <span v-else>登 录</span>
                         </button>
                     </div>
                 </form>
                 <div class="mt-6 text-center">
-                    <a href="/" class="text-sm text-gray-500 hover:text-blue-600 transition">�?返回论坛首页</a>
+                    <a href="/" class="text-sm text-gray-500 hover:text-blue-600 transition">← 返回论坛首页</a>
                 </div>
             </div>
         </div>
@@ -65,13 +65,13 @@
             <aside class="fixed inset-y-0 left-0 z-40 w-[85vw] max-w-xs bg-gray-900 text-white flex-shrink-0 flex flex-col transform transition-transform duration-200 md:static md:w-64 md:max-w-none md:translate-x-0"
                    :class="showMobileMenu ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
                 <div class="p-6 border-b border-gray-800">
-                    <h1 class="text-lg font-bold">🎭 角色卡广�?/h1>
+                    <h1 class="text-lg font-bold">🎭 角色卡广场</h1>
                     <p class="text-gray-400 text-sm mt-1">管理后台</p>
                 </div>
                 <nav class="flex-1 p-4 space-y-1">
                     <button @click="currentPage = 'dashboard'; showMobileMenu = false" :class="currentPage === 'dashboard' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
-                        仪表�?
+                        仪表盘
                     </button>
                     <button @click="currentPage = 'cards'; showMobileMenu = false; loadAdminCards()" :class="currentPage === 'cards' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
@@ -104,7 +104,7 @@
                             <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold">A</div>
                             <span class="ml-3 text-sm text-gray-300">{{ adminUser?.username }}</span>
                         </div>
-                        <button @click="handleLogout" class="text-gray-500 hover:text-red-400 transition" title="退出登�?>
+                        <button @click="handleLogout" class="text-gray-500 hover:text-red-400 transition" title="退出登录">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                         </button>
                     </div>
@@ -120,10 +120,10 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
                         <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
-                            {{ {dashboard:'仪表�?,cards:'卡片管理',comments:'评论管理',users:'用户管理',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',comments:'评论管理',users:'用户管理',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
-                    <a href="/" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 �?/a>
+                    <a href="/" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
                 </header>
 
                 <div class="p-4 md:p-8">
@@ -140,7 +140,7 @@
                                         <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                                     </div>
                                 </div>
-                                <p class="text-xs text-green-600 mt-2">�?�?+{{ stats.recentCards || 0 }}</p>
+                                <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentCards || 0 }}</p>
                             </div>
                             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
@@ -152,7 +152,7 @@
                                         <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
                                     </div>
                                 </div>
-                                <p class="text-xs text-green-600 mt-2">�?�?+{{ stats.recentComments || 0 }}</p>
+                                <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentComments || 0 }}</p>
                             </div>
                             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
@@ -206,7 +206,7 @@
                             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm text-gray-500">今日新卡�?/p>
+                                        <p class="text-sm text-gray-500">今日新卡片</p>
                                         <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.todayNewCards || 0 }}</p>
                                     </div>
                                     <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
@@ -224,13 +224,13 @@
                                         <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                                     </div>
                                 </div>
-                                <p v-if="(stats.loginAttempts || 0) > 10" class="text-xs text-red-600 mt-2">�?疑似暴力破解攻击</p>
+                                <p v-if="(stats.loginAttempts || 0) > 10" class="text-xs text-red-600 mt-2">⚠ 疑似暴力破解攻击</p>
                             </div>
                         </div>
 
                         <!-- 7-Day Activity Chart -->
                         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">�?日活动趋�?/h3>
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">近7日活动趋势</h3>
                             <div class="flex items-center gap-4 mb-4 text-xs">
                                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-500 inline-block"></span> 上传</span>
                                 <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-500 inline-block"></span> 评论</span>
@@ -260,7 +260,7 @@
                                         <span class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" :class="index < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'">{{ index + 1 }}</span>
                                         <span class="ml-3 text-gray-900">{{ card.name }}</span>
                                     </div>
-                                    <span class="text-sm text-gray-500">{{ card.downloads_count }} 次下�?/span>
+                                    <span class="text-sm text-gray-500">{{ card.downloads_count }} 次下载</span>
                                 </div>
                                 <div v-if="!stats.topCards?.length" class="text-center text-gray-400 py-8">暂无数据</div>
                             </div>
@@ -272,7 +272,7 @@
                         <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                             <input v-model="cardSearch" @input="loadAdminCards()" type="text" placeholder="搜索卡片名称..."
                                 class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full md:w-64">
-                            <span class="text-sm text-gray-500">�?{{ cardData.total || 0 }} 张卡�?/span>
+                            <span class="text-sm text-gray-500">共 {{ cardData.total || 0 }} 张卡片</span>
                         </div>
                         <div class="md:hidden space-y-4">
                             <div v-for="card in cardData.cards" :key="'mobile-card-' + card.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
@@ -320,22 +320,22 @@
                         </div>
                         <!-- Pagination -->
                         <div v-if="cardData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
-                            <button @click="cardPage--; loadAdminCards()" :disabled="cardPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一�?/button>
+                            <button @click="cardPage--; loadAdminCards()" :disabled="cardPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ cardPage }} / {{ cardData.totalPages }}</span>
-                            <button @click="cardPage++; loadAdminCards()" :disabled="cardPage >= cardData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一�?/button>
+                            <button @click="cardPage++; loadAdminCards()" :disabled="cardPage >= cardData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
                     <!-- Comments Management -->
                     <div v-if="currentPage === 'comments'">
                         <div class="mb-4">
-                            <span class="text-sm text-gray-500">�?{{ commentData.total || 0 }} 条评�?/span>
+                            <span class="text-sm text-gray-500">共 {{ commentData.total || 0 }} 条评论</span>
                         </div>
                         <div class="md:hidden space-y-4">
                             <div v-for="comment in commentData.comments" :key="'mobile-comment-' + comment.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
-                                        <p class="text-sm font-semibold text-gray-900">{{ comment.card_name || '已删除卡�? }}</p>
+                                        <p class="text-sm font-semibold text-gray-900">{{ comment.card_name || '已删除卡片' }}</p>
                                         <p class="text-xs text-gray-400 mt-1">{{ comment.nickname }} · {{ formatDate(comment.created_at) }}</p>
                                     </div>
                                     <button @click="deleteAdminComment(comment)" class="px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium">删除</button>
@@ -349,7 +349,7 @@
                             <table class="w-full min-w-[820px]">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">所属卡�?/th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">所属卡片</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">昵称</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">内容</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
@@ -358,7 +358,7 @@
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
                                     <tr v-for="comment in commentData.comments" :key="comment.id" class="hover:bg-gray-50">
-                                        <td class="px-6 py-4 text-sm text-blue-600 max-w-[150px] truncate">{{ comment.card_name || '已删�? }}</td>
+                                        <td class="px-6 py-4 text-sm text-blue-600 max-w-[150px] truncate">{{ comment.card_name || '已删除' }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ comment.nickname }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-900 max-w-[400px] truncate">{{ comment.content }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(comment.created_at) }}</td>
@@ -372,9 +372,9 @@
                             <div v-if="!commentData.comments?.length" class="text-center text-gray-400 py-12">暂无评论</div>
                         </div>
                         <div v-if="commentData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
-                            <button @click="commentPage--; loadAdminComments()" :disabled="commentPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一�?/button>
+                            <button @click="commentPage--; loadAdminComments()" :disabled="commentPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ commentPage }} / {{ commentData.totalPages }}</span>
-                            <button @click="commentPage++; loadAdminComments()" :disabled="commentPage >= commentData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一�?/button>
+                            <button @click="commentPage++; loadAdminComments()" :disabled="commentPage >= commentData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
@@ -382,10 +382,10 @@
                     <div v-if="currentPage === 'users'">
                         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
                             <div>
-                                <span class="text-sm text-gray-500">�?{{ userData.total || 0 }} 位注册用�?/span>
-                                <p class="text-xs text-amber-600 mt-1">系统只保存哈希密码，无法查看原密码。可在这里重置为新密码或自动生成一次性临时密码�?/p>
+                                <span class="text-sm text-gray-500">共 {{ userData.total || 0 }} 位注册用户</span>
+                                <p class="text-xs text-amber-600 mt-1">系统只保存哈希密码，无法查看原密码。可在这里重置为新密码或自动生成一次性临时密码。</p>
                             </div>
-                            <input v-model="userSearch" @input="userPage = 1; loadAdminUsers()" placeholder="搜索用户�?.." class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-64" />
+                            <input v-model="userSearch" @input="userPage = 1; loadAdminUsers()" placeholder="搜索用户名..." class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-64" />
                         </div>
                         <div class="md:hidden space-y-4">
                             <div v-for="user in userData.users" :key="'mobile-' + user.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-4">
@@ -394,7 +394,7 @@
                                         <p class="text-base font-semibold text-gray-900">{{ user.username }}</p>
                                         <p class="text-xs text-gray-400 mt-1">ID {{ user.id }}</p>
                                     </div>
-                                    <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">{{ user.last_login ? '最近活�? : '从未登录' }}</span>
+                                    <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">{{ user.last_login ? '最近活跃' : '从未登录' }}</span>
                                 </div>
                                 <div class="grid grid-cols-2 gap-3 text-sm">
                                     <div class="rounded-xl bg-gray-50 p-3">
@@ -402,20 +402,20 @@
                                         <p class="text-gray-700 mt-1">{{ formatDate(user.created_at) }}</p>
                                     </div>
                                     <div class="rounded-xl bg-gray-50 p-3">
-                                        <p class="text-gray-400 text-xs">最后登�?/p>
+                                        <p class="text-gray-400 text-xs">最后登录</p>
                                         <p class="text-gray-700 mt-1">{{ user.last_login ? formatDate(user.last_login) : '从未' }}</p>
                                     </div>
                                 </div>
                                 <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
                                     <div class="flex items-center gap-2">
                                         <input v-model.number="userDraft(user).download_credits" type="number" min="0" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                        <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).saving ? '保存�?..' : '保存次数' }}</button>
+                                        <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).saving ? '保存中...' : '保存次数' }}</button>
                                     </div>
                                 </div>
                                 <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
-                                    <p class="text-xs text-gray-500">留空则自动生成临时密码，返回后只展示一次�?/p>
-                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="输入新密码，或留空自动生�? class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="w-full px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).resetting ? '重置�?..' : '重置密码' }}</button>
+                                    <p class="text-xs text-gray-500">留空则自动生成临时密码，返回后只展示一次。</p>
+                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="输入新密码，或留空自动生成" class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="w-full px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).resetting ? '重置中...' : '重置密码' }}</button>
                                     <div v-if="userDraft(user).generatedPassword" class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 break-all">
                                         临时密码：{{ userDraft(user).generatedPassword }}
                                     </div>
@@ -429,11 +429,11 @@
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户�?/th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">密码操作</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载积分</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">注册时间</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">最后登�?/th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">最后登录</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
@@ -442,10 +442,10 @@
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ user.username }}</td>
                                         <td class="px-6 py-4 text-sm">
                                             <div class="w-72 space-y-2">
-                                                <p class="text-xs text-gray-500">原密码不可见，可重置为指定密码或自动生成的临时密码�?/p>
+                                                <p class="text-xs text-gray-500">原密码不可见，可重置为指定密码或自动生成的临时密码。</p>
                                                 <div class="flex gap-2">
-                                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="留空则自动生�? class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="px-3 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).resetting ? '重置�?..' : '重置密码' }}</button>
+                                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="留空则自动生成" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="px-3 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).resetting ? '重置中...' : '重置密码' }}</button>
                                                 </div>
                                                 <div v-if="userDraft(user).generatedPassword" class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 break-all">
                                                     临时密码：{{ userDraft(user).generatedPassword }}
@@ -455,7 +455,7 @@
                                         <td class="px-6 py-4 text-sm text-gray-900">
                                             <div class="flex items-center gap-2 w-44">
                                                 <input v-model.number="userDraft(user).download_credits" type="number" min="0" class="w-24 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                                <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).saving ? '保存�?..' : '保存' }}</button>
+                                                <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).saving ? '保存中...' : '保存' }}</button>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(user.created_at) }}</td>
@@ -467,16 +467,16 @@
                             <div v-if="!userData.users?.length" class="text-center text-gray-400 py-12">暂无用户</div>
                         </div>
                         <div v-if="userData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
-                            <button @click="userPage--; loadAdminUsers()" :disabled="userPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一�?/button>
+                            <button @click="userPage--; loadAdminUsers()" :disabled="userPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ userPage }} / {{ userData.totalPages }}</span>
-                            <button @click="userPage++; loadAdminUsers()" :disabled="userPage >= userData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一�?/button>
+                            <button @click="userPage++; loadAdminUsers()" :disabled="userPage >= userData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
                     <!-- Operation Logs -->
                     <div v-if="currentPage === 'logs'">
                         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-                            <span class="text-sm text-gray-500">�?{{ logData.total || 0 }} 条记�?/span>
+                            <span class="text-sm text-gray-500">共 {{ logData.total || 0 }} 条记录</span>
                             <select v-model="logActionFilter" @change="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="">全部操作</option>
                                 <option value="login">登录</option>
@@ -485,8 +485,8 @@
                                 <option value="download">下载</option>
                                 <option value="edit">编辑</option>
                                 <option value="delete">删除</option>
-                                <option value="admin_login">管理员登�?/option>
-                                <option value="admin_delete_card">管理员删�?/option>
+                                <option value="admin_login">管理员登录</option>
+                                <option value="admin_delete_card">管理员删卡</option>
                                 <option value="admin_delete_comment">管理员删评论</option>
                             </select>
                         </div>
@@ -569,9 +569,9 @@
                             <div v-if="!logData.logs?.length" class="text-center text-gray-400 py-12">暂无日志</div>
                         </div>
                         <div v-if="logData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
-                            <button @click="logPage--; loadLogs()" :disabled="logPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一�?/button>
+                            <button @click="logPage--; loadLogs()" :disabled="logPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ logPage }} / {{ logData.totalPages }}</span>
-                            <button @click="logPage++; loadLogs()" :disabled="logPage >= logData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一�?/button>
+                            <button @click="logPage++; loadLogs()" :disabled="logPage >= logData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
@@ -582,14 +582,14 @@
                                 <div class="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
                                     <div>
                                         <h3 class="text-lg font-bold text-gray-900">标签管理</h3>
-                                        <p class="mt-1 text-sm text-gray-600">这里直接控制前台的热门标签和标签库展示内容。当前操作先写入草稿，点击保存后才会同步到前台�?/p>
+                                        <p class="mt-1 text-sm text-gray-600">这里直接控制前台的热门标签和标签库展示内容。当前操作先写入草稿，点击保存后才会同步到前台。</p>
                                     </div>
                                     <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                                         <span :class="tagSettingsDirty ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'" class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-sm font-medium">
-                                            {{ tagSettingsDirty ? '有未保存草稿' : '草稿已保�? }}
+                                            {{ tagSettingsDirty ? '有未保存草稿' : '草稿已保存' }}
                                         </span>
                                         <button @click="saveSettings" :disabled="settingsSaving" class="bg-orange-600 text-white px-5 py-2 rounded-xl hover:bg-orange-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
-                                            {{ settingsSaving ? '保存�?..' : '保存标签配置' }}
+                                            {{ settingsSaving ? '保存中...' : '保存标签配置' }}
                                         </button>
                                         <button @click="restoreSavedTagSnapshot" :disabled="!tagSettingsDirty || settingsSaving" class="px-5 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                             撤销本次修改
@@ -597,7 +597,7 @@
                                     </div>
                                 </div>
                                 <div v-if="tagSettingsDirty" class="mt-3 rounded-2xl border border-amber-200 bg-white/70 px-4 py-3 text-sm text-amber-700">
-                                    当前修改仍在后台草稿中。点击“保存标签配置”后，前台热门标签和标签库才会应用这次变更�?
+                                    当前修改仍在后台草稿中。点击“保存标签配置”后，前台热门标签和标签库才会应用这次变更。
                                 </div>
                             </div>
 
@@ -612,7 +612,7 @@
                                             v-model="tagInput.popular"
                                             @keydown.enter.prevent="addTags('popular')"
                                             type="text"
-                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标�?
+                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
                                             class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                                         >
                                         <button @click="addTags('popular')" class="px-5 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">
@@ -622,7 +622,7 @@
                                             {{ batchDraft.popular.open ? '收起批量' : '批量操作' }}
                                         </button>
                                     </div>
-                                    <p class="mt-2 text-xs text-gray-500">单个标签可直接编辑或删除；打开批量模式后，点击下方标签会自动加入批量队列�?/p>
+                                    <p class="mt-2 text-xs text-gray-500">单个标签可直接编辑或删除；打开批量模式后，点击下方标签会自动加入批量队列。</p>
 
                                     <div v-if="isTagEditorOpen('popular')" class="mt-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
                                         <div class="flex items-center justify-between gap-3">
@@ -648,7 +648,7 @@
                                                 {{ action.label }}
                                             </button>
                                         </div>
-                                        <textarea v-model="batchDraft.popular.text" rows="4" class="w-full px-4 py-3 border border-orange-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-orange-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效�?></textarea>
+                                        <textarea v-model="batchDraft.popular.text" rows="4" class="w-full px-4 py-3 border border-orange-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-orange-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
                                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                                             <button @click="applyBatchTags('popular')" class="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">执行批量操作</button>
                                             <button @click="clearBatchDraft('popular')" class="px-4 py-2.5 rounded-xl border border-orange-200 text-sm font-medium text-orange-700 hover:bg-orange-50 transition">清空批量内容</button>
@@ -660,12 +660,12 @@
                                         <div>
                                             <div class="flex items-center justify-between gap-3 mb-2">
                                                 <div class="text-sm font-semibold text-gray-800">当前配置</div>
-                                                <span class="text-xs text-gray-400">{{ tagEditor.popular.length }} �?/span>
+                                                <span class="text-xs text-gray-400">{{ tagEditor.popular.length }} 个</span>
                                             </div>
                                             <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
                                                 <template v-for="(tag, index) in tagEditor.popular" :key="'popular-editor-' + tag + '-' + index">
                                                     <div class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 max-w-full">
-                                                        <button @click="handleConfiguredTagClick('popular', index)" class="text-sm font-medium text-orange-700 break-all text-left hover:text-orange-900 transition" title="点击编辑标签或加入批量队�?>
+                                                        <button @click="handleConfiguredTagClick('popular', index)" class="text-sm font-medium text-orange-700 break-all text-left hover:text-orange-900 transition" title="点击编辑标签或加入批量队列">
                                                             {{ tag }}
                                                         </button>
                                                         <button @click="removeTag('popular', index)" class="p-1 rounded-full text-orange-500 hover:bg-orange-100 hover:text-red-600 transition" title="删除标签">
@@ -673,13 +673,13 @@
                                                         </button>
                                                     </div>
                                                 </template>
-                                                <span v-if="!tagEditor.popular.length" class="text-sm text-gray-400">当前未手动配置热门标签�?/span>
+                                                <span v-if="!tagEditor.popular.length" class="text-sm text-gray-400">当前未手动配置热门标签。</span>
                                             </div>
                                         </div>
 
                                         <div v-if="hiddenTagState.popular.length > 0">
                                             <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">已隐藏标�?/div>
+                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
                                                 <button @click="clearHiddenTags('popular')" class="text-xs font-medium text-orange-700 hover:text-orange-900">清空隐藏</button>
                                             </div>
                                             <div class="flex flex-wrap gap-2">
@@ -693,7 +693,7 @@
                                             <div class="text-xs font-medium text-gray-500 mb-2">前台热门标签预览</div>
                                             <div class="flex flex-wrap gap-2 min-h-[2rem]">
                                                 <button v-for="tag in popularTagPreview" :key="'popular-' + tag" @click="handlePreviewTagClick('popular', tag)" class="px-3 py-1 rounded-full text-sm bg-orange-100 text-orange-700 hover:bg-orange-200 transition">{{ tag }}</button>
-                                                <span v-if="!popularTagPreview.length" class="text-sm text-gray-400">暂无热门标签预览�?/span>
+                                                <span v-if="!popularTagPreview.length" class="text-sm text-gray-400">暂无热门标签预览。</span>
                                             </div>
                                         </div>
                                     </div>
@@ -701,15 +701,15 @@
 
                                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                                     <div class="flex items-center justify-between gap-3 mb-3">
-                                        <h3 class="text-lg font-bold text-gray-900">标签�?/h3>
-                                        <span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">搜索与筛选基础�?/span>
+                                        <h3 class="text-lg font-bold text-gray-900">标签库</h3>
+                                        <span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">搜索与筛选基础库</span>
                                     </div>
                                     <div class="flex flex-col gap-2.5 sm:flex-row">
                                         <input
                                             v-model="tagInput.library"
                                             @keydown.enter.prevent="addTags('library')"
                                             type="text"
-                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标�?
+                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
                                             class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                                         >
                                         <button @click="addTags('library')" class="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
@@ -719,11 +719,11 @@
                                             {{ batchDraft.library.open ? '收起批量' : '批量操作' }}
                                         </button>
                                     </div>
-                                    <p class="mt-2 text-xs text-gray-500">标签库用于控制前台左上角标签库的展示顺序和基础集合；打开批量模式后，点击下方标签会自动加入批量队列�?/p>
+                                    <p class="mt-2 text-xs text-gray-500">标签库用于控制前台左上角标签库的展示顺序和基础集合；打开批量模式后，点击下方标签会自动加入批量队列。</p>
 
                                     <div v-if="isTagEditorOpen('library')" class="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 space-y-3">
                                         <div class="flex items-center justify-between gap-3">
-                                            <div class="text-sm font-semibold text-blue-800">正在编辑单个标签库标�?/div>
+                                            <div class="text-sm font-semibold text-blue-800">正在编辑单个标签库标签</div>
                                             <button @click="closeTagEditor('library')" class="text-xs font-medium text-gray-500 hover:text-gray-700">返回列表</button>
                                         </div>
                                         <div class="flex flex-col gap-2 sm:flex-row">
@@ -745,7 +745,7 @@
                                                 {{ action.label }}
                                             </button>
                                         </div>
-                                        <textarea v-model="batchDraft.library.text" rows="4" class="w-full px-4 py-3 border border-blue-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-blue-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效�?></textarea>
+                                        <textarea v-model="batchDraft.library.text" rows="4" class="w-full px-4 py-3 border border-blue-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-blue-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
                                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                                             <button @click="applyBatchTags('library')" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">执行批量操作</button>
                                             <button @click="clearBatchDraft('library')" class="px-4 py-2.5 rounded-xl border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition">清空批量内容</button>
@@ -757,12 +757,12 @@
                                         <div>
                                             <div class="flex items-center justify-between gap-3 mb-2">
                                                 <div class="text-sm font-semibold text-gray-800">当前配置</div>
-                                                <span class="text-xs text-gray-400">{{ tagEditor.library.length }} �?/span>
+                                                <span class="text-xs text-gray-400">{{ tagEditor.library.length }} 个</span>
                                             </div>
                                             <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
                                                 <template v-for="(tag, index) in tagEditor.library" :key="'library-editor-' + tag + '-' + index">
                                                     <div class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 max-w-full">
-                                                        <button @click="handleConfiguredTagClick('library', index)" class="text-sm font-medium text-blue-700 break-all text-left hover:text-blue-900 transition" title="点击编辑标签或加入批量队�?>
+                                                        <button @click="handleConfiguredTagClick('library', index)" class="text-sm font-medium text-blue-700 break-all text-left hover:text-blue-900 transition" title="点击编辑标签或加入批量队列">
                                                             {{ tag }}
                                                         </button>
                                                         <button @click="removeTag('library', index)" class="p-1 rounded-full text-blue-500 hover:bg-blue-100 hover:text-red-600 transition" title="删除标签">
@@ -770,13 +770,13 @@
                                                         </button>
                                                     </div>
                                                 </template>
-                                                <span v-if="!tagEditor.library.length" class="text-sm text-gray-400">当前未手动配置标签库�?/span>
+                                                <span v-if="!tagEditor.library.length" class="text-sm text-gray-400">当前未手动配置标签库。</span>
                                             </div>
                                         </div>
 
                                         <div v-if="hiddenTagState.library.length > 0">
                                             <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">已隐藏标�?/div>
+                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
                                                 <button @click="clearHiddenTags('library')" class="text-xs font-medium text-blue-700 hover:text-blue-900">清空隐藏</button>
                                             </div>
                                             <div class="flex flex-wrap gap-2">
@@ -787,13 +787,13 @@
                                         </div>
 
                                         <div>
-                                            <div class="text-xs font-medium text-gray-500 mb-2">前台标签库预�?/div>
+                                            <div class="text-xs font-medium text-gray-500 mb-2">前台标签库预览</div>
                                             <div class="flex flex-wrap gap-2 min-h-[2rem] max-h-40 overflow-y-auto pr-1">
                                                 <button v-for="item in tagLibraryPreview" :key="'library-' + item.tag" @click="handlePreviewTagClick('library', item.tag)" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 transition">
                                                     <span>{{ item.tag }}</span>
                                                     <span class="text-[11px] font-bold opacity-70">{{ item.count }}</span>
                                                 </button>
-                                                <span v-if="!tagLibraryPreview.length" class="text-sm text-gray-400">暂无标签库预览�?/span>
+                                                <span v-if="!tagLibraryPreview.length" class="text-sm text-gray-400">暂无标签库预览。</span>
                                             </div>
                                         </div>
                                     </div>
@@ -828,51 +828,14 @@
                                         </label>
                                     </div>
                                     <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-                                        热门标签和标签库已经单独放到左侧的“标签管理”页面，方便管理员直接维护�?
+                                        热门标签和标签库已经单独放到左侧的“标签管理”页面，方便管理员直接维护。
                                     </div>
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                         <button @click="saveSettings" :disabled="settingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
-                                            {{ settingsSaving ? '保存�?..' : '保存设置' }}
+                                            {{ settingsSaving ? '保存中...' : '保存设置' }}
                                         </button>
                                         <button @click="currentPage = 'tags'; loadSettings()" class="px-6 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
                                             前往标签管理
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Announcement Management -->
-                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">
-                                    <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
-                                    公告管理
-                                </h3>
-                                <p class="text-sm text-gray-500 mb-4">设置前台弹窗公告内容，用户确认后不会重复弹出。点击“重新推送”可强制所有用户重新查看�?/p>
-                                <div class="space-y-4">
-                                    <div class="flex items-center gap-3">
-                                        <label class="flex items-center gap-2">
-                                            <input v-model="siteSettings.announcement_enabled" type="checkbox" true-value="true" false-value="false" class="w-4 h-4 text-orange-600 rounded">
-                                            <span class="text-sm font-medium text-gray-700">启用公告</span>
-                                        </label>
-                                        <span class="text-xs px-2 py-0.5 rounded-full" :class="siteSettings.announcement_enabled === 'true' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
-                                            {{ siteSettings.announcement_enabled === 'true' ? '已启�? : '已关�? }}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">公告内容</label>
-                                        <textarea v-model="siteSettings.announcement_content" rows="6" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm resize-y" placeholder="输入公告内容，支持换�?></textarea>
-                                    </div>
-                                    <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-2">
-                                        <span>当前版本号：<b class="text-gray-700">{{ siteSettings.announcement_version || '1' }}</b></span>
-                                        <span class="text-gray-300">|</span>
-                                        <span>修改内容后点击下方“保存设置”即可。点“重新推送”会更新版本号，强制所有用户重新查看�?/span>
-                                    </div>
-                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-                                        <button @click="saveSettings" :disabled="settingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60">
-                                            {{ settingsSaving ? '保存�?..' : '保存设置' }}
-                                        </button>
-                                        <button @click="siteSettings.announcement_version = String(Date.now()); saveSettings()" :disabled="settingsSaving" class="bg-orange-500 text-white px-6 py-2 rounded-xl hover:bg-orange-600 transition text-sm font-medium disabled:opacity-60">
-                                            重新推送公告（强制所有用户重新查看）
                                         </button>
                                     </div>
                                 </div>
@@ -887,11 +850,11 @@
                                         <input v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">新密�?/label>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">新密码</label>
                                         <input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                                     </div>
                                     <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">确认新密�?/label>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
                                         <input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                                     </div>
                                     <div v-if="passwordError" class="bg-red-50 text-red-600 text-sm p-3 rounded-xl">{{ passwordError }}</div>
@@ -903,20 +866,20 @@
                             <!-- Data Management -->
                             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-2">数据管理</h3>
-                                <p class="text-sm text-gray-500 mb-4">导出全部数据库文件（.db），在新环境部署后导入即可延续使用。直接传输数据库文件，不会出�?JSON 序列化失败的问题�?/p>
+                                <p class="text-sm text-gray-500 mb-4">导出全部数据库文件（.db），在新环境部署后导入即可延续使用。直接传输数据库文件，不会出现 JSON 序列化失败的问题。</p>
                                 <div class="space-y-4">
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                         <button @click="exportData" :disabled="dataExporting" class="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                            {{ dataExporting ? '导出�?..' : '一键导出数据库文件' }}
+                                            {{ dataExporting ? '导出中...' : '一键导出数据库文件' }}
                                         </button>
                                     </div>
                                     <div class="border-t border-gray-100 pt-4">
-                                        <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务�?/p>
+                                        <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务）</p>
                                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                             <label class="inline-flex items-center gap-2 bg-gray-900 text-white px-6 py-2.5 rounded-xl hover:bg-gray-800 transition text-sm font-medium cursor-pointer" :class="dataImporting ? 'opacity-60 cursor-not-allowed' : ''">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m4-8l-4-4m0 0L16 8m4-4v12"/></svg>
-                                                {{ dataImporting ? '导入�?..' : '选择 .db 文件并导�? }}
+                                                {{ dataImporting ? '导入中...' : '选择 .db 文件并导入' }}
                                                 <input type="file" accept=".db" @change="importData" class="hidden" :disabled="dataImporting">
                                             </label>
                                         </div>
@@ -1027,10 +990,7 @@
                     popular_tags: '',
                     tag_library: '',
                     hidden_popular_tags: '',
-                    hidden_tag_library: '',
-                    announcement_content: '禁止上传未打标签的角色卡\n禁止上传酒馆和非自制卡\n禁止恶意提交评论/注册\n禁止R18内容不打R18标签',
-                    announcement_enabled: 'true',
-                    announcement_version: '1'
+                    hidden_tag_library: ''
                 });
                 const tagPreviewCards = ref([]);
                 const tagEditor = reactive({
@@ -1327,7 +1287,7 @@
                     tagEditor[type] = [];
                     cancelTagEdit(type);
                     syncSettingsFromTagEditor();
-                    showToast(type === 'popular' ? '热门标签配置已清�? : '标签库配置已清空', 'info');
+                    showToast(type === 'popular' ? '热门标签配置已清空' : '标签库配置已清空', 'info');
                 }
 
                 function restoreHiddenTag(type, tag) {
@@ -1338,7 +1298,7 @@
                 function clearHiddenTags(type) {
                     hiddenTagState[type] = [];
                     syncSettingsFromTagEditor();
-                    showToast(type === 'popular' ? '热门标签隐藏列表已清�? : '标签库隐藏列表已清空', 'info');
+                    showToast(type === 'popular' ? '热门标签隐藏列表已清空' : '标签库隐藏列表已清空', 'info');
                 }
 
                 function applyBatchTags(type) {
@@ -1497,7 +1457,7 @@
                     try {
                         const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id, { method: 'DELETE', headers: authHeaders() });
                         if (resp.ok) {
-                            showToast('卡片已删�?, 'success');
+                            showToast('卡片已删除', 'success');
                             loadAdminCards();
                             loadDashboard();
                         }
@@ -1520,7 +1480,7 @@
                     try {
                         const resp = await fetch(API_BASE + '/api/admin/comments/' + comment.id, { method: 'DELETE', headers: authHeaders() });
                         if (resp.ok) {
-                            showToast('评论已删�?, 'success');
+                            showToast('评论已删除', 'success');
                             loadAdminComments();
                             loadDashboard();
                         }
@@ -1556,7 +1516,7 @@
                         }
                         Object.assign(user, data.user);
                         draft.download_credits = data.user.download_credits;
-                        showToast('下载次数已更�?, 'success');
+                        showToast('下载次数已更新', 'success');
                     } catch (err) {
                         showToast(err.message || '保存失败', 'error');
                     } finally {
@@ -1580,7 +1540,7 @@
                         }
                         draft.generatedPassword = data.temporary_password || '';
                         draft.newPassword = '';
-                        showToast('密码已重�?, 'success');
+                        showToast('密码已重置', 'success');
                     } catch (err) {
                         showToast(err.message || '重置失败', 'error');
                     } finally {
@@ -1603,7 +1563,7 @@
                     const labels = {
                         login: '登录', register: '注册', upload: '上传',
                         download: '下载', edit: '编辑', delete: '删除',
-                        admin_login: '管理员登�?, admin_delete_card: '管理员删�?,
+                        admin_login: '管理员登录', admin_delete_card: '管理员删卡',
                         admin_delete_comment: '管理员删评论',
                         admin_update_user_credits: '调整下载次数',
                         admin_reset_user_password: '重置用户密码',
@@ -1643,7 +1603,7 @@
                         }
                         captureSavedTagSnapshot();
                         resetTagInteractionState();
-                        showToast('设置已保�?, 'success');
+                        showToast('设置已保存', 'success');
                     } catch (err) {
                         showToast(err.message || '保存失败', 'error');
                     } finally {
@@ -1655,11 +1615,11 @@
                     passwordError.value = '';
                     passwordSuccess.value = '';
                     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-                        passwordError.value = '两次输入的新密码不一�?;
+                        passwordError.value = '两次输入的新密码不一致';
                         return;
                     }
                     if (passwordForm.newPassword.length < 6) {
-                        passwordError.value = '新密码长度至�?�?;
+                        passwordError.value = '新密码长度至少6位';
                         return;
                     }
                     try {
@@ -1703,7 +1663,7 @@
                         a.click();
                         a.remove();
                         URL.revokeObjectURL(url);
-                        showToast('数据库导出成�?, 'success');
+                        showToast('数据库导出成功', 'success');
                     } catch (err) {
                         showToast(err.message || '导出失败', 'error');
                     } finally {
@@ -1721,7 +1681,7 @@
                         return;
                     }
 
-                    if (!confirm('警告：导入将替换当前所有数据，服务会自动重启以加载新数据。\n\n建议先导出当前数据作为保险。\n\n确定要继续吗�?)) {
+                    if (!confirm('警告：导入将替换当前所有数据，服务会自动重启以加载新数据。\n\n建议先导出当前数据作为保险。\n\n确定要继续吗？')) {
                         return;
                     }
 
@@ -1745,9 +1705,9 @@
 
                         importResult.value = {
                             success: true,
-                            message: `导入成功！用�?${result.stats.users} 个，角色�?${result.stats.cards} 张，评论 ${result.stats.comments} 条。服务正在重�?..`
+                            message: `导入成功！用户 ${result.stats.users} 个，角色卡 ${result.stats.cards} 张，评论 ${result.stats.comments} 条。服务正在重启...`
                         };
-                        showToast('数据库导入成功，服务重启�?..', 'success');
+                        showToast('数据库导入成功，服务重启中...', 'success');
 
                         // Wait for server restart then reload
                         if (result.restart) {
