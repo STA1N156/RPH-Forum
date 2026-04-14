@@ -40,7 +40,7 @@
             ],
             "volumes": [
                 {
-                    "id": "data",
+                    "id": "data2",
                     "dir": "/app/data"
                 }
             ]

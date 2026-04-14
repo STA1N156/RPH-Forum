@@ -1557,7 +1557,10 @@ const PUBLIC_SETTINGS_KEYS = new Set([
     'popular_tags',
     'tag_library',
     'hidden_popular_tags',
-    'hidden_tag_library'
+    'hidden_tag_library',
+    'announcement_content',
+    'announcement_enabled',
+    'announcement_version'
 ]);
 
 app.get('/api/settings', (req, res) => {
@@ -1580,7 +1583,8 @@ const ALLOWED_SETTINGS_KEYS = new Set([
     'site_name', 'site_description', 'allow_anonymous_upload',
     'allow_anonymous_comment', 'max_upload_size_mb',
     'popular_tags', 'tag_library',
-    'hidden_popular_tags', 'hidden_tag_library'
+    'hidden_popular_tags', 'hidden_tag_library',
+    'announcement_content', 'announcement_enabled', 'announcement_version'
 ]);
 
 const TAG_SETTING_KEYS = new Set([
