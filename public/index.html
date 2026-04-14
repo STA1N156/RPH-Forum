@@ -386,7 +386,7 @@
                     </div>
                     <div class="px-2.5 py-1 bg-green-50 text-green-600 border border-green-100 text-xs font-bold rounded-xl whitespace-nowrap flex items-center gap-1">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-                        评论 +2
+                        评论 +2（日限2次）
                     </div>
                 </div>
             </div>
@@ -566,9 +566,10 @@
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                                 <span>{{ card.comment_count || 0 }}</span>
                             </span>
-                            <span class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-orange-400">
+                            <span @click.stop="isAdmin ? openHeatEdit(card) : null" class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-orange-400" :class="{ 'cursor-pointer hover:bg-orange-50 transition-colors': isAdmin }" :title="isAdmin ? '点击调整热度' : ''">
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
                                 <span>{{ computeHeat(card) }}</span>
+                                <svg v-if="isAdmin" class="w-3 h-3 text-orange-300 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                             </span>
                         </div>
                     </div>
@@ -921,7 +922,7 @@
                                                 <button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button>
                                                 后即可评论
                                             </span>
-                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会</span>
+                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
                                             <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
                                         </div>
                                     </div>
@@ -1109,7 +1110,7 @@
                                                 <button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button>
                                                 后即可评论
                                             </span>
-                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会</span>
+                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
                                             <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
                                         </div>
                                     </div>
@@ -1196,6 +1197,50 @@
                         <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Heat Edit Modal -->
+        <div v-if="showHeatEditModal && editingHeatCard" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" @click.self="showHeatEditModal = false">
+            <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-scale-in overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-orange-50 to-amber-50">
+                    <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
+                        调整热度
+                    </h3>
+                    <button @click="showHeatEditModal = false" class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div class="text-sm font-bold text-gray-600 truncate">卡片：{{ editingHeatCard.name }}</div>
+                    <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
+                        <span>当前热度：<b class="text-orange-500">{{ computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×1.5 + 下载×2.5）</span>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">
+                            <span class="flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                浏览量
+                            </span>
+                        </label>
+                        <input v-model.number="heatEditForm.views_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">
+                            <span class="flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                下载量
+                            </span>
+                        </label>
+                        <input v-model.number="heatEditForm.downloads_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button @click="showHeatEditModal = false" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-colors">取消</button>
+                        <button @click="submitHeatEdit" class="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-bold shadow-md shadow-orange-200 transition-all active:scale-95">保存</button>
                     </div>
                 </div>
             </div>
@@ -2526,14 +2571,18 @@
                         // Load comments
                         fetchComments(card.id);
 
-                        // Track card view count
-                        try {
-                            fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-                            // Update view count in card list
-                            const listCard = cards.value.find(c => c.id === card.id);
-                            if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
-                        } catch (e) {
-                            console.error('Track view error:', e);
+                        // Track card view count (skip for card owner to avoid self-inflating heat)
+                        if (!isCardOwnedByCurrentUser(card)) {
+                            try {
+                                const viewHeaders = { 'Content-Type': 'application/json' };
+                                if (isLoggedIn.value) Object.assign(viewHeaders, userAuthHeaders());
+                                fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: viewHeaders });
+                                // Update view count in card list
+                                const listCard = cards.value.find(c => c.id === card.id);
+                                if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
+                            } catch (e) {
+                                console.error('Track view error:', e);
+                            }
                         }
                     } finally {
                         const elapsed = Date.now() - openingStartedAt;
@@ -2792,7 +2841,20 @@
                         newComment.content = '';
                         newComment.reply_to_id = null;
                         newComment.reply_to_name = '';
-                            showToast('评论发布成功！获得 2 次下载机会', 'success');
+
+                        // Update local comment_count on the card to reflect heat change
+                        if (selectedCard.value) {
+                            const listCard = cards.value.find(c => c.id === selectedCard.value.id);
+                            if (listCard) {
+                                listCard.comment_count = (listCard.comment_count || 0) + 1;
+                            }
+                        }
+
+                            if (data.credits_earned) {
+                                showToast('评论发布成功！获得 2 次下载机会', 'success');
+                            } else {
+                                showToast('评论发布成功！今日评论获取下载机会已达上限', 'info');
+                            }
                     } catch (err) {
                         console.error('Error submitting comment:', err);
                         showToast('评论失败: ' + err.message, 'error');
@@ -2818,6 +2880,52 @@
 
                 const computeHeat = (card) => {
                     return Math.round((card.views_count || 0) * 1.0 + (card.comment_count || 0) * 1.5 + (card.downloads_count || 0) * 2.5);
+                };
+
+                // ============== Admin Heat Adjustment ==============
+                const showHeatEditModal = ref(false);
+                const editingHeatCard = ref(null);
+                const heatEditForm = reactive({ views_count: 0, downloads_count: 0 });
+
+                const openHeatEdit = (card) => {
+                    if (!isAdmin.value) return;
+                    editingHeatCard.value = card;
+                    heatEditForm.views_count = card.views_count || 0;
+                    heatEditForm.downloads_count = card.downloads_count || 0;
+                    showHeatEditModal.value = true;
+                };
+
+                const submitHeatEdit = async () => {
+                    if (!editingHeatCard.value) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/cards/' + editingHeatCard.value.id + '/heat', {
+                            method: 'PUT',
+                            headers: adminAuthHeaders(),
+                            body: JSON.stringify({
+                                views_count: parseInt(heatEditForm.views_count) || 0,
+                                downloads_count: parseInt(heatEditForm.downloads_count) || 0
+                            })
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json();
+                            throw new Error(err.error || '调整失败');
+                        }
+                        const data = await resp.json();
+                        // Update local card data
+                        const listCard = cards.value.find(c => c.id === editingHeatCard.value.id);
+                        if (listCard) {
+                            listCard.views_count = data.views_count;
+                            listCard.downloads_count = data.downloads_count;
+                        }
+                        if (selectedCard.value && selectedCard.value.id === editingHeatCard.value.id) {
+                            selectedCard.value.views_count = data.views_count;
+                            selectedCard.value.downloads_count = data.downloads_count;
+                        }
+                        showHeatEditModal.value = false;
+                        showToast('热度调整成功', 'success');
+                    } catch (err) {
+                        showToast(err.message || '调整失败', 'error');
+                    }
                 };
 
                 const likeComment = async (comment) => {
@@ -2870,7 +2978,17 @@
                         });
                         if (!resp.ok) throw new Error('删除失败');
                         
-                        comments.value = comments.value.filter(c => c.id !== commentId);
+                        // Count how many comments are being removed (the comment + its replies)
+                        const removedCount = comments.value.filter(c => c.id === commentId || c.reply_to_id === commentId).length;
+                        comments.value = comments.value.filter(c => c.id !== commentId && c.reply_to_id !== commentId);
+
+                        // Update local comment_count on the card to reflect heat change immediately
+                        if (selectedCard.value) {
+                            const listCard = cards.value.find(c => c.id === selectedCard.value.id);
+                            if (listCard) {
+                                listCard.comment_count = Math.max(0, (listCard.comment_count || 0) - removedCount);
+                            }
+                        }
                         showToast('评论已删除', 'success');
                     } catch (err) {
                         console.error('Delete comment error:', err);
@@ -2993,13 +3111,16 @@
                             throw new Error(data.error || '下载次数更新失败');
                         }
 
-                        const listCard = cards.value.find(item => item.id === card.id);
-                        if (listCard) {
-                            listCard.downloads_count = (listCard.downloads_count || 0) + 1;
-                        }
-                        card.downloads_count = (card.downloads_count || 0) + 1;
-                        if (selectedCard.value && selectedCard.value.id === card.id) {
-                            selectedCard.value.downloads_count = card.downloads_count;
+                        // Only increment local download count for non-owners (owners don't inflate count)
+                        if (!isCardOwnedByCurrentUser(card)) {
+                            const listCard = cards.value.find(item => item.id === card.id);
+                            if (listCard) {
+                                listCard.downloads_count = (listCard.downloads_count || 0) + 1;
+                            }
+                            card.downloads_count = (card.downloads_count || 0) + 1;
+                            if (selectedCard.value && selectedCard.value.id === card.id) {
+                                selectedCard.value.downloads_count = card.downloads_count;
+                            }
                         }
                         if (data.new_credits !== undefined && currentUser.value) {
                             currentUser.value = { ...currentUser.value, download_credits: data.new_credits };
@@ -3232,6 +3353,7 @@
                     comments, loadingComments, newComment, submitComment, deleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
+                    showHeatEditModal, editingHeatCard, heatEditForm, openHeatEdit, submitHeatEdit,
                     previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,

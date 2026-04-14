@@ -1040,6 +1040,49 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
     }
 });
 
+// ============== Card Heat Adjustment (Admin Only) ==============
+app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const card = db.prepare('SELECT id, name, views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        const { views_count, downloads_count } = req.body;
+        const fields = [];
+        const values = [];
+
+        if (views_count !== undefined) {
+            const v = parseInt(views_count);
+            if (!Number.isInteger(v) || v < 0) return res.status(400).json({ error: '浏览量必须是非负整数' });
+            fields.push('views_count = ?');
+            values.push(v);
+        }
+        if (downloads_count !== undefined) {
+            const d = parseInt(downloads_count);
+            if (!Number.isInteger(d) || d < 0) return res.status(400).json({ error: '下载量必须是非负整数' });
+            fields.push('downloads_count = ?');
+            values.push(d);
+        }
+
+        if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+
+        values.push(id);
+        db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+        logOperation({
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: req.ip,
+            details: { name: card.name, views_count, downloads_count }
+        });
+
+        const updated = db.prepare('SELECT views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
+        res.json({ success: true, views_count: updated.views_count, downloads_count: updated.downloads_count });
+    } catch (err) {
+        console.error('Admin adjust heat error:', err);
+        res.status(500).json({ error: '调整热度失败' });
+    }
+});
+
 app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
@@ -1048,8 +1091,8 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
 
         let newCredits = null;
         const recordDownload = db.transaction(() => {
+            const isOwner = req.user && card.uploader_user_id === req.user.id;
             if (!req.admin) {
-                const isOwner = req.user && card.uploader_user_id === req.user.id;
                 if (!isOwner) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                     if (result.changes === 0) {
@@ -1061,7 +1104,10 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
                 newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
             }
 
-            db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+            // Author/admin downloads don't inflate download count
+            if (!isOwner && !req.admin) {
+                db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+            }
         });
 
         recordDownload();
@@ -1238,13 +1284,22 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             if (replyComment) replyToName = replyComment.username || '匿名用户';
         }
 
-        // Insert comment and add 2 credits in a transaction
+        // Check daily comment credit limit (max 2 comments per day earn credits)
+        const todayStr = now.slice(0, 10); // YYYY-MM-DD
+        const todayCommentCount = db.prepare(
+            "SELECT COUNT(*) as count FROM character_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
+        ).get(userId, todayStr, todayStr).count;
+        const canEarnCredits = todayCommentCount < 2;
+
+        // Insert comment and optionally add credits
         const insertComment = db.transaction(() => {
             db.prepare(
                 'INSERT INTO character_comments (id, card_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.cardId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
 
-            db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+            if (canEarnCredits) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+            }
         });
         insertComment();
 
@@ -1255,7 +1310,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         comment.card_uploader_id = db.prepare('SELECT uploader_user_id FROM character_cards WHERE id = ?').get(req.params.cardId)?.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
-        res.json({ comment, new_credits: updatedUser.download_credits });
+        res.json({ comment, new_credits: updatedUser.download_credits, credits_earned: canEarnCredits });
     } catch (err) {
         console.error('Create comment error:', err);
         res.status(500).json({ error: '发布评论失败' });
@@ -1745,12 +1800,20 @@ app.post('/api/track/visit', (req, res) => {
     }
 });
 
-// Card view count tracking
-app.post('/api/cards/:id/view', (req, res) => {
+// Card view count tracking (skip for card owner to prevent self-inflating heat)
+app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT id, uploader_user_id FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        // Skip view count increment for card owner
+        const isOwner = req.user && card.uploader_user_id === req.user.id;
+        if (isOwner) {
+            const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+            return res.json({ success: true, views_count: current.views_count });
+        }
+
         db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
         const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
         res.json({ success: true, views_count: updated.views_count });
