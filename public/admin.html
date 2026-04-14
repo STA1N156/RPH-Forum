@@ -866,21 +866,21 @@
                             <!-- Data Management -->
                             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-2">数据管理</h3>
-                                <p class="text-sm text-gray-500 mb-4">导出全部数据（用户、角色卡、评论、设置等）为 JSON 文件，在新环境部署后导入即可延续使用。</p>
+                                <p class="text-sm text-gray-500 mb-4">导出全部数据库文件（.db），在新环境部署后导入即可延续使用。直接传输数据库文件，不会出现 JSON 序列化失败的问题。</p>
                                 <div class="space-y-4">
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                         <button @click="exportData" :disabled="dataExporting" class="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                            {{ dataExporting ? '导出中...' : '一键导出全部数据' }}
+                                            {{ dataExporting ? '导出中...' : '一键导出数据库文件' }}
                                         </button>
                                     </div>
                                     <div class="border-t border-gray-100 pt-4">
-                                        <p class="text-sm text-gray-500 mb-3">导入备份文件（将清空当前数据并替换为备份内容）</p>
+                                        <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务）</p>
                                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                             <label class="inline-flex items-center gap-2 bg-gray-900 text-white px-6 py-2.5 rounded-xl hover:bg-gray-800 transition text-sm font-medium cursor-pointer" :class="dataImporting ? 'opacity-60 cursor-not-allowed' : ''">
                                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m4-8l-4-4m0 0L16 8m4-4v12"/></svg>
-                                                {{ dataImporting ? '导入中...' : '选择备份文件并导入' }}
-                                                <input type="file" accept=".json" @change="importData" class="hidden" :disabled="dataImporting">
+                                                {{ dataImporting ? '导入中...' : '选择 .db 文件并导入' }}
+                                                <input type="file" accept=".db" @change="importData" class="hidden" :disabled="dataImporting">
                                             </label>
                                         </div>
                                         <div v-if="importResult" class="mt-3 rounded-xl p-3 text-sm" :class="importResult.success ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'">
@@ -1641,7 +1641,7 @@
                     }
                 }
 
-                // ============== Data Export/Import ==============
+                // ============== Data Export/Import (SQLite DB File) ==============
                 const dataExporting = ref(false);
                 const dataImporting = ref(false);
                 const importResult = ref(null);
@@ -1658,12 +1658,12 @@
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.json`;
+                        a.download = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
                         URL.revokeObjectURL(url);
-                        showToast('数据导出成功', 'success');
+                        showToast('数据库导出成功', 'success');
                     } catch (err) {
                         showToast(err.message || '导出失败', 'error');
                     } finally {
@@ -1676,23 +1676,27 @@
                     if (!file) return;
                     e.target.value = '';
 
-                    if (!confirm('警告：导入将清空当前所有用户、角色卡和评论数据，并替换为备份文件中的内容。\n\n建议先导出当前数据作为保险。\n\n确定要继续吗？')) {
+                    if (!file.name.endsWith('.db')) {
+                        showToast('请选择 .db 格式的数据库备份文件', 'warning');
+                        return;
+                    }
+
+                    if (!confirm('警告：导入将替换当前所有数据，服务会自动重启以加载新数据。\n\n建议先导出当前数据作为保险。\n\n确定要继续吗？')) {
                         return;
                     }
 
                     dataImporting.value = true;
                     importResult.value = null;
                     try {
-                        const text = await file.text();
-                        const jsonData = JSON.parse(text);
-                        if (!jsonData.export_version) {
-                            throw new Error('无效的备份文件格式');
-                        }
+                        const buffer = await file.arrayBuffer();
 
                         const resp = await fetch(API_BASE + '/api/admin/import', {
                             method: 'POST',
-                            headers: authHeaders(),
-                            body: JSON.stringify(jsonData)
+                            headers: {
+                                'Authorization': 'Bearer ' + token.value,
+                                'Content-Type': 'application/octet-stream'
+                            },
+                            body: buffer
                         });
                         const result = await resp.json();
                         if (!resp.ok) {
@@ -1701,11 +1705,16 @@
 
                         importResult.value = {
                             success: true,
-                            message: `导入成功！用户 ${result.stats.users} 个，角色卡 ${result.stats.cards} 张，评论 ${result.stats.comments} 条，设置 ${result.stats.settings} 项`
+                            message: `导入成功！用户 ${result.stats.users} 个，角色卡 ${result.stats.cards} 张，评论 ${result.stats.comments} 条。服务正在重启...`
                         };
-                        showToast('数据导入成功', 'success');
-                        // Refresh dashboard
-                        loadDashboard();
+                        showToast('数据库导入成功，服务重启中...', 'success');
+
+                        // Wait for server restart then reload
+                        if (result.restart) {
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 3000);
+                        }
                     } catch (err) {
                         importResult.value = { success: false, message: err.message || '导入失败' };
                         showToast(err.message || '导入失败', 'error');

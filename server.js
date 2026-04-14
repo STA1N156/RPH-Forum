@@ -147,6 +147,9 @@ function authenticateUser(req, res, next) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role !== 'user') return res.status(403).json({ error: '权限不足' });
+        // Verify user still exists in the database (prevents FK issues after DB import)
+        const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
+        if (!exists) return res.status(401).json({ error: '用户不存在，请重新注册或登录' });
         req.user = decoded;
         next();
     } catch (err) {
@@ -163,7 +166,10 @@ function optionalUserAuth(req, res, next) {
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role === 'user') req.user = decoded;
+        if (decoded.role === 'user') {
+            const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
+            req.user = exists ? decoded : null;
+        }
         else if (decoded.role === 'admin') { req.admin = decoded; req.user = null; }
         else req.user = null;
         next();
@@ -182,6 +188,8 @@ function requireUserOrAdmin(req, res, next) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
+            const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
+            if (!exists) return res.status(401).json({ error: '用户不存在，请重新注册或登录' });
             req.user = decoded;
         } else if (decoded.role === 'admin') {
             req.admin = decoded;
@@ -880,7 +888,14 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 const conflict = db.prepare('SELECT name FROM character_cards WHERE data_hash = ?').get(dataHash);
                 return res.status(409).json({ error: `已存在完全相同的角色卡「${conflict?.name || '未知'}」，禁止重复上传` });
             }
-            throw insertErr;
+            // If FOREIGN KEY fails (user doesn't exist in DB), retry without uploader_user_id
+            if (insertErr.message && insertErr.message.includes('FOREIGN KEY')) {
+                db.prepare(
+                    'INSERT INTO character_cards (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', null, dataHash, now);
+            } else {
+                throw insertErr;
+            }
         }
 
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
@@ -1040,6 +1055,49 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
     }
 });
 
+// ============== Card Heat Adjustment (Admin Only) ==============
+app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const card = db.prepare('SELECT id, name, views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        const { views_count, downloads_count } = req.body;
+        const fields = [];
+        const values = [];
+
+        if (views_count !== undefined) {
+            const v = parseInt(views_count);
+            if (!Number.isInteger(v) || v < 0) return res.status(400).json({ error: '浏览量必须是非负整数' });
+            fields.push('views_count = ?');
+            values.push(v);
+        }
+        if (downloads_count !== undefined) {
+            const d = parseInt(downloads_count);
+            if (!Number.isInteger(d) || d < 0) return res.status(400).json({ error: '下载量必须是非负整数' });
+            fields.push('downloads_count = ?');
+            values.push(d);
+        }
+
+        if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+
+        values.push(id);
+        db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+        logOperation({
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: req.ip,
+            details: { name: card.name, views_count, downloads_count }
+        });
+
+        const updated = db.prepare('SELECT views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
+        res.json({ success: true, views_count: updated.views_count, downloads_count: updated.downloads_count });
+    } catch (err) {
+        console.error('Admin adjust heat error:', err);
+        res.status(500).json({ error: '调整热度失败' });
+    }
+});
+
 app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
@@ -1048,8 +1106,8 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
 
         let newCredits = null;
         const recordDownload = db.transaction(() => {
+            const isOwner = req.user && card.uploader_user_id === req.user.id;
             if (!req.admin) {
-                const isOwner = req.user && card.uploader_user_id === req.user.id;
                 if (!isOwner) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                     if (result.changes === 0) {
@@ -1061,7 +1119,10 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
                 newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
             }
 
-            db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+            // Author/admin downloads don't inflate download count
+            if (!isOwner && !req.admin) {
+                db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+            }
         });
 
         recordDownload();
@@ -1238,13 +1299,22 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             if (replyComment) replyToName = replyComment.username || '匿名用户';
         }
 
-        // Insert comment and add 2 credits in a transaction
+        // Check daily comment credit limit (max 2 comments per day earn credits)
+        const todayStr = now.slice(0, 10); // YYYY-MM-DD
+        const todayCommentCount = db.prepare(
+            "SELECT COUNT(*) as count FROM character_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
+        ).get(userId, todayStr, todayStr).count;
+        const canEarnCredits = todayCommentCount < 2;
+
+        // Insert comment and optionally add credits
         const insertComment = db.transaction(() => {
             db.prepare(
                 'INSERT INTO character_comments (id, card_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.cardId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
 
-            db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+            if (canEarnCredits) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+            }
         });
         insertComment();
 
@@ -1255,7 +1325,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         comment.card_uploader_id = db.prepare('SELECT uploader_user_id FROM character_cards WHERE id = ?').get(req.params.cardId)?.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
-        res.json({ comment, new_credits: updatedUser.download_credits });
+        res.json({ comment, new_credits: updatedUser.download_credits, credits_earned: canEarnCredits });
     } catch (err) {
         console.error('Create comment error:', err);
         res.status(500).json({ error: '发布评论失败' });
@@ -1745,12 +1815,20 @@ app.post('/api/track/visit', (req, res) => {
     }
 });
 
-// Card view count tracking
-app.post('/api/cards/:id/view', (req, res) => {
+// Card view count tracking (skip for card owner to prevent self-inflating heat)
+app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT id, uploader_user_id FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        // Skip view count increment for card owner
+        const isOwner = req.user && card.uploader_user_id === req.user.id;
+        if (isOwner) {
+            const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+            return res.json({ success: true, views_count: current.views_count });
+        }
+
         db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
         const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
         res.json({ success: true, views_count: updated.views_count });
@@ -1769,22 +1847,18 @@ app.get('/api/stats/visits', (req, res) => {
     }
 });
 
-// ============== Data Export/Import ==============
+// ============== Data Export/Import (SQLite DB File) ==============
 app.get('/api/admin/export', authenticateAdmin, (req, res) => {
     try {
-        const data = {
-            export_version: 2,
-            export_date: new Date().toISOString(),
-            users: db.prepare('SELECT * FROM users').all(),
-            character_cards: db.prepare('SELECT * FROM character_cards').all(),
-            character_comments: db.prepare('SELECT * FROM character_comments').all(),
-            comment_likes: db.prepare('SELECT * FROM comment_likes').all(),
-            card_likes: db.prepare('SELECT * FROM card_likes').all(),
-            settings: db.prepare('SELECT * FROM settings').all()
-        };
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Content-Disposition', `attachment; filename=rph-forum-backup-${new Date().toISOString().slice(0,10)}.json`);
-        res.json(data);
+        // Checkpoint WAL to ensure all data is in the main DB file
+        db.pragma('wal_checkpoint(TRUNCATE)');
+
+        const dbPath = path.join(DATA_DIR, 'forum.db');
+        const filename = `rph-forum-backup-${new Date().toISOString().slice(0, 10)}.db`;
+
+        res.setHeader('Content-Type', 'application/x-sqlite3');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.sendFile(dbPath);
     } catch (err) {
         console.error('Export error:', err);
         res.status(500).json({ error: '导出失败: ' + err.message });
@@ -1793,102 +1867,68 @@ app.get('/api/admin/export', authenticateAdmin, (req, res) => {
 
 app.post('/api/admin/import', authenticateAdmin, (req, res) => {
     try {
-        const data = req.body;
-        if (!data || !data.export_version) {
-            return res.status(400).json({ error: '无效的备份文件格式' });
-        }
+        // Accept raw binary upload of a .db file
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => {
+            try {
+                const buffer = Buffer.concat(chunks);
 
-        const importTransaction = db.transaction(() => {
-            // Clear existing data in order (respect foreign keys)
-            db.exec('DELETE FROM comment_likes');
-            db.exec('DELETE FROM card_likes');
-            db.exec('DELETE FROM character_comments');
-            db.exec('DELETE FROM character_cards');
-            db.exec('DELETE FROM users');
-
-            // Import users (preserve IDs and password hashes)
-            if (data.users && data.users.length > 0) {
-                const insertUser = db.prepare(
-                    `INSERT INTO users (id, username, password_hash, download_credits, created_at, last_login)
-                     VALUES (?, ?, ?, ?, ?, ?)`
-                );
-                for (const u of data.users) {
-                    insertUser.run(u.id, u.username, u.password_hash, u.download_credits ?? 1, u.created_at, u.last_login);
+                // Validate it looks like a SQLite file (magic header: "SQLite format 3\0")
+                if (buffer.length < 16 || buffer.toString('ascii', 0, 15) !== 'SQLite format 3') {
+                    return res.status(400).json({ error: '无效的数据库文件，请上传 .db 格式的备份文件' });
                 }
-            }
 
-            // Import character cards
-            if (data.character_cards && data.character_cards.length > 0) {
-                const insertCard = db.prepare(
-                    `INSERT INTO character_cards (id, name, description, avatar_url, data, creator_notes, downloads_count, uploader_user_id, created_at, data_hash, likes_count, views_count, is_featured)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                );
-                for (const c of data.character_cards) {
-                    insertCard.run(c.id, c.name, c.description, c.avatar_url, c.data, c.creator_notes,
-                        c.downloads_count || 0, c.uploader_user_id, c.created_at, c.data_hash || null, c.likes_count || 0, c.views_count || 0, c.is_featured || 0);
-                }
-            }
+                const dbPath = path.join(DATA_DIR, 'forum.db');
+                const backupPath = path.join(DATA_DIR, `forum-pre-import-${Date.now()}.db.bak`);
 
-            // Import comments
-            if (data.character_comments && data.character_comments.length > 0) {
-                const insertComment = db.prepare(
-                    `INSERT INTO character_comments (id, card_id, user_id, nickname, content, likes_count, created_at, reply_to_id, reply_to_name)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                );
-                for (const cm of data.character_comments) {
-                    insertComment.run(cm.id, cm.card_id, cm.user_id, cm.nickname || '匿名用户', cm.content,
-                        cm.likes_count || 0, cm.created_at, cm.reply_to_id || null, cm.reply_to_name || null);
-                }
-            }
+                // Checkpoint WAL before backup
+                db.pragma('wal_checkpoint(TRUNCATE)');
 
-            // Import comment likes
-            if (data.comment_likes && data.comment_likes.length > 0) {
-                const insertCL = db.prepare(
-                    `INSERT INTO comment_likes (id, comment_id, user_id, created_at) VALUES (?, ?, ?, ?)`
-                );
-                for (const cl of data.comment_likes) {
-                    insertCL.run(cl.id, cl.comment_id, cl.user_id, cl.created_at);
-                }
-            }
+                // Backup current database
+                fs.copyFileSync(dbPath, backupPath);
 
-            // Import card likes
-            if (data.card_likes && data.card_likes.length > 0) {
-                const insertCardLike = db.prepare(
-                    `INSERT INTO card_likes (id, card_id, user_id, created_at) VALUES (?, ?, ?, ?)`
-                );
-                for (const cl of data.card_likes) {
-                    insertCardLike.run(cl.id, cl.card_id, cl.user_id, cl.created_at);
-                }
-            }
+                // Close current DB connection, write new file, then re-open
+                db.close();
+                fs.writeFileSync(dbPath, buffer);
 
-            // Import settings (upsert)
-            if (data.settings && data.settings.length > 0) {
-                const upsertSetting = db.prepare(
-                    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-                     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
-                );
-                for (const s of data.settings) {
-                    upsertSetting.run(s.key, s.value, s.updated_at || new Date().toISOString());
-                }
+                // Re-initialize the database module's connection
+                const Database = require('better-sqlite3');
+                const newDb = new Database(dbPath);
+                newDb.pragma('journal_mode = WAL');
+                newDb.pragma('busy_timeout = 30000');
+                newDb.pragma('foreign_keys = ON');
+
+                // Replace the exported db reference
+                // We patch the module-level db object so all subsequent queries use the new connection
+                const dbModule = require('./database');
+                Object.defineProperty(dbModule, 'db', { value: newDb, writable: true, configurable: true });
+
+                // Also update our local reference
+                // Since we imported db at the top-level, we need to update it
+                // The safest approach is to restart the process after import
+                const stats = {
+                    users: newDb.prepare('SELECT COUNT(*) as c FROM users').get().c,
+                    cards: newDb.prepare('SELECT COUNT(*) as c FROM character_cards').get().c,
+                    comments: newDb.prepare('SELECT COUNT(*) as c FROM character_comments').get().c,
+                };
+
+                newDb.close();
+
+                res.json({
+                    success: true,
+                    message: '数据库导入成功，服务将自动重启以加载新数据',
+                    stats,
+                    restart: true
+                });
+
+                // Auto-restart the process to pick up the new database
+                setTimeout(() => process.exit(0), 500);
+            } catch (innerErr) {
+                console.error('Import processing error:', innerErr);
+                res.status(500).json({ error: '导入失败: ' + innerErr.message });
             }
         });
-
-        importTransaction();
-
-        const stats = {
-            users: data.users?.length || 0,
-            cards: data.character_cards?.length || 0,
-            comments: data.character_comments?.length || 0,
-            settings: data.settings?.length || 0
-        };
-
-        logOperation({
-            userType: 'admin', userId: req.admin.id, username: req.admin.username,
-            action: 'import', ip: req.ip,
-            details: { stats }
-        });
-
-        res.json({ success: true, message: '数据导入成功', stats });
     } catch (err) {
         console.error('Import error:', err);
         res.status(500).json({ error: '导入失败: ' + err.message });
