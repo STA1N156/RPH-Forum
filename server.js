@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const dns = require('dns').promises;
@@ -20,6 +20,9 @@ const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = parseInt(process.env.PORT) || 9191;
 const HOST = process.env.HOST || '0.0.0.0';
+const TRUST_PROXY_SETTING = process.env.TRUST_PROXY === 'false'
+    ? false
+    : (process.env.TRUST_PROXY === 'true' || !process.env.TRUST_PROXY ? true : process.env.TRUST_PROXY);
 const EXPLICIT_JWT_SECRET = (process.env.JWT_SECRET || '').trim();
 const DERIVED_JWT_SECRET = process.env.ADMIN_PASSWORD
     ? crypto.createHash('sha256').update(`rp-forum:${process.env.ADMIN_PASSWORD}`).digest('hex')
@@ -33,6 +36,8 @@ if (!JWT_SECRET) {
 if (IS_PRODUCTION && !EXPLICIT_JWT_SECRET) {
     console.warn('[Security] JWT_SECRET is not set. Falling back to a derived secret from ADMIN_PASSWORD. Set JWT_SECRET explicitly for independent secret rotation.');
 }
+
+app.set('trust proxy', TRUST_PROXY_SETTING);
 
 // ============== Brute Force Config ==============
 const LOGIN_WINDOW_MINUTES = 1;
@@ -88,6 +93,80 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
+// ============== Real IP & Ban Helpers ==============
+function normalizeIp(value) {
+    if (!value) return '';
+    let ip = String(value).split(',')[0].trim();
+    if (!ip) return '';
+    if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+    if (ip.startsWith('[')) {
+        const end = ip.indexOf(']');
+        if (end > 0) ip = ip.slice(1, end);
+    }
+    const ipv4WithPort = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+    if (ipv4WithPort) ip = ipv4WithPort[1];
+    return net.isIP(ip) ? ip : '';
+}
+
+function getRequestIp(req) {
+    return normalizeIp(req.realIp)
+        || normalizeIp(req.headers['cf-connecting-ip'])
+        || normalizeIp(req.headers['true-client-ip'])
+        || normalizeIp(req.headers['x-real-ip'])
+        || normalizeIp(req.headers['x-forwarded-for'])
+        || normalizeIp(req.ip)
+        || normalizeIp(req.socket?.remoteAddress)
+        || 'unknown';
+}
+
+function ipv4ToInt(ip) {
+    const parts = ip.split('.').map(part => Number(part));
+    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+    return parts.reduce((acc, part) => ((acc << 8) + part) >>> 0, 0);
+}
+
+function ipMatchesPattern(ip, pattern) {
+    const normalizedIp = normalizeIp(ip);
+    const normalizedPattern = String(pattern || '').trim();
+    if (!normalizedIp || !normalizedPattern) return false;
+    if (!normalizedPattern.includes('/')) return normalizedIp === normalizeIp(normalizedPattern);
+
+    const [base, bitsRaw] = normalizedPattern.split('/');
+    const bits = Number(bitsRaw);
+    const baseIp = normalizeIp(base);
+    if (net.isIP(normalizedIp) !== 4 || net.isIP(baseIp) !== 4 || !Number.isInteger(bits) || bits < 0 || bits > 32) {
+        return false;
+    }
+    const ipInt = ipv4ToInt(normalizedIp);
+    const baseInt = ipv4ToInt(baseIp);
+    if (ipInt === null || baseInt === null) return false;
+    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+    return (ipInt & mask) === (baseInt & mask);
+}
+
+function findActiveIpBan(ip) {
+    try {
+        const bans = db.prepare(
+            `SELECT * FROM ip_bans
+             WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))
+             ORDER BY created_at DESC`
+        ).all();
+        return bans.find(ban => ipMatchesPattern(ip, ban.ip_pattern)) || null;
+    } catch (err) {
+        console.error('IP ban check error:', err);
+        return null;
+    }
+}
+
+app.use((req, res, next) => {
+    req.realIp = getRequestIp(req);
+    const ban = findActiveIpBan(req.realIp);
+    if (ban) {
+        return res.status(403).json({ error: '当前 IP 已被封禁', reason: ban.reason || '' });
+    }
+    next();
+});
+
 
 // Serve static files (no cache for HTML, allow cache for assets)
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -108,7 +187,7 @@ app.get('/health', (req, res) => {
 // ============== Auth Helpers ==============
 function generateAdminToken(user) {
     return jwt.sign(
-        { id: user.id, username: user.username, role: 'admin' },
+        { id: user.id, username: user.username, role: 'admin', token_version: user.token_version || 0 },
         JWT_SECRET,
         { expiresIn: '24h' }
     );
@@ -116,10 +195,33 @@ function generateAdminToken(user) {
 
 function generateUserToken(user) {
     return jwt.sign(
-        { id: user.id, username: user.username, role: 'user' },
+        { id: user.id, username: user.username, role: 'user', token_version: user.token_version || 0 },
         JWT_SECRET,
         { expiresIn: '7d' }
     );
+}
+
+function validateAdminTokenPayload(decoded) {
+    if (!decoded || decoded.role !== 'admin') return null;
+    const admin = db.prepare('SELECT id, username, token_version FROM admin_users WHERE id = ?').get(decoded.id);
+    if (!admin || admin.username !== decoded.username || Number(admin.token_version || 0) !== Number(decoded.token_version || 0)) {
+        return null;
+    }
+    return { id: admin.id, username: admin.username, role: 'admin', token_version: admin.token_version || 0 };
+}
+
+function validateUserTokenPayload(decoded) {
+    if (!decoded || decoded.role !== 'user') return null;
+    const user = db.prepare('SELECT id, username, download_credits, token_version, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
+    if (!user || user.username !== decoded.username || Number(user.token_version || 0) !== Number(decoded.token_version || 0)) {
+        return null;
+    }
+    if (user.is_banned) {
+        const err = new Error(user.ban_reason ? `账号已被封禁：${user.ban_reason}` : '账号已被封禁');
+        err.code = 'USER_BANNED';
+        throw err;
+    }
+    return { id: user.id, username: user.username, role: 'user', token_version: user.token_version || 0 };
 }
 
 function authenticateAdmin(req, res, next) {
@@ -130,10 +232,12 @@ function authenticateAdmin(req, res, next) {
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'admin') return res.status(403).json({ error: '权限不足' });
-        req.admin = decoded;
+        const admin = validateAdminTokenPayload(decoded);
+        if (!admin) return res.status(403).json({ error: '权限不足或登录状态已失效' });
+        req.admin = admin;
         next();
     } catch (err) {
+        if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
         return res.status(401).json({ error: '令牌无效或已过期' });
     }
 }
@@ -146,13 +250,12 @@ function authenticateUser(req, res, next) {
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'user') return res.status(403).json({ error: '权限不足' });
-        // Verify user still exists in the database (prevents FK issues after DB import)
-        const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
-        if (!exists) return res.status(401).json({ error: '用户不存在，请重新注册或登录' });
-        req.user = decoded;
+        const user = validateUserTokenPayload(decoded);
+        if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+        req.user = user;
         next();
     } catch (err) {
+        if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
         return res.status(401).json({ error: '令牌无效或已过期' });
     }
 }
@@ -167,10 +270,9 @@ function optionalUserAuth(req, res, next) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
-            const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
-            req.user = exists ? decoded : null;
+            req.user = validateUserTokenPayload(decoded);
         }
-        else if (decoded.role === 'admin') { req.admin = decoded; req.user = null; }
+        else if (decoded.role === 'admin') { req.admin = validateAdminTokenPayload(decoded); req.user = null; }
         else req.user = null;
         next();
     } catch (err) {
@@ -188,16 +290,19 @@ function requireUserOrAdmin(req, res, next) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
-            const exists = db.prepare('SELECT id FROM users WHERE id = ?').get(decoded.id);
-            if (!exists) return res.status(401).json({ error: '用户不存在，请重新注册或登录' });
-            req.user = decoded;
+            const user = validateUserTokenPayload(decoded);
+            if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            req.user = user;
         } else if (decoded.role === 'admin') {
-            req.admin = decoded;
+            const admin = validateAdminTokenPayload(decoded);
+            if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            req.admin = admin;
         } else {
             return res.status(403).json({ error: '权限不足' });
         }
         next();
     } catch (err) {
+        if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
         return res.status(401).json({ error: '令牌无效或已过期' });
     }
 }
@@ -254,7 +359,7 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
-    const ip = req.ip;
+    const ip = getRequestIp(req);
 
     // Brute force protection for admin login
     const bruteCheck = checkBruteForce(ip, username);
@@ -354,8 +459,8 @@ app.post('/api/user/register', async (req, res) => {
             'INSERT INTO users (username, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?)'
         ).run(username, hash, now);
 
-        const user = db.prepare('SELECT id, username, download_credits, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
-        logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: req.ip });
+        const user = db.prepare('SELECT id, username, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+        logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
         const token = generateUserToken(user);
         res.json({ token, user });
     } catch (err) {
@@ -370,11 +475,14 @@ app.post('/api/user/login', async (req, res) => {
         return res.status(400).json({ error: '请输入用户名和密码' });
     }
 
-    const ip = req.ip;
+    const ip = getRequestIp(req);
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user) {
         return res.status(401).json({ error: '用户名或密码错误' });
+    }
+    if (user.is_banned) {
+        return res.status(403).json({ error: user.ban_reason ? `账号已被封禁：${user.ban_reason}` : '账号已被封禁' });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
@@ -393,7 +501,7 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUser, (req, res) => {
-    const user = db.prepare('SELECT id, username, download_credits, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user });
 });
@@ -420,28 +528,40 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
         const heatExpr = '((IFNULL(cc.views_count, 0) * 1.0) + (IFNULL(comment_count, 0) * 1.5) + (IFNULL(cc.downloads_count, 0) * 2.5))';
-        let whereClause = '';
+        const whereParts = [];
+        const params = [];
         let orderByClause = 'cc.created_at DESC';
+
+        if (req.admin) {
+            // Admin front-end mode can review every status.
+        } else if (req.user) {
+            whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
+            params.push(req.user.id);
+        } else {
+            whereParts.push("cc.review_status = 'approved'");
+        }
 
         if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         } else if (sortMode === 'daily') {
-            whereClause = "WHERE cc.created_at >= datetime('now', '-1 day')";
+            whereParts.push("cc.created_at >= datetime('now', '-1 day')");
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         } else if (sortMode === 'weekly') {
-            whereClause = "WHERE cc.created_at >= datetime('now', '-7 days')";
+            whereParts.push("cc.created_at >= datetime('now', '-7 days')");
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         }
 
+        const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         const cards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
-                    cc.views_count, cc.is_featured,
+                    cc.views_count, cc.is_featured, cc.review_status,
+                    cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id) AS comment_count
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
-        ).all();
+        ).all(...params);
         res.json(cards);
     } catch (err) {
         console.error('Fetch cards error:', err);
@@ -831,6 +951,10 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
              WHERE cc.id = ?`
         ).get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        const canView = card.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && card.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
         res.json(card);
     } catch (err) {
@@ -857,7 +981,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         // Upload rate limiting (admin exempt)
         if (!req.admin) {
-            const rateKey = req.user ? `user:${req.user.id}` : `ip:${req.ip}`;
+            const rateKey = req.user ? `user:${req.user.id}` : `ip:${getRequestIp(req)}`;
             if (!checkUploadRate(rateKey)) {
                 return res.status(429).json({ error: '上传太频繁，每分钟最多上传 2 张角色卡，请稍后再试' });
             }
@@ -878,11 +1002,17 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         const dataStr = data ? JSON.stringify(data) : null;
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
+        const reviewStatus = req.admin ? 'approved' : 'pending';
+        const reviewedBy = req.admin ? req.admin.id : null;
+        const reviewedAt = req.admin ? now : null;
+        const uploaderIp = getRequestIp(req);
 
         try {
             db.prepare(
-                'INSERT INTO character_cards (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', uploaderUserId, dataHash, now);
+                `INSERT INTO character_cards
+                 (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now);
         } catch (insertErr) {
             if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed')) {
                 const conflict = db.prepare('SELECT name FROM character_cards WHERE data_hash = ?').get(dataHash);
@@ -891,8 +1021,10 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             // If FOREIGN KEY fails (user doesn't exist in DB), retry without uploader_user_id
             if (insertErr.message && insertErr.message.includes('FOREIGN KEY')) {
                 db.prepare(
-                    'INSERT INTO character_cards (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', null, dataHash, now);
+                    `INSERT INTO character_cards
+                     (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now);
             } else {
                 throw insertErr;
             }
@@ -900,14 +1032,18 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
-        logOperation({ userType: req.user ? 'user' : 'admin', userId: uploaderUserId || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'upload', targetType: 'card', targetId: id, ip: req.ip, details: { name } });
+        logOperation({
+            userType: req.user ? 'user' : 'admin',
+            userId: uploaderUserId || req.admin?.id,
+            username: req.user?.username || req.admin?.username,
+            action: req.admin ? 'upload' : 'upload_pending',
+            targetType: 'card',
+            targetId: id,
+            ip: uploaderIp,
+            details: { name, review_status: reviewStatus }
+        });
 
-        let newCredits = null;
-        if (req.user) {
-            db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(req.user.id);
-            newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits;
-        }
-        res.json([card, ...(newCredits !== null ? [{ new_credits: newCredits }] : [])]);
+        res.json([card, { pending_review: reviewStatus === 'pending' }]);
     } catch (err) {
         console.error('Create card error:', err);
         res.status(500).json({ error: '创建卡片失败' });
@@ -927,19 +1063,23 @@ app.delete('/api/cards/:id', (req, res) => {
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
             if (decoded.role === 'admin') {
+                const admin = validateAdminTokenPayload(decoded);
+                if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
                 isAdmin = true;
-                userId = decoded.id;
-                username = decoded.username || '';
+                userId = admin.id;
+                username = admin.username || '';
             } else {
-                userId = decoded.id;
-                username = decoded.username || '';
+                const user = validateUserTokenPayload(decoded);
+                if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+                userId = user.id;
+                username = user.username || '';
             }
         } catch {
             return res.status(401).json({ error: '认证失败' });
         }
 
         const { id } = req.params;
-        const card = db.prepare('SELECT name, uploader_user_id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
         if (!card) {
             return res.status(404).json({ error: '卡片不存在' });
         }
@@ -953,14 +1093,14 @@ app.delete('/api/cards/:id', (req, res) => {
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(id);
             // Reclaim upload credits (3) from uploader, minimum 0
-            if (card.uploader_user_id) {
+            if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
         });
         deleteAndReclaim();
         thumbnailCache.delete(id);
 
-        logOperation({ userType: isAdmin ? 'admin' : 'user', userId, username, action: 'delete', targetType: 'card', targetId: id, ip: req.ip, details: { name: card?.name } });
+        logOperation({ userType: isAdmin ? 'admin' : 'user', userId, username, action: 'delete', targetType: 'card', targetId: id, ip: getRequestIp(req), details: { name: card?.name } });
         res.json([{ id }]);
     } catch (err) {
         console.error('Delete card error:', err);
@@ -982,9 +1122,14 @@ app.put('/api/cards/:id', (req, res) => {
 
         let userType, userId, username;
         if (decoded.role === 'admin') {
-            userType = 'admin'; userId = decoded.id; username = decoded.username;
+            const admin = validateAdminTokenPayload(decoded);
+            if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            userType = 'admin'; userId = admin.id; username = admin.username;
         } else if (decoded.role === 'user' && card.uploader_user_id === decoded.id) {
-            userType = 'user'; userId = decoded.id; username = decoded.username;
+            const user = validateUserTokenPayload(decoded);
+            if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            if (card.uploader_user_id !== user.id) return res.status(403).json({ error: '无权编辑此卡片' });
+            userType = 'user'; userId = user.id; username = user.username;
         } else {
             return res.status(403).json({ error: '无权编辑此卡片' });
         }
@@ -1011,13 +1156,25 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
+        if (decoded.role === 'user') {
+            fields.push("review_status = 'pending'");
+            fields.push('reviewed_by_admin_id = NULL');
+            fields.push('reviewed_at = NULL');
+            fields.push('rejection_reason = NULL');
+        }
 
         if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
         values.push(req.params.id);
-        db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+        const updateCard = db.transaction(() => {
+            db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+            if (decoded.role === 'user' && card.review_status === 'approved' && card.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
+            }
+        });
+        updateCard();
         thumbnailCache.delete(req.params.id);
 
-        logOperation({ userType, userId, username, action: 'edit', targetType: 'card', targetId: req.params.id, ip: req.ip, details: { name: card.name } });
+        logOperation({ userType, userId, username, action: 'edit', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card.name } });
 
         const updated = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
         try { updated.data = updated.data ? JSON.parse(updated.data) : null; } catch (e) { updated.data = null; }
@@ -1044,7 +1201,7 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
             action: newFeatured ? 'feature' : 'unfeature',
-            targetType: 'card', targetId: id, ip: req.ip,
+            targetType: 'card', targetId: id, ip: getRequestIp(req),
             details: { name: card.name }
         });
 
@@ -1086,7 +1243,7 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
 
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
-            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: req.ip,
+            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
             details: { name: card.name, views_count, downloads_count }
         });
 
@@ -1101,12 +1258,15 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
 app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, name, uploader_user_id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT id, name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        const isOwner = req.user && card.uploader_user_id === req.user.id;
+        if (card.review_status !== 'approved' && !req.admin && !isOwner) {
+            return res.status(404).json({ error: '卡片不存在' });
+        }
 
         let newCredits = null;
         const recordDownload = db.transaction(() => {
-            const isOwner = req.user && card.uploader_user_id === req.user.id;
             if (!req.admin) {
                 if (!isOwner) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
@@ -1126,7 +1286,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         });
 
         recordDownload();
-        logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: req.ip });
+        logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
         const fileName = sanitizeDownloadFilename(card.name);
         const downloadToken = createCardDownloadToken(id, fileName);
@@ -1190,7 +1350,7 @@ app.post('/api/cards/:id/like', authenticateUser, (req, res) => {
         const cardId = req.params.id;
         const userId = req.user.id;
 
-        const card = db.prepare('SELECT id FROM character_cards WHERE id = ?').get(cardId);
+        const card = db.prepare("SELECT id FROM character_cards WHERE id = ? AND review_status = 'approved'").get(cardId);
         if (!card) return res.status(404).json({ error: '角色卡不存在' });
 
         const existing = db.prepare('SELECT id FROM card_likes WHERE card_id = ? AND user_id = ?').get(cardId, userId);
@@ -1227,6 +1387,12 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
     try {
         const cardId = req.params.cardId;
         const userId = req.user ? req.user.id : null;
+        const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(cardId);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+        const canView = card.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && card.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '卡片不存在' });
 
         const comments = db.prepare(
             `SELECT c.*, u.username as author_name,
@@ -1288,6 +1454,8 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
+        const card = db.prepare("SELECT id FROM character_cards WHERE id = ? AND review_status = 'approved'").get(req.params.cardId);
+        if (!card) return res.status(404).json({ error: '卡片不存在或尚未通过审核' });
 
         const id = generateId();
         const now = new Date().toISOString();
@@ -1373,12 +1541,29 @@ app.post('/api/comments/:id/like', authenticateUser, (req, res) => {
     }
 });
 
-app.delete('/api/comments/:id', authenticateAdmin, (req, res) => {
+app.delete('/api/comments/:id', requireUserOrAdmin, (req, res) => {
     try {
+        const comment = db.prepare('SELECT id, user_id, content FROM character_comments WHERE id = ?').get(req.params.id);
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        if (!req.admin && (!req.user || comment.user_id !== req.user.id)) {
+            return res.status(403).json({ error: '只能删除自己发布的评论' });
+        }
         const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
         if (result.changes === 0) {
             return res.status(404).json({ error: '评论不存在' });
         }
+        logOperation({
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: req.admin ? 'admin_delete_comment' : 'delete_own_comment',
+            targetType: 'comment',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { content: comment.content?.substring(0, 50) }
+        });
         res.json({ success: true });
     } catch (err) {
         console.error('Delete comment error:', err);
@@ -1395,6 +1580,10 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
         const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
         const totalLikes = db.prepare('SELECT COALESCE(SUM(likes_count), 0) as count FROM character_comments').get().count;
         const totalVisits = db.prepare('SELECT COUNT(*) as count FROM page_views').get().count;
+        const pendingCards = db.prepare("SELECT COUNT(*) as count FROM character_cards WHERE review_status = 'pending'").get().count;
+        const bannedIpCount = db.prepare(
+            "SELECT COUNT(*) as count FROM ip_bans WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))"
+        ).get().count;
         const recentCards = db.prepare(
             "SELECT COUNT(*) as count FROM character_cards WHERE created_at > datetime('now', '-7 days')"
         ).get().count;
@@ -1443,7 +1632,7 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
         res.json({
             totalCards, totalComments, totalDownloads, totalUsers, totalLikes, totalVisits,
             recentCards, recentComments, todayNewUsers, todayNewCards, todayNewComments,
-            loginAttempts, topCards, dailyActivity, dailyComments, dailyVisits
+            loginAttempts, pendingCards, bannedIpCount, topCards, dailyActivity, dailyComments, dailyVisits
         });
     } catch (err) {
         console.error('Stats error:', err);
@@ -1457,23 +1646,38 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
         const search = req.query.search || '';
+        const status = req.query.status || '';
 
-        let query = 'SELECT id, name, description, creator_notes, downloads_count, created_at FROM character_cards';
-        let countQuery = 'SELECT COUNT(*) as count FROM character_cards';
+        let query = `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.downloads_count,
+                            cc.uploader_user_id, u.username AS uploader_username,
+                            cc.review_status, cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address, cc.created_at
+                     FROM character_cards cc
+                     LEFT JOIN users u ON cc.uploader_user_id = u.id`;
+        let countQuery = 'SELECT COUNT(*) as count FROM character_cards cc LEFT JOIN users u ON cc.uploader_user_id = u.id';
         const params = [];
         const countParams = [];
+        const whereParts = [];
+        if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+            whereParts.push('cc.review_status = ?');
+            params.push(status);
+            countParams.push(status);
+        }
 
         if (search) {
-            const where = ' WHERE name LIKE ? OR description LIKE ? OR creator_notes LIKE ?';
             const searchParam = `%${search}%`;
+            whereParts.push('(cc.name LIKE ? OR cc.description LIKE ? OR cc.creator_notes LIKE ? OR u.username LIKE ?)');
+            params.push(searchParam, searchParam, searchParam, searchParam);
+            countParams.push(searchParam, searchParam, searchParam, searchParam);
+        }
+
+        if (whereParts.length) {
+            const where = ` WHERE ${whereParts.join(' AND ')}`;
             query += where;
             countQuery += where;
-            params.push(searchParam, searchParam, searchParam);
-            countParams.push(searchParam, searchParam, searchParam);
         }
 
         const total = db.prepare(countQuery).get(...countParams).count;
-        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        query += ' ORDER BY cc.created_at DESC LIMIT ? OFFSET ?';
         params.push(limit, offset);
 
         const cards = db.prepare(query).all(...params);
@@ -1484,19 +1688,71 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
     }
 });
 
+app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const status = String(req.body.status || '').trim();
+        const reason = String(req.body.reason || '').trim().slice(0, 500);
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ error: '审核状态无效' });
+        }
+
+        const card = db.prepare('SELECT id, name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+
+        const now = new Date().toISOString();
+        const reviewAndReward = db.transaction(() => {
+            db.prepare(
+                `UPDATE character_cards
+                 SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
+                 WHERE id = ?`
+            ).run(status, req.admin.id, now, status === 'rejected' ? reason : null, id);
+
+            if (status === 'approved' && card.review_status !== 'approved' && card.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(card.uploader_user_id);
+            }
+            if (status !== 'approved' && card.review_status === 'approved' && card.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
+            }
+        });
+        reviewAndReward();
+
+        thumbnailCache.delete(id);
+        const updated = db.prepare(
+            'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at FROM character_cards WHERE id = ?'
+        ).get(id);
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: status === 'approved' ? 'admin_approve_card' : 'admin_reject_card',
+            targetType: 'card',
+            targetId: id,
+            ip: getRequestIp(req),
+            details: { name: card.name, reason: status === 'rejected' ? reason : undefined }
+        });
+
+        res.json({ success: true, card: updated });
+    } catch (err) {
+        console.error('Admin review card error:', err);
+        res.status(500).json({ error: '审核失败' });
+    }
+});
+
 app.delete('/api/admin/cards/:id', authenticateAdmin, (req, res) => {
     try {
-        const card = db.prepare('SELECT name, uploader_user_id FROM character_cards WHERE id = ?').get(req.params.id);
+        const card = db.prepare('SELECT name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(req.params.id);
-            if (card.uploader_user_id) {
+            if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
         });
         deleteAndReclaim();
         thumbnailCache.delete(req.params.id);
-        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: req.ip, details: { name: card?.name } });
+        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name } });
         res.json({ success: true });
     } catch (err) {
         console.error('Admin delete card error:', err);
@@ -1530,7 +1786,7 @@ app.delete('/api/admin/comments/:id', authenticateAdmin, (req, res) => {
         const comment = db.prepare('SELECT content FROM character_comments WHERE id = ?').get(req.params.id);
         const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
         if (result.changes === 0) return res.status(404).json({ error: '评论不存在' });
-        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_comment', targetType: 'comment', targetId: req.params.id, ip: req.ip, details: { content: comment?.content?.substring(0, 50) } });
+        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_comment', targetType: 'comment', targetId: req.params.id, ip: getRequestIp(req), details: { content: comment?.content?.substring(0, 50) } });
         res.json({ success: true });
     } catch (err) {
         console.error('Admin delete comment error:', err);
@@ -1645,7 +1901,7 @@ app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
             action: 'admin_update_tag_settings',
             targetType: 'settings',
             targetId: 'tag-management',
-            ip: req.ip,
+            ip: getRequestIp(req),
             details: {
                 popular_tags_count: parseTagSettingValue(updates.popular_tags).length,
                 tag_library_count: parseTagSettingValue(updates.tag_library).length,
@@ -1673,7 +1929,7 @@ app.put('/api/admin/password', authenticateAdmin, async (req, res) => {
             return res.status(401).json({ error: '当前密码错误' });
         }
         const hash = await bcrypt.hash(newPassword, 12);
-        db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+        db.prepare('UPDATE admin_users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hash, user.id);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: '修改密码失败' });
@@ -1702,6 +1958,96 @@ app.get('/api/admin/logs', authenticateAdmin, (req, res) => {
     }
 });
 
+// ============== Admin IP Ban Management ==============
+app.get('/api/admin/ip-bans', authenticateAdmin, (req, res) => {
+    try {
+        const bans = db.prepare(
+            `SELECT * FROM ip_bans
+             ORDER BY is_active DESC, created_at DESC`
+        ).all();
+        res.json({ bans, current_ip: getRequestIp(req) });
+    } catch (err) {
+        console.error('IP ban list error:', err);
+        res.status(500).json({ error: '获取 IP 封禁列表失败' });
+    }
+});
+
+app.post('/api/admin/ip-bans', authenticateAdmin, (req, res) => {
+    try {
+        const ipPattern = String(req.body.ip_pattern || '').trim();
+        const reason = String(req.body.reason || '').trim().slice(0, 500);
+        const expiresAtRaw = String(req.body.expires_at || '').trim();
+        if (!ipPattern) return res.status(400).json({ error: '请输入要封禁的 IP 或 IPv4 CIDR' });
+        if (ipPattern.includes('/')) {
+            const [base, bitsRaw] = ipPattern.split('/');
+            const bits = Number(bitsRaw);
+            if (net.isIP(normalizeIp(base)) !== 4 || !Number.isInteger(bits) || bits < 0 || bits > 32) {
+                return res.status(400).json({ error: 'CIDR 仅支持 IPv4，例如 203.0.113.0/24' });
+            }
+        } else if (!normalizeIp(ipPattern)) {
+            return res.status(400).json({ error: 'IP 格式无效' });
+        }
+        if (ipMatchesPattern(getRequestIp(req), ipPattern)) {
+            return res.status(400).json({ error: '不能封禁当前管理员正在使用的 IP' });
+        }
+
+        let expiresAt = null;
+        if (expiresAtRaw) {
+            const parsed = new Date(expiresAtRaw);
+            if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: '过期时间格式无效' });
+            expiresAt = parsed.toISOString();
+        }
+
+        db.prepare(
+            `INSERT INTO ip_bans (ip_pattern, reason, created_by_admin_id, expires_at, is_active)
+             VALUES (?, ?, ?, ?, 1)
+             ON CONFLICT(ip_pattern) DO UPDATE SET
+                reason = excluded.reason,
+                created_by_admin_id = excluded.created_by_admin_id,
+                expires_at = excluded.expires_at,
+                is_active = 1,
+                created_at = CURRENT_TIMESTAMP`
+        ).run(ipPattern, reason || null, req.admin.id, expiresAt);
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_ban_ip',
+            targetType: 'ip',
+            targetId: ipPattern,
+            ip: getRequestIp(req),
+            details: { reason, expires_at: expiresAt }
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Create IP ban error:', err);
+        res.status(500).json({ error: '封禁 IP 失败' });
+    }
+});
+
+app.delete('/api/admin/ip-bans/:id', authenticateAdmin, (req, res) => {
+    try {
+        const ban = db.prepare('SELECT * FROM ip_bans WHERE id = ?').get(req.params.id);
+        if (!ban) return res.status(404).json({ error: '封禁记录不存在' });
+        db.prepare('UPDATE ip_bans SET is_active = 0 WHERE id = ?').run(req.params.id);
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_unban_ip',
+            targetType: 'ip',
+            targetId: ban.ip_pattern,
+            ip: getRequestIp(req)
+        });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Remove IP ban error:', err);
+        res.status(500).json({ error: '解除封禁失败' });
+    }
+});
+
 // ============== Admin User Management ==============
 app.get('/api/admin/users', authenticateAdmin, (req, res) => {
     try {
@@ -1718,7 +2064,7 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
         }
         const total = db.prepare(`SELECT COUNT(*) as count FROM users${where}`).get(...params).count;
         const users = db.prepare(
-            `SELECT id, username, download_credits, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+            `SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
 
         res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -1744,7 +2090,7 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
             return res.status(404).json({ error: '用户不存在' });
         }
 
-        const user = db.prepare('SELECT id, username, download_credits, created_at, last_login FROM users WHERE id = ?').get(userId);
+        const user = db.prepare('SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
@@ -1752,7 +2098,7 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
             action: 'admin_update_user_credits',
             targetType: 'user',
             targetId: String(userId),
-            ip: req.ip,
+            ip: getRequestIp(req),
             details: { download_credits: credits, username: user?.username }
         });
 
@@ -1760,6 +2106,51 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('Admin update credits error:', err);
         res.status(500).json({ error: '更新下载次数失败' });
+    }
+});
+
+app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
+    try {
+        const userId = Number(req.params.id);
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ error: '无效的用户 ID' });
+        }
+        const banned = req.body.banned === true || req.body.banned === 1 || req.body.banned === 'true';
+        const reason = String(req.body.reason || '').trim().slice(0, 500);
+        const user = db.prepare('SELECT id, username, is_banned FROM users WHERE id = ?').get(userId);
+        if (!user) return res.status(404).json({ error: '用户不存在' });
+
+        if (banned) {
+            db.prepare(
+                `UPDATE users
+                 SET is_banned = 1, ban_reason = ?, banned_at = ?, banned_by_admin_id = ?, token_version = token_version + 1
+                 WHERE id = ?`
+            ).run(reason || null, new Date().toISOString(), req.admin.id, userId);
+        } else {
+            db.prepare(
+                `UPDATE users
+                 SET is_banned = 0, ban_reason = NULL, banned_at = NULL, banned_by_admin_id = NULL, token_version = token_version + 1
+                 WHERE id = ?`
+            ).run(userId);
+        }
+
+        const updated = db.prepare(
+            'SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
+        ).get(userId);
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: banned ? 'admin_ban_user' : 'admin_unban_user',
+            targetType: 'user',
+            targetId: String(userId),
+            ip: getRequestIp(req),
+            details: { username: user.username, reason: banned ? reason : undefined }
+        });
+        res.json({ success: true, user: updated });
+    } catch (err) {
+        console.error('Admin ban user error:', err);
+        res.status(500).json({ error: '更新用户封禁状态失败' });
     }
 });
 
@@ -1782,7 +2173,7 @@ app.post('/api/admin/users/:id/reset-password', authenticateAdmin, async (req, r
         }
 
         const hash = await bcrypt.hash(temporaryPassword, 12);
-        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+        db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hash, userId);
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
@@ -1790,7 +2181,7 @@ app.post('/api/admin/users/:id/reset-password', authenticateAdmin, async (req, r
             action: 'admin_reset_user_password',
             targetType: 'user',
             targetId: String(userId),
-            ip: req.ip,
+            ip: getRequestIp(req),
             details: { username: user.username }
         });
 
@@ -1810,7 +2201,7 @@ app.post('/api/admin/users/:id/reset-password', authenticateAdmin, async (req, r
 app.post('/api/track/visit', (req, res) => {
     try {
         const visitPath = req.body.path || '/';
-        const ip = req.ip;
+        const ip = getRequestIp(req);
         const ua = (req.headers['user-agent'] || '').substring(0, 512);
         db.prepare('INSERT INTO page_views (path, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?)').run(visitPath, ip, ua, new Date().toISOString());
         res.json({ success: true });
@@ -1823,8 +2214,11 @@ app.post('/api/track/visit', (req, res) => {
 app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, uploader_user_id FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        if (card.review_status !== 'approved' && !req.admin && !(req.user && card.uploader_user_id === req.user.id)) {
+            return res.status(404).json({ error: '卡片不存在' });
+        }
 
         // Skip view count increment for card owner
         const isOwner = req.user && card.uploader_user_id === req.user.id;

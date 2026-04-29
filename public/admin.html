@@ -77,6 +77,10 @@
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                         卡片管理
                     </button>
+                    <button @click="currentPage = 'ipbans'; showMobileMenu = false; loadIpBans()" :class="currentPage === 'ipbans' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728m0-12.728l12.728 12.728M12 3a9 9 0 110 18 9 9 0 010-18z"/></svg>
+                        IP封禁
+                    </button>
                     <button @click="currentPage = 'comments'; showMobileMenu = false; loadAdminComments()" :class="currentPage === 'comments' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
                         评论管理
@@ -120,7 +124,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
                         <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
-                            {{ {dashboard:'仪表盘',cards:'卡片管理',comments:'评论管理',users:'用户管理',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
                     <a href="/" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
@@ -272,6 +276,12 @@
                         <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                             <input v-model="cardSearch" @input="loadAdminCards()" type="text" placeholder="搜索卡片名称..."
                                 class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full md:w-64">
+                            <select v-model="cardStatusFilter" @change="cardPage = 1; loadAdminCards()" class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full md:w-44">
+                                <option value="">全部状态</option>
+                                <option value="pending">待审核</option>
+                                <option value="approved">已通过</option>
+                                <option value="rejected">已拒绝</option>
+                            </select>
                             <span class="text-sm text-gray-500">共 {{ cardData.total || 0 }} 张卡片</span>
                         </div>
                         <div class="md:hidden space-y-4">
@@ -280,8 +290,14 @@
                                     <div>
                                         <p class="text-base font-semibold text-gray-900 break-all">{{ card.name }}</p>
                                         <p class="text-xs text-gray-400 mt-1">{{ formatDate(card.created_at) }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">上传者：{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</p>
+                                        <p class="text-xs mt-1" :class="card.review_status === 'pending' ? 'text-amber-600' : (card.review_status === 'rejected' ? 'text-red-600' : 'text-green-600')">{{ getReviewStatusLabel(card.review_status) }}</p>
                                     </div>
-                                    <button @click="deleteAdminCard(card)" class="px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium">删除</button>
+                                    <div class="flex gap-2">
+                                        <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'approved')" class="px-3 py-1.5 rounded-xl bg-green-50 text-green-600 text-sm font-medium">通过</button>
+                                        <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'rejected')" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 text-sm font-medium">拒绝</button>
+                                        <button @click="deleteAdminCard(card)" class="px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium">删除</button>
+                                    </div>
                                 </div>
                                 <p class="text-sm text-gray-500 leading-relaxed">{{ card.description || '暂无描述' }}</p>
                                 <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
@@ -297,8 +313,11 @@
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">上传者</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
                                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
                                     </tr>
@@ -306,10 +325,17 @@
                                 <tbody class="divide-y divide-gray-100">
                                     <tr v-for="card in cardData.cards" :key="card.id" class="hover:bg-gray-50">
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900 max-w-[200px] truncate">{{ card.name }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-500 max-w-[300px] truncate">{{ card.description }}</td>
+                                        <td class="px-6 py-4 text-sm">
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium" :class="card.review_status === 'pending' ? 'bg-amber-100 text-amber-700' : (card.review_status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')">{{ getReviewStatusLabel(card.review_status) }}</span>
+                                        </td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ card.downloads_count }}</td>
+                                        <td class="px-6 py-4 text-xs text-gray-500 font-mono">{{ card.uploader_ip_address || '-' }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(card.created_at) }}</td>
-                                        <td class="px-6 py-4 text-right">
+                                        <td class="px-6 py-4 text-right whitespace-nowrap">
+                                            <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'approved')" class="text-green-600 hover:text-green-800 text-sm font-medium mr-3">通过</button>
+                                            <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'rejected')" class="text-amber-600 hover:text-amber-800 text-sm font-medium mr-3">拒绝</button>
                                             <button @click="deleteAdminCard(card)" class="text-red-600 hover:text-red-800 text-sm font-medium">删除</button>
                                         </td>
                                     </tr>
@@ -323,6 +349,50 @@
                             <button @click="cardPage--; loadAdminCards()" :disabled="cardPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ cardPage }} / {{ cardData.totalPages }}</span>
                             <button @click="cardPage++; loadAdminCards()" :disabled="cardPage >= cardData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <div v-if="currentPage === 'ipbans'">
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+                            <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                                <input v-model="ipBanForm.ip_pattern" type="text" placeholder="IP 或 IPv4 CIDR，例如 203.0.113.7 或 203.0.113.0/24"
+                                    class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                <input v-model="ipBanForm.reason" type="text" placeholder="封禁原因"
+                                    class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                <button @click="createIpBan" :disabled="ipBanSaving" class="bg-red-600 text-white px-5 py-2 rounded-xl hover:bg-red-700 transition disabled:opacity-60">
+                                    {{ ipBanSaving ? '封禁中...' : '封禁' }}
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">当前识别到的管理员真实 IP：<span class="font-mono">{{ ipBanData.current_ip || '-' }}</span></p>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[760px]">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP/CIDR</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">原因</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="ban in ipBanData.bans" :key="ban.id" class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 text-sm font-mono text-gray-900">{{ ban.ip_pattern }}</td>
+                                            <td class="px-6 py-4 text-sm text-gray-500">{{ ban.reason || '-' }}</td>
+                                            <td class="px-6 py-4 text-sm">
+                                                <span class="px-2 py-1 rounded-full text-xs font-medium" :class="ban.is_active ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'">{{ ban.is_active ? '生效中' : '已解除' }}</span>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(ban.created_at) }}</td>
+                                            <td class="px-6 py-4 text-right">
+                                                <button v-if="ban.is_active" @click="removeIpBan(ban)" class="text-blue-600 hover:text-blue-800 text-sm font-medium">解除</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="!ipBanData.bans?.length" class="text-center text-gray-400 py-12">暂无封禁记录</div>
                         </div>
                     </div>
 
@@ -394,7 +464,10 @@
                                         <p class="text-base font-semibold text-gray-900">{{ user.username }}</p>
                                         <p class="text-xs text-gray-400 mt-1">ID {{ user.id }}</p>
                                     </div>
-                                    <span class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">{{ user.last_login ? '最近活跃' : '从未登录' }}</span>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'">{{ user.is_banned ? '已封禁' : (user.last_login ? '最近活跃' : '从未登录') }}</span>
+                                </div>
+                                <div v-if="user.is_banned && user.ban_reason" class="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">
+                                    封禁原因：{{ user.ban_reason }}
                                 </div>
                                 <div class="grid grid-cols-2 gap-3 text-sm">
                                     <div class="rounded-xl bg-gray-50 p-3">
@@ -420,6 +493,9 @@
                                         临时密码：{{ userDraft(user).generatedPassword }}
                                     </div>
                                 </div>
+                                <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="w-full px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
+                                    {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解除封禁' : '封禁用户') }}
+                                </button>
                             </div>
                             <div v-if="!userData.users?.length" class="text-center text-gray-400 py-12">暂无用户</div>
                         </div>
@@ -430,6 +506,7 @@
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">密码操作</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载积分</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">注册时间</th>
@@ -440,6 +517,15 @@
                                     <tr v-for="user in userData.users" :key="user.id" class="hover:bg-gray-50">
                                         <td class="px-6 py-4 text-sm text-gray-900 font-mono">{{ user.id }}</td>
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ user.username }}</td>
+                                        <td class="px-6 py-4 text-sm">
+                                            <div class="space-y-2 w-44">
+                                                <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">{{ user.is_banned ? '已封禁' : '正常' }}</span>
+                                                <p v-if="user.is_banned && user.ban_reason" class="text-xs text-red-600 break-words">{{ user.ban_reason }}</p>
+                                                <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
+                                                    {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解封' : '封禁') }}
+                                                </button>
+                                            </div>
+                                        </td>
                                         <td class="px-6 py-4 text-sm">
                                             <div class="w-72 space-y-2">
                                                 <p class="text-xs text-gray-500">原密码不可见，可重置为指定密码或自动生成的临时密码。</p>
@@ -482,12 +568,19 @@
                                 <option value="login">登录</option>
                                 <option value="register">注册</option>
                                 <option value="upload">上传</option>
+                                <option value="upload_pending">上传待审核</option>
                                 <option value="download">下载</option>
                                 <option value="edit">编辑</option>
                                 <option value="delete">删除</option>
                                 <option value="admin_login">管理员登录</option>
                                 <option value="admin_delete_card">管理员删卡</option>
                                 <option value="admin_delete_comment">管理员删评论</option>
+                                <option value="admin_approve_card">审核通过</option>
+                                <option value="admin_reject_card">审核拒绝</option>
+                                <option value="admin_ban_ip">封禁 IP</option>
+                                <option value="admin_unban_ip">解除 IP 封禁</option>
+                                <option value="admin_ban_user">封禁用户</option>
+                                <option value="admin_unban_user">解除用户封禁</option>
                             </select>
                         </div>
                         <div class="md:hidden space-y-4">
@@ -935,6 +1028,7 @@
                 const cardData = ref({ cards: [], total: 0, totalPages: 0 });
                 const cardPage = ref(1);
                 const cardSearch = ref('');
+                const cardStatusFilter = ref('');
 
                 // Comments
                 const commentData = ref({ comments: [], total: 0, totalPages: 0 });
@@ -950,6 +1044,11 @@
                 const logData = ref({ logs: [], total: 0, totalPages: 0 });
                 const logPage = ref(1);
                 const logActionFilter = ref('');
+
+                // IP bans
+                const ipBanData = ref({ bans: [], current_ip: '' });
+                const ipBanForm = reactive({ ip_pattern: '', reason: '' });
+                const ipBanSaving = ref(false);
 
                 // Chart
                 const chartData = computed(() => {
@@ -1366,12 +1465,13 @@
                 function userDraft(user) {
                     if (!userDrafts[user.id]) {
                         userDrafts[user.id] = {
-                            download_credits: user.download_credits,
-                            newPassword: '',
-                            generatedPassword: '',
-                            saving: false,
-                            resetting: false
-                        };
+                        download_credits: user.download_credits,
+                        newPassword: '',
+                        generatedPassword: '',
+                        saving: false,
+                        resetting: false,
+                        banning: false
+                    };
                     }
                     return userDrafts[user.id];
                 }
@@ -1445,10 +1545,37 @@
 
                 async function loadAdminCards() {
                     try {
-                        const resp = await fetch(API_BASE + `/api/admin/cards?page=${cardPage.value}&search=${encodeURIComponent(cardSearch.value)}`, { headers: authHeaders() });
+                        let url = API_BASE + `/api/admin/cards?page=${cardPage.value}&search=${encodeURIComponent(cardSearch.value)}`;
+                        if (cardStatusFilter.value) url += `&status=${encodeURIComponent(cardStatusFilter.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
                         if (resp.ok) cardData.value = await resp.json();
                     } catch (err) {
                         console.error('Cards error:', err);
+                    }
+                }
+
+                function getReviewStatusLabel(status) {
+                    return ({ pending: '待审核', approved: '已通过', rejected: '已拒绝' })[status] || '已通过';
+                }
+
+                async function reviewAdminCard(card, status) {
+                    let reason = '';
+                    if (status === 'rejected') {
+                        reason = prompt('请输入拒绝原因（可留空）：') || '';
+                    }
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id + '/review', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ status, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '审核失败');
+                        showToast(status === 'approved' ? '已通过审核' : '已拒绝该卡片', status === 'approved' ? 'success' : 'warning');
+                        loadAdminCards();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '审核失败', 'error');
                     }
                 }
 
@@ -1548,6 +1675,34 @@
                     }
                 }
 
+                async function toggleUserBan(user) {
+                    const draft = userDraft(user);
+                    const nextBanned = !user.is_banned;
+                    let reason = '';
+                    if (nextBanned) {
+                        reason = prompt(`请输入封禁用户「${user.username}」的原因（可留空）：`) || '';
+                    } else if (!confirm(`确定解除用户「${user.username}」的封禁吗？`)) {
+                        return;
+                    }
+                    draft.banning = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/users/' + user.id + '/ban', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ banned: nextBanned, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '更新封禁状态失败');
+                        Object.assign(user, data.user);
+                        showToast(nextBanned ? '用户已封禁' : '用户已解封', 'success');
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '更新封禁状态失败', 'error');
+                    } finally {
+                        draft.banning = false;
+                    }
+                }
+
                 async function loadLogs() {
                     try {
                         let url = API_BASE + `/api/admin/logs?page=${logPage.value}`;
@@ -1559,12 +1714,67 @@
                     }
                 }
 
+                async function loadIpBans() {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans', { headers: authHeaders() });
+                        if (resp.ok) ipBanData.value = await resp.json();
+                    } catch (err) {
+                        console.error('IP bans error:', err);
+                    }
+                }
+
+                async function createIpBan() {
+                    ipBanSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans', {
+                            method: 'POST',
+                            headers: authHeaders(),
+                            body: JSON.stringify(ipBanForm)
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '封禁失败');
+                        ipBanForm.ip_pattern = '';
+                        ipBanForm.reason = '';
+                        showToast('IP 已封禁', 'success');
+                        loadIpBans();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '封禁失败', 'error');
+                    } finally {
+                        ipBanSaving.value = false;
+                    }
+                }
+
+                async function removeIpBan(ban) {
+                    if (!confirm(`确定解除 ${ban.ip_pattern} 的封禁吗？`)) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans/' + ban.id, {
+                            method: 'DELETE',
+                            headers: authHeaders()
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '解除封禁失败');
+                        showToast('已解除封禁', 'success');
+                        loadIpBans();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '解除封禁失败', 'error');
+                    }
+                }
+
                 function getActionLabel(action) {
                     const labels = {
                         login: '登录', register: '注册', upload: '上传',
+                        upload_pending: '上传待审核',
                         download: '下载', edit: '编辑', delete: '删除',
                         admin_login: '管理员登录', admin_delete_card: '管理员删卡',
                         admin_delete_comment: '管理员删评论',
+                        admin_approve_card: '审核通过',
+                        admin_reject_card: '审核拒绝',
+                        admin_ban_ip: '封禁 IP',
+                        admin_unban_ip: '解除 IP 封禁',
+                        admin_ban_user: '封禁用户',
+                        admin_unban_user: '解除用户封禁',
                         admin_update_user_credits: '调整下载次数',
                         admin_reset_user_password: '重置用户密码',
                         admin_update_tag_settings: '更新标签配置'
@@ -1731,10 +1941,12 @@
                     isAuthenticated, adminUser, currentPage, showMobileMenu, toasts,
                     loginForm, loginError, loginLoading, handleLogin, handleLogout,
                     stats, formatDate, chartData, chartMax,
-                    cardData, cardPage, cardSearch, loadAdminCards, deleteAdminCard,
+                    cardData, cardPage, cardSearch, cardStatusFilter, loadAdminCards, deleteAdminCard,
+                    getReviewStatusLabel, reviewAdminCard,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
-                    userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, resetUserPassword,
+                    userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, resetUserPassword, toggleUserBan,
                     logData, logPage, logActionFilter, loadLogs, getActionLabel,
+                    ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
                     siteSettings, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
                     settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
                     addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,

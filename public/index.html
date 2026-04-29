@@ -309,6 +309,10 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         上传
                     </button>
+                    <button v-if="isAdmin" @click="currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                        审核
+                    </button>
                     <!-- User Auth Button -->
                     <!-- User Menu (Logged In) -->
                     <div v-if="isLoggedIn" class="relative flex items-center gap-1">
@@ -488,6 +492,12 @@
                             精选
                         </span>
                     </div>
+                    <div v-if="card.review_status && card.review_status !== 'approved'" class="absolute top-2.5 z-10" :class="card.is_featured ? 'left-20' : 'left-2.5'">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-white shadow-md"
+                              :class="card.review_status === 'pending' ? 'bg-amber-500' : 'bg-red-500'">
+                            {{ card.review_status === 'pending' ? '待审核' : '已拒绝' }}
+                        </span>
+                    </div>
 
                     <!-- Avatar (3:4 Ratio, Zero Padding) -->
                     <div class="relative w-[7.5rem] sm:w-48 flex-shrink-0 bg-gray-100">
@@ -512,6 +522,20 @@
                                 </div>
                                 
                                 <div class="flex items-center gap-1 flex-shrink-0 ml-1">
+
+                                    <!-- Feature Toggle Button (Admin Only) -->
+                                    <button v-if="isAdmin && card.review_status === 'pending'"
+                                            @click.stop="reviewCard(card, 'approved')"
+                                            class="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all flex-shrink-0"
+                                            title="通过审核">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                    </button>
+                                    <button v-if="isAdmin && card.review_status === 'pending'"
+                                            @click.stop="reviewCard(card, 'rejected')"
+                                            class="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"
+                                            title="拒绝审核">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    </button>
 
                                     <!-- Feature Toggle Button (Admin Only) -->
                                     <button v-if="isAdmin"
@@ -558,6 +582,9 @@
                             
                             <!-- Description -->
                             <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="[card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]', { 'blur-sm select-none': isR18Card(card) && !r18Confirmed }]">{{ renderCardPreview(card.description || '暂无描述') }}</div>
+                            <div v-if="card.review_status === 'rejected' && card.rejection_reason" class="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
+                                拒绝原因：{{ card.rejection_reason }}
+                            </div>
                         </div>
 
                         <!-- Heat & Comment counts -->
@@ -944,7 +971,7 @@
                                                 <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
                                                 <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                             </div>
-                                            <button v-if="isAdmin" @click="deleteComment(root.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                                            <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
                                         </div>
                                         <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
                                         <div class="flex items-center gap-3 mt-2">
@@ -969,7 +996,7 @@
                                                             <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
                                                             <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                                         </div>
-                                                        <button v-if="isAdmin" @click="deleteComment(reply.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                                                        <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
                                                     </div>
                                                     <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
                                                     <div class="flex items-center gap-3 mt-1.5">
@@ -1132,7 +1159,7 @@
                                                 <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
                                                 <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                             </div>
-                                            <button v-if="isAdmin" @click="deleteComment(root.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                                            <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
                                         </div>
                                         <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
                                         <div class="flex items-center gap-3 mt-2">
@@ -1157,7 +1184,7 @@
                                                             <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
                                                             <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                                         </div>
-                                                        <button v-if="isAdmin" @click="deleteComment(reply.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                                                        <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
                                                     </div>
                                                     <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
                                                     <div class="flex items-center gap-3 mt-1.5">
@@ -1625,6 +1652,7 @@
                         });
                         if (resp.ok) {
                             isAdmin.value = true;
+                            fetchCards();
                         } else {
                             adminToken.value = '';
                             safeStorage.removeItem('admin_token');
@@ -1660,6 +1688,8 @@
                         adminLoginForm.username = '';
                         adminLoginForm.password = '';
                         showToast('已进入管理员模式', 'success');
+                        currentTab.value = 'mine';
+                        fetchCards();
                     } catch (e) {
                         adminLoginError.value = '网络错误';
                     }
@@ -1669,6 +1699,8 @@
                     adminToken.value = '';
                     isAdmin.value = false;
                     safeStorage.removeItem('admin_token');
+                    currentTab.value = 'all';
+                    fetchCards();
                     showToast('已退出管理员模式', 'info');
                 };
 
@@ -1686,6 +1718,7 @@
                         if (resp.ok) {
                             const data = await resp.json();
                             currentUser.value = data.user;
+                            fetchCards();
                         } else {
                             userToken.value = '';
                             currentUser.value = null;
@@ -1896,7 +1929,11 @@
 
                     // Tab filter
                     if (currentTab.value === 'mine') {
-                        result = result.filter(c => isCardOwnedByCurrentUser(c));
+                        if (isAdmin.value) {
+                            result = result.filter(c => c.review_status === 'pending');
+                        } else {
+                            result = result.filter(c => isCardOwnedByCurrentUser(c));
+                        }
                     }
 
                     if (searchQuery.value) {
@@ -1967,7 +2004,8 @@
                     loading.value = true;
                     try {
                         const headers = {};
-                        if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
                         const resp = await fetch(API_BASE + '/api/cards', { headers });
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
@@ -2299,6 +2337,8 @@
                         if (creditInfo && currentUser.value) {
                             currentUser.value = { ...currentUser.value, download_credits: creditInfo.new_credits };
                             showToast('发布成功！获得 3 次下载机会 🎉', 'success');
+                        } else if (data?.some(d => d.pending_review)) {
+                            showToast('上传成功，已进入管理员审核队列', 'success', 4000);
                         } else {
                             showToast('发布成功！感谢您的无私奉献！', 'success');
                         }
@@ -2340,6 +2380,37 @@
                         showToast(result.is_featured ? '已设为精选' : '已取消精选', 'success');
                     } catch (err) {
                         showToast('精选操作失败: ' + err.message, 'error');
+                    }
+                };
+
+                const reviewCard = async (card, status) => {
+                    if (!isAdmin.value || !card) return;
+                    let reason = '';
+                    if (status === 'rejected') {
+                        reason = prompt('请输入拒绝原因（可留空）：') || '';
+                    }
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id + '/review', {
+                            method: 'PUT',
+                            headers: adminAuthHeaders(),
+                            body: JSON.stringify({ status, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '审核失败');
+
+                        if (data.card) {
+                            const idx = cards.value.findIndex(c => c.id === card.id);
+                            if (idx !== -1) {
+                                const updated = { ...cards.value[idx], ...data.card };
+                                parseCreatorNotes(updated);
+                                updated.thumbnail_url = API_BASE + '/api/cards/' + updated.id + '/thumbnail';
+                                updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
+                                cards.value[idx] = updated;
+                            }
+                        }
+                        showToast(status === 'approved' ? '已通过审核' : '已拒绝该卡片', status === 'approved' ? 'success' : 'warning');
+                    } catch (err) {
+                        showToast(err.message || '审核失败', 'error');
                     }
                 };
 
@@ -2512,86 +2583,82 @@
                     return result;
                 };
 
+                const buildPreviewCardModel = (card, dataOverride) => {
+                    const raw = dataOverride || card.data || {};
+                    const content = raw.data || raw;
+                    const processedFirstMes = applyRegexScripts(content.first_mes || '', content, raw);
+                    return {
+                        ...card,
+                        data: dataOverride || card.data,
+                        renderId: Date.now(),
+                        _display: {
+                            personality: content.personality || '',
+                            first_mes: processedFirstMes,
+                            description: card.description || content.description || content.char_persona || '',
+                            name: card.name || content.name || content.char_name || ''
+                        }
+                    };
+                };
+
                 const previewCard = async (card) => {
-                    const openingStartedAt = Date.now();
                     const requestId = startPreviewOpening(card);
-                    let preparedPreviewCard = null;
-                    try {
-                        const bgImage = document.getElementById('mobile-bg-img');
-                        if (bgImage) {
-                            bgImage.style.opacity = '0';
-                            bgImage.style.filter = 'none';
-                            bgImage.style.transform = 'scale(1) translateZ(0)';
-                            delete bgImage.dataset.fallback;
-                        }
-                        
-                        // Fetch the full card payload lazily when the preview needs it.
-                        if (!card.data) {
-                            try {
-                                const headers = {};
-                                if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                                else if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
-                                const resp = await fetch(API_BASE + '/api/cards/' + card.id, { headers });
-                                if (resp.ok) {
-                                    const fullCard = await resp.json();
-                                    card.data = fullCard.data;
-                                }
-                            } catch (e) {
-                                console.error('Load card data error:', e);
-                            }
-                        }
-                        
-                        const raw = card.data || {};
-                        // Prefer the V2 data payload and fall back to the legacy root object.
-                        const content = raw.data || raw;
-                        
-                        // Apply preview-time regex transformations.
-                        const processedFirstMes = applyRegexScripts(content.first_mes || '', content, raw);
+                    const bgImage = document.getElementById('mobile-bg-img');
+                    if (bgImage) {
+                        bgImage.style.opacity = '0';
+                        bgImage.style.filter = 'none';
+                        bgImage.style.transform = 'scale(1) translateZ(0)';
+                        delete bgImage.dataset.fallback;
+                    }
 
-                        // Build a derived preview model without mutating the original export payload.
-                        preparedPreviewCard = {
-                            ...card,
-                            renderId: Date.now(), // Use a unique render key to force the preview subtree to refresh.
-                            _display: {
-                                personality: content.personality || '',
-                                first_mes: processedFirstMes,
-                                description: card.description || content.description || content.char_persona || '',
-                                name: card.name || content.name || content.char_name || ''
-                            }
-                        };
+                    const lightweightPreview = buildPreviewCardModel(card);
+                    selectedCard.value = lightweightPreview;
+                    stopPreviewOpening({ cancelPending: false });
 
-                        await preparePreviewAsset(preparedPreviewCard).catch((error) => {
-                            console.error('Prepare preview asset error:', error);
-                            previewAsset.loading = false;
-                            previewAsset.ready = true;
-                            previewAsset.error = '原图加载失败，已使用默认占位图。';
-                            setPreviewAssetUrl(defaultAvatar, false, 'fallback');
-                        });
-                        
-                        // Load comments
-                        fetchComments(card.id);
+                    preparePreviewAsset(lightweightPreview).catch((error) => {
+                        console.error('Prepare preview asset error:', error);
+                        previewAsset.loading = false;
+                        previewAsset.ready = true;
+                        previewAsset.error = '原图加载失败，已使用默认占位图。';
+                        setPreviewAssetUrl(defaultAvatar, false, 'fallback');
+                    });
 
-                        // Track card view count (skip for card owner to avoid self-inflating heat)
-                        if (!isCardOwnedByCurrentUser(card)) {
-                            try {
-                                const viewHeaders = { 'Content-Type': 'application/json' };
-                                if (isLoggedIn.value) Object.assign(viewHeaders, userAuthHeaders());
-                                fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: viewHeaders });
-                                // Update view count in card list
-                                const listCard = cards.value.find(c => c.id === card.id);
-                                if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
-                            } catch (e) {
-                                console.error('Track view error:', e);
+                    fetchComments(card.id);
+
+                    if (!isCardOwnedByCurrentUser(card)) {
+                        try {
+                            const viewHeaders = { 'Content-Type': 'application/json' };
+                            if (isLoggedIn.value) Object.assign(viewHeaders, userAuthHeaders());
+                            fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: viewHeaders });
+                            const listCard = cards.value.find(c => c.id === card.id);
+                            if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
+                        } catch (e) {
+                            console.error('Track view error:', e);
+                        }
+                    }
+
+                    if (!card.data) {
+                        try {
+                            const headers = {};
+                            if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                            else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                            const resp = await fetch(API_BASE + '/api/cards/' + card.id, { headers });
+                            if (!resp.ok || requestId !== previewOpenRequestId) return;
+                            const fullCard = await resp.json();
+                            const listCard = cards.value.find(c => c.id === card.id);
+                            const merged = {
+                                ...(listCard || card),
+                                ...fullCard,
+                                thumbnail_url: API_BASE + '/api/cards/' + card.id + '/thumbnail',
+                                avatar_url: API_BASE + '/api/cards/' + card.id + '/avatar'
+                            };
+                            parseCreatorNotes(merged);
+                            if (listCard) Object.assign(listCard, merged);
+                            Object.assign(card, merged);
+                            if (selectedCard.value && selectedCard.value.id === card.id) {
+                                selectedCard.value = buildPreviewCardModel(merged, fullCard.data);
                             }
-                        }
-                    } finally {
-                        const elapsed = Date.now() - openingStartedAt;
-                        if (elapsed < PREVIEW_OPENING_MIN_MS) {
-                            await new Promise(resolve => setTimeout(resolve, PREVIEW_OPENING_MIN_MS - elapsed));
-                        }
-                        if (requestId === previewOpenRequestId && preparedPreviewCard) {
-                            selectedCard.value = preparedPreviewCard;
-                            stopPreviewOpening({ cancelPending: false });
+                        } catch (e) {
+                            console.error('Load card data error:', e);
                         }
                     }
                 };
@@ -2969,18 +3036,22 @@
                     }
                 };
 
+                const canDeleteComment = (comment) => {
+                    return isAdmin.value || (isLoggedIn.value && currentUser.value && comment && comment.user_id === currentUser.value.id);
+                };
+
                 const deleteComment = async (commentId) => {
                     if (!confirm('确定要删除这条评论吗？')) return;
                     try {
+                        const headers = isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
                         const resp = await fetch(API_BASE + '/api/comments/' + commentId, {
                             method: 'DELETE',
-                            headers: adminAuthHeaders()
+                            headers
                         });
                         if (!resp.ok) throw new Error('删除失败');
                         
-                        // Count how many comments are being removed (the comment + its replies)
-                        const removedCount = comments.value.filter(c => c.id === commentId || c.reply_to_id === commentId).length;
-                        comments.value = comments.value.filter(c => c.id !== commentId && c.reply_to_id !== commentId);
+                        const removedCount = comments.value.filter(c => c.id === commentId).length;
+                        comments.value = comments.value.filter(c => c.id !== commentId);
 
                         // Update local comment_count on the card to reflect heat change immediately
                         if (selectedCard.value) {
@@ -3235,15 +3306,28 @@
                             throw new Error(err.error || '更新失败');
                         }
                         const data = await resp.json();
+                        let updatedCard = null;
                         if (data && data.length > 0) {
+                            updatedCard = {
+                                ...data[0],
+                                thumbnail_url: API_BASE + '/api/cards/' + data[0].id + '/thumbnail',
+                                avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar'
+                            };
+                            parseCreatorNotes(updatedCard);
                             const idx = cards.value.findIndex(c => c.id === editingCard.value.id);
-                            if (idx !== -1) cards.value[idx] = { ...cards.value[idx], ...data[0] };
+                            if (idx !== -1) {
+                                updatedCard = { ...cards.value[idx], ...updatedCard };
+                                parseCreatorNotes(updatedCard);
+                                cards.value[idx] = updatedCard;
+                            } else {
+                                cards.value.unshift(updatedCard);
+                            }
                         }
                         showToast('修改成功', 'success');
                         showEditModal.value = false;
                         editingCard.value = null;
-                        if (selectedCard.value && selectedCard.value.id === data[0]?.id) {
-                            selectedCard.value = { ...selectedCard.value, ...data[0] };
+                        if (updatedCard && selectedCard.value && selectedCard.value.id === updatedCard.id) {
+                            selectedCard.value = buildPreviewCardModel({ ...selectedCard.value, ...updatedCard }, updatedCard.data);
                         }
                     } catch (err) {
                         showToast('修改失败: ' + err.message, 'error');
@@ -3344,13 +3428,13 @@
                 return {
                     cards, cardSort, showSortDropdown, loading, searchQuery, filteredCards, pagedCards, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, isUploading, handleFileSelect, confirmUpload, handleUploadClick,
-                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured,
+                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard,
                     previewOpening, stopPreviewOpening,
                     toasts, currentTab, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     handleMobileScroll,
                     isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
-                    comments, loadingComments, newComment, submitComment, deleteComment, likeComment, replyToComment, cancelReply,
+                    comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
                     showHeatEditModal, editingHeatCard, heatEditForm, openHeatEdit, submitHeatEdit,

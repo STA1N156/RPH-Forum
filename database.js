@@ -23,6 +23,7 @@ function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            token_version INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_login DATETIME
         );
@@ -32,8 +33,14 @@ function initDatabase() {
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             download_credits INTEGER DEFAULT 1,
+            token_version INTEGER DEFAULT 0,
+            is_banned INTEGER DEFAULT 0,
+            ban_reason TEXT,
+            banned_at DATETIME,
+            banned_by_admin_id INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_login DATETIME
+            last_login DATETIME,
+            FOREIGN KEY (banned_by_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS character_cards (
@@ -45,6 +52,11 @@ function initDatabase() {
             creator_notes TEXT,
             downloads_count INTEGER DEFAULT 0,
             uploader_user_id INTEGER,
+            review_status TEXT DEFAULT 'approved',
+            reviewed_by_admin_id INTEGER,
+            reviewed_at DATETIME,
+            rejection_reason TEXT,
+            uploader_ip_address TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL
         );
@@ -116,6 +128,17 @@ function initDatabase() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS ip_bans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_pattern TEXT UNIQUE NOT NULL,
+            reason TEXT,
+            created_by_admin_id INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME,
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY (created_by_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
@@ -126,9 +149,17 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
         CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
+    try { db.exec('ALTER TABLE admin_users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN ban_reason TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN banned_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN banned_by_admin_id INTEGER'); } catch (e) { /* column exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_users_is_banned ON users(is_banned)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
@@ -140,6 +171,13 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec("ALTER TABLE character_cards ADD COLUMN review_status TEXT DEFAULT 'approved'"); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN reviewed_by_admin_id INTEGER'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN reviewed_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN rejection_reason TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_ip_address TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
