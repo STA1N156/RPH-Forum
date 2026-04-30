@@ -1,0 +1,4 @@
+[Security] Using the default admin password. Set ADMIN_PASSWORD before deploying to production.
+[DB] Database initialized at C:\Users\62392\Documents\Google\RPH-Forum-main\data\forum.db
+[Server] RP Forum running at http://0.0.0.0:9191
+[Server] Admin panel at http://0.0.0.0:9191/admin

@@ -3222,6 +3222,17 @@
                 const showEditModal = ref(false);
                 const isEditUploading = ref(false);
 
+                const normalizeCharacterCardPayload = (charData, fallback = {}) => {
+                    const data = charData?.data || charData || {};
+                    return {
+                        name: data.name || data.char_name || fallback.name || '未命名',
+                        description: data.description || data.char_persona || fallback.description || '',
+                        creator_notes: data.creator_notes || fallback.creator_notes || '',
+                        avatar_url: data.avatar || fallback.avatar_url || '',
+                        full_data: charData
+                    };
+                };
+
                 const startEditCard = (card) => {
                     editingCard.value = {
                         id: card.id,
@@ -3230,7 +3241,8 @@
                         avatar_url: card.avatar_url || card.avatar || '',
                         creator_notes: card.creator_notes || '',
                         data: card.data,
-                        full_data: card.data
+                        full_data: card.data,
+                        reupload_replace: false
                     };
                     showEditModal.value = true;
                 };
@@ -3243,39 +3255,55 @@
                         reader.onload = (ev) => {
                             try {
                                 const json = JSON.parse(ev.target.result);
-                                editingCard.value.full_data = json;
-                                editingCard.value.creator_notes = json.data?.creator_notes || editingCard.value.creator_notes;
-                                if (json.data?.avatar) editingCard.value.avatar_url = json.data.avatar;
+                                const parsed = normalizeCharacterCardPayload(json, editingCard.value);
+                                editingCard.value.name = parsed.name;
+                                editingCard.value.description = parsed.description;
+                                editingCard.value.creator_notes = parsed.creator_notes;
+                                editingCard.value.full_data = parsed.full_data;
+                                if (parsed.avatar_url) editingCard.value.avatar_url = parsed.avatar_url;
+                                editingCard.value.reupload_replace = true;
                                 showToast('JSON 解析成功', 'success');
                             } catch { showToast('JSON 解析失败', 'error'); }
                         };
                         reader.readAsText(file);
                     } else if (file.name.endsWith('.png')) {
-                        reader.onload = (ev) => {
+                        reader.onload = async (ev) => {
                             try {
-                                const arr = new Uint8Array(ev.target.result);
-                                let idx = 8;
-                                while (idx + 8 <= arr.length) {
-                                    if (idx + 4 > arr.length) break;
-                                    const len = (arr[idx]<<24)|(arr[idx+1]<<16)|(arr[idx+2]<<8)|arr[idx+3];
-                                    const type = String.fromCharCode(arr[idx+4],arr[idx+5],arr[idx+6],arr[idx+7]);
-                                    if (len < 0 || idx + 12 + len > arr.length) break;
-                                    if (type === 'tEXt') {
-                                        const data = arr.slice(idx+8, idx+8+len);
-                                        const sep = data.indexOf(0);
-                                        const val = new TextDecoder().decode(data.slice(sep+1));
-                                        try {
-                                            const json = JSON.parse(val);
-                                            editingCard.value.full_data = json;
-                                            editingCard.value.creator_notes = json.data?.creator_notes || editingCard.value.creator_notes;
-                                        } catch {}
+                                const buffer = ev.target.result;
+                                const chunks = readPngChunks(buffer);
+                                let rawDataStr = chunks['chara'];
+                                if (!rawDataStr) {
+                                    for (const key in chunks) {
+                                        if (chunks[key].length > 100 && (chunks[key].trim().startsWith('ey') || chunks[key].trim().startsWith('{'))) {
+                                            rawDataStr = chunks[key];
+                                            break;
+                                        }
                                     }
-                                    idx += 12 + len;
                                 }
-                                const blob = new Blob([arr], { type: 'image/png' });
-                                editingCard.value.avatar_url = URL.createObjectURL(blob);
+
+                                if (!rawDataStr) throw new Error('未找到角色卡数据');
+                                let json = null;
+                                try {
+                                    json = JSON.parse(decodeBase64Utf8(rawDataStr));
+                                } catch {
+                                    json = JSON.parse(rawDataStr);
+                                }
+
+                                const avatarDataUrl = await new Promise(resolve => {
+                                    const blob = new Blob([buffer], { type: 'image/png' });
+                                    const r = new FileReader();
+                                    r.onloadend = () => resolve(r.result);
+                                    r.readAsDataURL(blob);
+                                });
+                                const parsed = normalizeCharacterCardPayload(json, { ...editingCard.value, avatar_url: avatarDataUrl });
+                                editingCard.value.name = parsed.name;
+                                editingCard.value.description = parsed.description;
+                                editingCard.value.creator_notes = parsed.creator_notes;
+                                editingCard.value.full_data = parsed.full_data;
+                                editingCard.value.avatar_url = avatarDataUrl;
+                                editingCard.value.reupload_replace = true;
                                 showToast('PNG 解析成功', 'success');
-                            } catch { showToast('PNG 解析失败', 'error'); }
+                            } catch (err) { showToast('PNG 解析失败: ' + err.message, 'error'); }
                         };
                         reader.readAsArrayBuffer(file);
                     }
@@ -3290,10 +3318,10 @@
                             name: editingCard.value.name,
                             description: editingCard.value.description,
                             data: editingCard.value.full_data,
-                            creator_notes: editingCard.value.creator_notes
+                            creator_notes: editingCard.value.creator_notes,
+                            reupload_replace: editingCard.value.reupload_replace === true
                         };
-                        // Persist avatar data only when the editor is holding a newly uploaded data URL.
-                        if (editingCard.value.avatar_url && editingCard.value.avatar_url.startsWith('data:')) {
+                        if (editingCard.value.avatar_url && /^(data:|https?:\/\/)/i.test(editingCard.value.avatar_url)) {
                             editPayload.avatar_url = editingCard.value.avatar_url;
                         }
                         const resp = await fetch(API_BASE + '/api/cards/' + editingCard.value.id, {

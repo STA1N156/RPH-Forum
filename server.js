@@ -1134,12 +1134,18 @@ app.put('/api/cards/:id', (req, res) => {
             return res.status(403).json({ error: '无权编辑此卡片' });
         }
 
-        const { name, description, avatar_url, data, creator_notes, created_at } = req.body;
+        const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace } = req.body;
         const fields = [];
         const values = [];
         if (name !== undefined)          { fields.push('name = ?');          values.push(name); }
         if (description !== undefined)   { fields.push('description = ?');   values.push(description); }
-        if (avatar_url !== undefined && avatar_url.startsWith('data:')) { fields.push('avatar_url = ?'); values.push(avatar_url); }
+        if (avatar_url !== undefined) {
+            const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, req.params.id);
+            if (safeAvatarUrl) {
+                fields.push('avatar_url = ?');
+                values.push(safeAvatarUrl);
+            }
+        }
         if (data !== undefined) {
             let serializedData;
             try {
@@ -1156,7 +1162,7 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
-        if (decoded.role === 'user') {
+        if (decoded.role === 'user' && !reupload_replace) {
             fields.push("review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
             fields.push('reviewed_at = NULL');
@@ -1167,7 +1173,7 @@ app.put('/api/cards/:id', (req, res) => {
         values.push(req.params.id);
         const updateCard = db.transaction(() => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-            if (decoded.role === 'user' && card.review_status === 'approved' && card.uploader_user_id) {
+            if (decoded.role === 'user' && !reupload_replace && card.review_status === 'approved' && card.uploader_user_id) {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
         });
