@@ -3308,10 +3308,11 @@
                         const data = await resp.json();
                         let updatedCard = null;
                         if (data && data.length > 0) {
+                            const assetVersion = Date.now();
                             updatedCard = {
                                 ...data[0],
-                                thumbnail_url: API_BASE + '/api/cards/' + data[0].id + '/thumbnail',
-                                avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar'
+                                thumbnail_url: API_BASE + '/api/cards/' + data[0].id + '/thumbnail?v=' + assetVersion,
+                                avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar?v=' + assetVersion
                             };
                             parseCreatorNotes(updatedCard);
                             const idx = cards.value.findIndex(c => c.id === editingCard.value.id);
@@ -3327,7 +3328,11 @@
                         showEditModal.value = false;
                         editingCard.value = null;
                         if (updatedCard && selectedCard.value && selectedCard.value.id === updatedCard.id) {
-                            selectedCard.value = buildPreviewCardModel({ ...selectedCard.value, ...updatedCard }, updatedCard.data);
+                            const refreshedDetail = buildPreviewCardModel({ ...selectedCard.value, ...updatedCard }, updatedCard.data);
+                            selectedCard.value = refreshedDetail;
+                            preparePreviewAsset(refreshedDetail).catch((error) => {
+                                console.error('Refresh preview asset error:', error);
+                            });
                         }
                     } catch (err) {
                         showToast('修改失败: ' + err.message, 'error');
