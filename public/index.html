@@ -2452,10 +2452,17 @@
                     }
                 };
 
+                const getCharacterDisplayName = (content = {}) => content.name || content.char_name || 'Character';
+
+                const applyDisplayMacros = (text, content = {}) => {
+                    if (!text) return '';
+                    return text.replace(/\{\{char\}\}/gi, getCharacterDisplayName(content));
+                };
+
                 const applyRegexScripts = (text, content, raw) => {
                     if (!text) return '';
                     
-                    const charName = content.name || content.char_name || 'Character';
+                    const charName = getCharacterDisplayName(content);
                     const protectedSegmentPattern = /(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)/gi;
                     const protectedSegmentExactPattern = /^(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)$/i;
                     const replaceOutsideProtectedSegments = (source, regex, replacement) => {
@@ -2600,8 +2607,8 @@
                     const raw = dataOverride || card.data || {};
                     const content = raw.data || raw;
                     const sourceDescription = card.description || content.description || content.char_persona || '';
-                    const processedDescription = applyRegexScripts(sourceDescription, content, raw);
-                    const processedPersonality = applyRegexScripts(content.personality || '', content, raw);
+                    const processedDescription = applyDisplayMacros(sourceDescription, content);
+                    const processedPersonality = applyDisplayMacros(content.personality || '', content);
                     const processedFirstMes = applyRegexScripts(content.first_mes || '', content, raw);
                     return {
                         ...card,
