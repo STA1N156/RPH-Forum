@@ -247,15 +247,17 @@
         /* HTML Card Container Styles */
         .html-card-container {
             width: 100%;
+            min-width: 100%;
+            align-self: stretch;
             padding: 0 !important;
             margin: 0 !important;
             max-width: none;
-            min-width: 0;
             overflow: hidden !important;
             isolation: isolate;
         }
         .html-card-container iframe {
-            width: 100%;
+            width: 100% !important;
+            min-width: 0;
             max-width: 100%;
             border: none;
             display: block;
@@ -907,7 +909,7 @@
                                     简要描述
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard.description || '暂无描述')"></div>
+                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
                             </section>
 
                             <section v-if="selectedCard._display.personality">
@@ -1095,7 +1097,7 @@
                                     简要描述
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard.description || '暂无描述')"></div>
+                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
                             </section>
 
                             <section v-if="selectedCard._display.personality">
@@ -2454,6 +2456,14 @@
                     if (!text) return '';
                     
                     const charName = content.name || content.char_name || 'Character';
+                    const protectedSegmentPattern = /(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)/gi;
+                    const protectedSegmentExactPattern = /^(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)$/i;
+                    const replaceOutsideProtectedSegments = (source, regex, replacement) => {
+                        return source.split(protectedSegmentPattern).map(part => {
+                            if (!part || protectedSegmentExactPattern.test(part)) return part;
+                            return part.replace(regex, replacement);
+                        }).join('');
+                    };
                     
                     // Detect full HTML documents so the document block can be isolated from regex processing.
                     const htmlDocPattern = /(<!doctype html>|<html\b[^>]*>)/i;
@@ -2561,8 +2571,11 @@
                                 const re = new RegExp(regexPattern, flags);
                                 const oldResult = result;
                                 
-                                // Apply the replacement directly and rely on the markdown render pipeline to sanitize the output.
-                                result = result.replace(re, replacement);
+                                // Plain text regexes should not rewrite generated HTML tags, code fences, script/style blocks, or full HTML docs.
+                                const shouldProtectHtml = typeof regexPattern === 'string' && !/[<>]/.test(regexPattern) && !regexPattern.includes('```');
+                                result = shouldProtectHtml
+                                    ? replaceOutsideProtectedSegments(result, re, replacement)
+                                    : result.replace(re, replacement);
                                 
                                 if (oldResult !== result) {
                                     console.log('[Regex] Applied:', script.scriptName || script.name || regexPattern, '=>', replacement);
@@ -2586,15 +2599,18 @@
                 const buildPreviewCardModel = (card, dataOverride) => {
                     const raw = dataOverride || card.data || {};
                     const content = raw.data || raw;
+                    const sourceDescription = card.description || content.description || content.char_persona || '';
+                    const processedDescription = applyRegexScripts(sourceDescription, content, raw);
+                    const processedPersonality = applyRegexScripts(content.personality || '', content, raw);
                     const processedFirstMes = applyRegexScripts(content.first_mes || '', content, raw);
                     return {
                         ...card,
                         data: dataOverride || card.data,
                         renderId: Date.now(),
                         _display: {
-                            personality: content.personality || '',
+                            personality: processedPersonality,
                             first_mes: processedFirstMes,
-                            description: card.description || content.description || content.char_persona || '',
+                            description: processedDescription,
                             name: card.name || content.name || content.char_name || ''
                         }
                     };
@@ -2736,7 +2752,7 @@
                     };
 
                     const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
-                    const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;max-width:100% !important;min-width:0 !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;box-sizing:border-box !important;overflow-x:hidden !important;overflow-y:hidden !important;} body{position:relative !important;isolation:isolate !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;max-width:100% !important;} img,video,canvas,svg,iframe{max-width:100% !important;height:auto !important;} table{display:block !important;width:100% !important;overflow-x:auto !important;max-width:100% !important;-webkit-overflow-scrolling:touch !important;} pre,code{white-space:pre-wrap !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;max-width:100% !important;} .container, .reality-panel, main, section, article, aside, header, footer, div {max-width:100% !important; width:auto !important;} .container, .reality-panel {width:100% !important; margin:0 !important; border-radius:0 !important; box-shadow:none !important; border:none !important;} body > div:first-child {margin:0 !important; max-width:100% !important;} ' + hudCSS + '</style>';
+                    const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;max-width:100% !important;min-width:0 !important;height:auto !important;min-height:auto !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;box-sizing:border-box !important;overflow-x:hidden !important;overflow-y:hidden !important;} body{position:relative !important;isolation:isolate !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;} img,video,canvas,svg,iframe{max-width:100% !important;height:auto !important;} table{display:block !important;width:100% !important;overflow-x:auto !important;max-width:100% !important;-webkit-overflow-scrolling:touch !important;} pre,code{white-space:pre-wrap !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;max-width:100% !important;} main,section,article,aside,header,footer{max-width:100% !important;} .container,.reality-panel,.app-container{max-width:100% !important;width:100% !important;margin:0 !important;border-radius:0 !important;box-shadow:none !important;border:none !important;} body > div:first-child{max-width:100% !important;} ' + hudCSS + '</style>';
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const scriptShim = `
@@ -3077,6 +3093,14 @@
                         FORBID_ATTR: ['onmouseover', 'onload'],
                         FORCE_BODY: true
                     };
+                    const renderHtmlFrame = (rawHtml) => {
+                        const container = document.createElement('div');
+                        container.className = 'html-card-container';
+                        container.style.marginBottom = '-1px';
+                        container.appendChild(createIframe(rawHtml));
+                        return container;
+                    };
+                    const looksLikeHtmlBlock = (rawHtml) => /^\s*<(!doctype|html|head|body|div|span|style|script|table|img|iframe|section|article|aside|header|footer)/i.test(rawHtml || '');
 
                     // Check for HTML Document
                     const htmlDocPattern = /(<!doctype html>|<html\b[^>]*>)/i;
@@ -3102,11 +3126,7 @@
                         let resultHtml = '';
                         if (preText.trim()) resultHtml += DOMPurify.sanitize(marked.parse(preText), cleanConfig);
                         
-                        const container = document.createElement('div');
-                        container.className = 'html-card-container';
-                        container.style.marginBottom = '-1px';
-                        container.appendChild(createIframe(htmlContent));
-                        resultHtml += container.outerHTML;
+                        resultHtml += renderHtmlFrame(htmlContent).outerHTML;
                         
                         if (postText.trim()) resultHtml += DOMPurify.sanitize(marked.parse(postText), cleanConfig);
                         return resultHtml;
@@ -3116,15 +3136,42 @@
                     const startsWithBlockHtml = /^\s*<(div|table|section|article|aside|header|footer|style|script)/i.test(trimmed);
                     if (startsWithBlockHtml && !trimmed.includes('```')) {
                         // Render raw HTML fragments inside an iframe to preserve interactive handlers and isolate styles.
-                        const container = document.createElement('div');
-                        container.className = 'html-card-container';
-                        container.style.marginBottom = '-1px';
-                        container.appendChild(createIframe(text));
-                        return container.outerHTML;
+                        return renderHtmlFrame(text).outerHTML;
                     }
 
                     // Standard Markdown
-                    return DOMPurify.sanitize(marked.parse(text), cleanConfig);
+                    const html = DOMPurify.sanitize(marked.parse(text), cleanConfig);
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        let modified = false;
+
+                        doc.querySelectorAll('pre code').forEach(block => {
+                            const rawHtml = block.textContent || '';
+                            const className = block.className || '';
+                            const isHtmlClass = /\blanguage-(html|xml)\b/i.test(className);
+                            if (isHtmlClass || looksLikeHtmlBlock(rawHtml)) {
+                                const pre = block.parentElement;
+                                if (pre && pre.parentNode) {
+                                    pre.parentNode.replaceChild(renderHtmlFrame(rawHtml), pre);
+                                    modified = true;
+                                }
+                            }
+                        });
+
+                        doc.querySelectorAll('p').forEach(p => {
+                            const rawHtml = p.textContent || '';
+                            if (looksLikeHtmlBlock(rawHtml) && /&lt;|<br/i.test(p.innerHTML || '')) {
+                                p.parentNode.replaceChild(renderHtmlFrame(rawHtml), p);
+                                modified = true;
+                            }
+                        });
+
+                        if (modified) return doc.body.innerHTML;
+                    } catch (e) {
+                        console.warn('HTML preview render fallback:', e);
+                    }
+                    return html;
                 };
 
                 const renderCardPreview = (text) => {
