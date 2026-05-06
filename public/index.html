@@ -931,6 +931,20 @@
                                 <div :key="selectedCard.renderId" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
                             </section>
 
+                            <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
+                                <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                    原始模板UI
+                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                </h4>
+                                <div class="space-y-6">
+                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.renderId + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
+                                        <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
+                                        <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
+                                    </div>
+                                </div>
+                            </section>
+
                             <!-- Comments Section -->
                             <section>
                                 <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
@@ -1117,6 +1131,20 @@
                                 </h4>
                                 <!-- Force iframe remounting so each open starts from a clean render state. -->
                                 <div :key="selectedCard.renderId" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
+                            </section>
+
+                            <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
+                                <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                    原始模板UI
+                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                </h4>
+                                <div class="space-y-6">
+                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.renderId + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
+                                        <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
+                                        <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
+                                    </div>
+                                </div>
                             </section>
 
                             <!-- Comments Section -->
@@ -2603,6 +2631,108 @@
                     return result;
                 };
 
+                const clonePreviewObject = (value) => {
+                    if (!value || typeof value !== 'object') return {};
+                    try {
+                        return JSON.parse(JSON.stringify(value));
+                    } catch (e) {
+                        return { ...value };
+                    }
+                };
+
+                const getUiTemplateValue = (source, path) => {
+                    if (!source || !path) return undefined;
+                    if (Object.prototype.hasOwnProperty.call(source, path)) return source[path];
+                    return String(path).split('.').reduce((acc, key) => (
+                        acc && Object.prototype.hasOwnProperty.call(acc, key) ? acc[key] : undefined
+                    ), source);
+                };
+
+                const escapeUiTemplateValue = (value) => {
+                    const printable = value && typeof value === 'object' ? JSON.stringify(value) : value;
+                    return String(printable ?? '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                };
+
+                const collectUiTemplateList = (value) => {
+                    if (!value) return [];
+                    if (typeof value === 'string') {
+                        try {
+                            return collectUiTemplateList(JSON.parse(value));
+                        } catch (e) {
+                            return [];
+                        }
+                    }
+                    if (Array.isArray(value)) return value;
+                    if (Array.isArray(value.templates)) return value.templates;
+                    if (Array.isArray(value.uiTemplates)) return value.uiTemplates;
+                    if (Array.isArray(value.ui_templates)) return value.ui_templates;
+                    return [];
+                };
+
+                const renderUiTemplateSource = (template) => {
+                    const htmlTemplate = template?.htmlTemplate || template?.template || template?.html || template?.content || '';
+                    if (!htmlTemplate) return '';
+                    const variables = clonePreviewObject(
+                        template.initialVariableState
+                        || template.variables
+                        || template.variableState
+                        || {}
+                    );
+                    return String(htmlTemplate).replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, key) => {
+                        const value = getUiTemplateValue(variables, key);
+                        return escapeUiTemplateValue(value);
+                    });
+                };
+
+                const extractEmbeddedUiTemplates = (rawData = {}) => {
+                    const content = rawData?.data || rawData || {};
+                    const candidates = [
+                        content.uiTemplates,
+                        content.ui_templates,
+                        rawData.uiTemplates,
+                        rawData.ui_templates,
+                        content.extensions?.ui_templates,
+                        content.extensions?.rp_hub_ui_templates,
+                        rawData.extensions?.ui_templates,
+                        rawData.extensions?.rp_hub_ui_templates
+                    ];
+                    const seen = new Set();
+                    const templates = [];
+                    candidates.forEach(candidate => {
+                        collectUiTemplateList(candidate).forEach((template) => {
+                            const html = template?.htmlTemplate || template?.template || template?.html || template?.content || '';
+                            if (!html) return;
+                            const key = template.id || `${template.name || ''}:${String(html).slice(0, 120)}`;
+                            if (seen.has(key)) return;
+                            seen.add(key);
+                            templates.push({
+                                ...template,
+                                id: template.id || `embedded-ui-${templates.length + 1}`,
+                                name: template.name || `UI模板 ${templates.length + 1}`,
+                                htmlTemplate: String(html),
+                                initialVariableState: clonePreviewObject(
+                                    template.initialVariableState
+                                    || template.variables
+                                    || template.variableState
+                                    || {}
+                                ),
+                                order: Number.isFinite(Number(template.order)) ? Number(template.order) : 100
+                            });
+                        });
+                    });
+                    return templates.sort((a, b) => (b.order || 0) - (a.order || 0));
+                };
+
+                const renderUiTemplatePreview = (template) => {
+                    const html = renderUiTemplateSource(template);
+                    return html ? renderMarkdown(html) : '';
+                };
+
                 const buildPreviewCardModel = (card, dataOverride) => {
                     const raw = dataOverride || card.data || {};
                     const content = raw.data || raw;
@@ -2610,6 +2740,7 @@
                     const processedDescription = applyDisplayMacros(sourceDescription, content);
                     const processedPersonality = applyDisplayMacros(content.personality || '', content);
                     const processedFirstMes = applyRegexScripts(content.first_mes || '', content, raw);
+                    const uiTemplates = extractEmbeddedUiTemplates(raw);
                     return {
                         ...card,
                         data: dataOverride || card.data,
@@ -2618,6 +2749,7 @@
                             personality: processedPersonality,
                             first_mes: processedFirstMes,
                             description: processedDescription,
+                            uiTemplates,
                             name: card.name || content.name || content.char_name || ''
                         }
                     };
@@ -2691,7 +2823,8 @@
                     const candidateText = [
                         selectedCard.value._display?.first_mes,
                         selectedCard.value._display?.description,
-                        selectedCard.value.description
+                        selectedCard.value.description,
+                        ...(selectedCard.value._display?.uiTemplates || []).map(template => template.htmlTemplate)
                     ].filter(Boolean).join('\n');
                     return /<!doctype|<html|<iframe|<script|<style|<div|<section|<table/i.test(candidateText);
                 });
@@ -3519,7 +3652,7 @@
                     previewOpening, stopPreviewOpening,
                     toasts, currentTab, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     handleMobileScroll,
-                    isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview,
+                    isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
                     comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
