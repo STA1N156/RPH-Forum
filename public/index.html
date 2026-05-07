@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -309,7 +309,7 @@
                     </button>
                     <button @click="handleUploadClick" class="bg-primary-600 hover:bg-primary-700 text-white px-5 sm:px-6 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                        上传
+                        {{ uploadButtonLabel }}
                     </button>
                     <button v-if="isAdmin" @click="currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
@@ -397,6 +397,30 @@
                 </div>
             </div>
 
+            <!-- Plaza Sections -->
+            <div v-if="!loading" class="mb-4 animate-fade-in">
+                <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    <button @click="contentSection = 'all'"
+                            class="flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold border transition-all active:scale-95 flex-shrink-0"
+                            :class="contentSection === 'all'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
+                                : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                        角色卡
+                        <span class="text-[10px] opacity-70">{{ cards.length }}</span>
+                    </button>
+                    <button @click="contentSection = 'uitemplates'"
+                            class="flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold border transition-all active:scale-95 flex-shrink-0"
+                            :class="contentSection === 'uitemplates'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
+                                : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5"/></svg>
+                        UI模板
+                        <span class="text-[10px] opacity-80">{{ uiTemplateCardsCount }}</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Sort + Tags row -->
             <div v-if="!loading" class="mb-5 animate-fade-in">
                 <div class="flex items-start gap-2">
@@ -432,10 +456,10 @@
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2" :class="tagsExpanded ? 'flex-wrap' : 'flex-nowrap overflow-hidden'">
+                    <div class="flex-1 min-w-0 overflow-hidden">
+                        <div class="flex items-center gap-2 flex-wrap overflow-hidden" :class="tagsExpanded ? '' : 'max-h-[2.25rem]'">
                             <!-- Tags (only on non-mine tab) -->
-                            <template v-if="currentTab !== 'mine' && visiblePopularTags.length > 0">
+                            <template v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && visiblePopularTags.length > 0">
                                 <button v-for="tag in visiblePopularTags" :key="tag"
                                 @click="searchTag(tag)"
                                 class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 border active:scale-95 flex-shrink-0 max-w-[5.5rem] sm:max-w-[7rem] lg:max-w-[8rem] truncate"
@@ -447,7 +471,7 @@
                             </template>
                         </div>
                     </div>
-                    <button v-if="currentTab !== 'mine' && showPopularTagsToggle"
+                    <button v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && showPopularTagsToggle"
                             @click="tagsExpanded = !tagsExpanded"
                             class="mt-1 flex items-center gap-0.5 text-xs font-bold text-gray-400 hover:text-primary-500 transition-colors flex-shrink-0">
                         <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="tagsExpanded ? 'rotate-180' : ''"
@@ -469,21 +493,112 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="filteredCards.length === 0" class="text-center py-32 animate-fade-in">
+            <div v-else-if="currentListLength === 0" class="text-center py-32 animate-fade-in">
                 <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-300">
                     <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-800 mb-2">没有找到匹配的角色卡</h3>
-                <p class="text-gray-500 max-w-xs mx-auto mb-8">换个关键词试试，或上传您的第一张角色卡！</p>
-                <button @click="searchQuery = ''" class="px-6 py-2 bg-primary-50 text-primary-600 rounded-xl font-bold hover:bg-primary-100 transition-colors">
-                    清除搜索条件
+                <h3 class="text-xl font-bold text-gray-800 mb-2">{{ emptyStateTitle }}</h3>
+                <p class="text-gray-500 max-w-xs mx-auto mb-8">{{ emptyStateDescription }}</p>
+                <button v-if="showEmptyStateAction" @click="searchQuery ? (searchQuery = '') : (contentSection === 'uitemplates' && currentTab === 'mine' && isAdmin ? currentTab = 'all' : handleUploadClick())" class="px-6 py-2 bg-primary-50 text-primary-600 rounded-xl font-bold hover:bg-primary-100 transition-colors">
+                    {{ emptyStateActionLabel }}
                 </button>
             </div>
 
             <!-- Card List -->
             <div v-else class="flex flex-col gap-4 animate-fade-in">
 
-                    <div v-for="card in pagedCards" :key="card.id"
+                    <div v-if="contentSection === 'uitemplates'" v-for="template in pagedUiTemplates" :key="template.id"
+                         @click="openTemplateDetail(template)"
+                         class="group relative flex bg-white rounded-3xl border border-blue-100 shadow-sm hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden cursor-pointer min-h-[12rem] sm:min-h-[13.5rem] h-auto">
+                        <div v-if="template.is_featured" class="absolute top-2.5 left-2.5 z-10">
+                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50">
+                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                精选
+                            </span>
+                        </div>
+                        <div v-if="template.review_status && template.review_status !== 'approved'" class="absolute top-2.5 z-10" :class="template.is_featured ? 'left-20' : 'left-2.5'">
+                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-white shadow-md"
+                                  :class="template.review_status === 'pending' ? 'bg-amber-500' : 'bg-red-500'">
+                                {{ template.review_status === 'pending' ? '待审核' : '已拒绝' }}
+                            </span>
+                        </div>
+
+                        <div class="relative w-[7.5rem] sm:w-48 flex-shrink-0 bg-blue-50 border-r border-blue-100">
+                            <div class="absolute inset-0 flex items-center justify-center text-blue-600">
+                                <svg class="w-24 h-24 sm:w-32 sm:h-32" viewBox="0 0 96 96" fill="none" aria-hidden="true">
+                                    <rect x="18" y="14" width="60" height="68" rx="16" fill="currentColor" opacity="0.08"/>
+                                    <rect x="30" y="24" width="36" height="48" rx="7" stroke="currentColor" stroke-width="4"/>
+                                    <path d="M40 38h16M40 48h16M40 58h10" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                                    <circle cx="66" cy="26" r="7" fill="currentColor" opacity="0.14"/>
+                                </svg>
+                            </div>
+                            <div v-if="canViewTemplateDownloads(template)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                {{ template.downloads_count || 0 }}
+                            </div>
+                        </div>
+
+                        <div class="flex-1 p-3 sm:p-5 flex flex-col min-w-0">
+                            <div class="flex flex-col gap-2">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex-1 min-w-0">
+                                        <h3 class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight break-words">{{ template.title }}</h3>
+                                        <div class="mt-1.5 flex items-center gap-2 text-[11px] text-gray-400 font-bold flex-wrap">
+                                            <span class="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">{{ formatTemplateVariableBadge(template) }}</span>
+                                        </div>
+                                    </div>
+                                    <div v-if="isAdmin || isTemplateOwnedByCurrentUser(template)" class="flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
+                                        <button v-if="isAdmin && template.review_status === 'pending'"
+                                                @click.stop="reviewTemplate(template, 'approved')"
+                                                class="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all"
+                                                title="通过审核">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                        </button>
+                                        <button v-if="isAdmin && template.review_status === 'pending'"
+                                                @click.stop="reviewTemplate(template, 'rejected')"
+                                                class="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                                title="拒绝审核">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                        <button v-if="isAdmin"
+                                                @click.stop="toggleTemplateFeatured(template)"
+                                                class="p-1.5 rounded-lg transition-all"
+                                                :class="template.is_featured ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'"
+                                                :title="template.is_featured ? '取消精选' : '设为精选'">
+                                            <svg class="w-5 h-5" viewBox="0 0 24 24" :fill="template.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                        </button>
+                                        <button @click.stop="startEditTemplate(template)"
+                                                class="p-1.5 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                                                title="编辑">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                        </button>
+                                        <button @click.stop="deleteTemplate(template)"
+                                                class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                title="删除">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="text-xs sm:text-sm text-gray-500 mt-1 leading-relaxed break-words whitespace-pre-line line-clamp-3">{{ template.description || '暂无简介' }}</p>
+                                <div v-if="template.review_status === 'rejected' && template.rejection_reason" class="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
+                                    拒绝原因：{{ template.rejection_reason }}
+                                </div>
+                            </div>
+
+                            <div class="mt-auto pt-3 flex items-center justify-end gap-2 text-xs font-bold text-gray-400">
+                                <span class="flex items-center gap-1 px-2 py-1 rounded-xl">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                                    {{ template.comment_count || 0 }}
+                                </span>
+                                <span class="flex items-center gap-1 px-2 py-1 rounded-xl text-orange-400">
+                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
+                                    {{ computeTemplateHeat(template) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="contentSection !== 'uitemplates'" v-for="card in pagedCards" :key="card.id"
                          @click="isR18Card(card) && !r18Confirmed ? showR18Disclaimer() : previewCard(card)"
                          class="group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
@@ -569,7 +684,11 @@
                             <!-- Creator Note & Tags -->
                             <div class="flex flex-col gap-1 mt-1.5">
                                 <!-- Tags -->
-                                <div v-if="card.tags && card.tags.length > 0" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
+                                <div v-if="isUiTemplateCard(card) || (card.tags && card.tags.length > 0)" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
+                                    <span v-if="isUiTemplateCard(card)"
+                                          class="px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 bg-blue-50 text-blue-600 leading-none flex-shrink-0 inline-flex items-center gap-1">
+                                        {{ formatCardUiVariableBadge(card) }}
+                                    </span>
                                     <span v-for="tag in card.tags" :key="tag"
                                           class="px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 bg-blue-50 text-blue-600 leading-none flex-shrink-0">
                                         {{ tag }}
@@ -644,7 +763,7 @@
                     </button>
                 </div>
                 <!-- Total count below page buttons -->
-                <span class="text-xs font-bold text-gray-400">共 {{ filteredCards.length }} 张 · 第 {{ currentPage }} / {{ totalPages }} 页</span>
+                <span class="text-xs font-bold text-gray-400">共 {{ currentListLength }} {{ contentSection === 'uitemplates' ? '个模板' : '张' }} · 第 {{ currentPage }} / {{ totalPages }} 页</span>
             </div>
         </main>
         <!-- Search Modal -->
@@ -653,14 +772,14 @@
                 <div class="p-5 sm:p-6">
                     <div class="relative flex items-center">
                         <svg class="w-5 h-5 text-gray-400 absolute left-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <input v-model="searchQuery" ref="searchInput" autofocus type="text" placeholder="搜索角色卡名称、描述或标签..." class="w-full bg-gray-50 border-2 border-transparent focus:bg-white focus:border-primary-500 rounded-2xl py-3 pl-12 pr-12 text-base outline-none transition-all placeholder-gray-400 font-medium">
+                        <input v-model="searchQuery" ref="searchInput" autofocus type="text" :placeholder="contentSection === 'uitemplates' ? '搜索UI模板名称、简介或文件名...' : '搜索角色卡名称、描述或标签...'" class="w-full bg-gray-50 border-2 border-transparent focus:bg-white focus:border-primary-500 rounded-2xl py-3 pl-12 pr-12 text-base outline-none transition-all placeholder-gray-400 font-medium">
                         <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
 
                     <!-- Popular Tags in Modal -->
-                    <div v-if="modalPopularTags.length > 0" class="mt-6">
+                    <div v-if="contentSection !== 'uitemplates' && modalPopularTags.length > 0" class="mt-6">
                         <div class="flex items-center gap-2 mb-3 px-1">
                             <svg class="w-4 h-4 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">热门标签</span>
@@ -713,20 +832,222 @@
             </div>
         </div>
 
+        <!-- UI Template Detail Modal -->
+        <div v-if="selectedTemplate" class="fixed inset-0 z-50 bg-white overflow-y-auto no-scrollbar animate-detail-slide-up-mobile md:animate-fade-in">
+            <div class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 safe-area-pt">
+                <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 py-3 flex items-center gap-3">
+                    <button @click="closeTemplateDetail" class="w-10 h-10 rounded-2xl bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 flex items-center justify-center transition-all flex-shrink-0">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <div class="min-w-0 flex-1"></div>
+                    <button @click="closeTemplateDetail" class="w-10 h-10 rounded-2xl bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 flex items-center justify-center transition-all flex-shrink-0">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <main class="pb-32">
+                <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 pt-8 sm:pt-10">
+                    <div class="space-y-10">
+                        <div class="mb-2">
+                            <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-tight break-words">{{ selectedTemplate.title }}</h1>
+                        </div>
+
+                        <section>
+                            <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                简要描述
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                            </h4>
+                            <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedTemplate.description || '暂无简介')"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 mt-10">
+                    <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                        模板预览
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                    </h4>
+                    <div class="max-w-6xl mx-auto">
+                        <div class="overflow-hidden">
+                            <div v-if="selectedTemplateLoading" class="h-[55vh] min-h-[360px] flex flex-col items-center justify-center text-gray-400">
+                                <div class="w-12 h-12 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin"></div>
+                                <div class="mt-4 text-sm font-bold">正在加载预览...</div>
+                            </div>
+                            <div v-else class="space-y-6">
+                                <div v-for="template in selectedTemplatePreviewItems"
+                                     :key="selectedTemplate.id + '-ui-template-preview-' + template.id"
+                                     class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
+                                    <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-10 mt-10 sm:mt-12">
+                    <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                        评论 ({{ comments.length }})
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                    </h4>
+                    <div class="bg-gray-50 rounded-2xl p-4 mb-6 border border-gray-100">
+                        <div class="flex flex-col gap-3">
+                            <div v-if="newComment.reply_to_id" class="flex items-center gap-2 text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">
+                                <span>回复 <b>{{ newComment.reply_to_name }}</b></span>
+                                <button @click="cancelReply" class="text-gray-400 hover:text-gray-600 ml-auto">&times;</button>
+                            </div>
+                            <textarea v-model="newComment.content" rows="3" :placeholder="newComment.reply_to_id ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
+                            <div class="flex items-center justify-between gap-3">
+                                <span v-if="!isLoggedIn" class="text-xs text-gray-400"><button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button> 后即可评论</span>
+                                <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
+                                <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="loadingComments" class="flex justify-center py-4">
+                        <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
+                    </div>
+                    <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">暂无评论，快来抢沙发吧~</div>
+                    <div v-else class="space-y-4">
+                        <div v-for="root in commentTree" :key="'ut-full-' + root.id" class="bg-gray-50 rounded-2xl p-4 border border-gray-100" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
+                            <div class="flex justify-between items-start mb-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-xs font-bold text-primary-600">{{ root.author_name || root.nickname }}</span>
+                                    <span v-if="root.user_id && selectedTemplate && root.user_id === selectedTemplate.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
+                                    <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">热门</span>
+                                </div>
+                                <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                            </div>
+                            <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
+                            <div class="flex items-center gap-3 mt-2">
+                                <button @click="likeComment(root)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="root.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
+                                    <svg class="w-4 h-4" :fill="root.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                    {{ root.likes_count || 0 }}
+                                </button>
+                                <button @click="replyToComment(root)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                    回复
+                                </button>
+                            </div>
+                            <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
+                                <div class="space-y-2 pl-3 border-l-2 border-primary-100">
+                                    <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="'ut-full-r-' + reply.id" class="bg-white rounded-xl p-3 border border-gray-50">
+                                        <div class="flex justify-between items-start mb-1">
+                                            <div class="flex items-center gap-1.5 flex-wrap">
+                                                <span class="text-xs font-bold text-primary-600">{{ reply.author_name || reply.nickname }}</span>
+                                                <span v-if="reply.user_id && selectedTemplate && reply.user_id === selectedTemplate.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
+                                                <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
+                                                <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
+                                            </div>
+                                            <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                                        </div>
+                                        <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
+                                        <div class="flex items-center gap-3 mt-1.5">
+                                            <button @click="likeComment(reply)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="reply.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
+                                                <svg class="w-3.5 h-3.5" :fill="reply.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                                {{ reply.likes_count || 0 }}
+                                            </button>
+                                            <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">回复</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
+                                    <svg class="w-3 h-3 transition-transform" :class="expandedComments.has(root.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+
+            <div class="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 bg-white/95 backdrop-blur-md border-t border-gray-100 safe-area-pb">
+                <div class="max-w-4xl mx-auto flex gap-3">
+                    <button @click="downloadTemplate(selectedTemplate)" :disabled="selectedTemplateLoading"
+                            class="flex-1 py-3.5 sm:py-4 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all bg-gray-900 hover:bg-black text-white active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        下载模板
+                    </button>
+                    <button v-if="isAdmin" @click.stop="toggleTemplateFeatured(selectedTemplate)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedTemplate.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedTemplate.is_featured ? '取消精选' : '设为精选'">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedTemplate.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </button>
+                    <button v-if="isTemplateOwnedByCurrentUser(selectedTemplate) || isAdmin" @click="startEditTemplate(selectedTemplate)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    </button>
+                    <button v-if="isTemplateOwnedByCurrentUser(selectedTemplate) || isAdmin" @click="deleteTemplate(selectedTemplate); closeTemplateDetail()" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors" title="删除">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Upload Modal -->
         <div v-if="showUploadModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
             <div class="bg-white rounded-[2rem] w-full max-w-md shadow-2xl transform transition-all scale-100 flex flex-col max-h-[90vh] overflow-hidden">
                 <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 flex-shrink-0">
                     <h3 class="text-xl font-bold text-gray-800 flex items-center">
                         <svg class="w-6 h-6 mr-2 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        上传角色卡
+                        {{ contentSection === 'uitemplates' ? '上传UI模板' : '上传角色卡' }}
                     </h3>
                     <button @click="showUploadModal = false" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 rounded-full transition-all">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col h-full">
-                    <div v-if="!uploadingCard"
+                    <div v-if="contentSection === 'uitemplates'" class="flex flex-col h-full">
+                        <div v-if="!uploadingTemplate"
+                             @click="$refs.templateFileInput.click()"
+                             class="border-2 border-dashed border-gray-200 rounded-3xl p-8 sm:p-12 text-center hover:border-primary-500 hover:bg-primary-50/50 transition-all cursor-pointer group relative overflow-hidden flex-1 flex flex-col items-center justify-center min-h-[300px]">
+                            <div class="relative z-10">
+                                <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6 group-hover:bg-primary-100 group-hover:text-primary-600 transition-all transform group-hover:scale-110 group-hover:rotate-3">
+                                    <svg class="w-8 h-8 sm:w-10 sm:h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5"/></svg>
+                                </div>
+                                <p class="text-base sm:text-lg font-bold text-gray-700">点击上传UI模板文件</p>
+                                <p class="text-xs sm:text-sm text-gray-400 mt-2">仅支持 .json 格式</p>
+                            </div>
+                            <input type="file" ref="templateFileInput" accept=".json,application/json" @change="handleTemplateFileSelect" class="hidden">
+                        </div>
+
+                        <div v-else class="flex flex-col gap-4 h-full">
+                            <div class="bg-gray-50 rounded-3xl p-4 border border-gray-100 shadow-inner flex-1 flex flex-col justify-center min-h-0">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <div class="w-11 h-11 rounded-2xl bg-white text-primary-600 flex items-center justify-center shadow-sm">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="text-xs font-bold text-primary-600 uppercase tracking-wider">UI模板文件</div>
+                                        <div class="text-sm font-bold text-gray-800 truncate">已选择模板文件</div>
+                                    </div>
+                                </div>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 mb-1.5">模板名称</label>
+                                        <input v-model="uploadingTemplate.title" type="text" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 mb-1.5">简介（可选）</label>
+                                        <textarea v-model="uploadingTemplate.description" rows="4" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm resize-none" placeholder="写一点模板用途、适配场景或使用说明"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-xs font-bold text-primary-600 bg-primary-50 border border-primary-100 rounded-2xl p-3 flex items-center justify-between gap-3">
+                                <span class="truncate">模板内容已读取</span>
+                            </div>
+                            <div class="flex flex-col gap-2 mt-auto">
+                                <button @click="confirmTemplateUpload" :disabled="isUploadingTemplate" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-3.5 rounded-2xl font-bold transition-all shadow-lg shadow-primary-100 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]">
+                                    <span v-if="isUploadingTemplate" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                                    {{ isUploadingTemplate ? '正在发布...' : '确认发布到UI模板' }}
+                                </button>
+                                <button @click="uploadingTemplate = null" :disabled="isUploadingTemplate" class="w-full text-gray-400 text-sm font-bold py-2 hover:text-gray-600 transition-colors">重新选择文件</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else-if="!uploadingCard"
                          @click="$refs.fileInput.click()"
                          class="border-2 border-dashed border-gray-200 rounded-3xl p-8 sm:p-12 text-center hover:border-primary-500 hover:bg-primary-50/50 transition-all cursor-pointer group relative overflow-hidden flex-1 flex flex-col items-center justify-center min-h-[300px]">
                         <div class="relative z-10">
@@ -773,6 +1094,45 @@
             </div>
         </div>
 
+        <!-- Edit UI Template Modal -->
+        <div v-if="showTemplateEditModal && editingTemplate" class="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div class="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl transform transition-all flex flex-col max-h-[90vh] overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 flex-shrink-0">
+                    <h3 class="text-xl font-bold text-gray-800 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        编辑UI模板
+                    </h3>
+                    <button @click="showTemplateEditModal = false" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 rounded-full transition-all">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                        <input v-model="editingTemplate.title" type="text" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">简介</label>
+                        <textarea v-model="editingTemplate.description" rows="6" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">替换模板文件（可选）</label>
+                        <label class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all">
+                            <input type="file" ref="editTemplateFileInput" accept=".json,application/json" @change="handleEditTemplateFileSelect" class="hidden">
+                            <span class="text-sm font-bold text-blue-600">{{ editingTemplate.file_changed ? '已选择新模板文件' : '点击选择新文件' }}</span>
+                        </label>
+                    </div>
+                    <div class="flex flex-col gap-2 mt-2">
+                        <button @click="confirmEditTemplate" :disabled="isTemplateEditSaving" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-bold transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">
+                            <span v-if="isTemplateEditSaving" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                            {{ isTemplateEditSaving ? '保存中...' : '保存修改' }}
+                        </button>
+                        <button @click="showTemplateEditModal = false" :disabled="isTemplateEditSaving" class="w-full text-gray-400 text-sm font-bold py-2 hover:text-gray-600 transition-colors">取消</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Edit Card Modal -->
         <div v-if="showEditModal && editingCard" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
             <div class="bg-white rounded-[2rem] w-full max-w-md shadow-2xl transform transition-all flex flex-col max-h-[90vh] overflow-hidden">
@@ -786,11 +1146,20 @@
                     </button>
                 </div>
                 <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col gap-4">
-                    <!-- Preview -->
-                    <div v-if="editingCard.avatar_url" class="flex justify-center">
-                        <div class="w-24 h-32 rounded-xl overflow-hidden shadow-md ring-2 ring-gray-100">
-                            <img :src="editingCard.avatar_url" class="w-full h-full object-cover" @error="if (!$event.target.dataset.fallback) { $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar }">
-                        </div>
+                    <!-- Name -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                        <input v-model="editingCard.name" type="text" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
+                    </div>
+                    <!-- Description -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                        <textarea v-model="editingCard.description" rows="6" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
+                    </div>
+                    <!-- Creator Notes -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">创作者备注</label>
+                        <textarea v-model="editingCard.creator_notes" rows="5" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
                     </div>
                     <!-- Re-upload file -->
                     <div>
@@ -800,21 +1169,6 @@
                             <span class="text-sm text-gray-500">选择 .png 或 .json 文件</span>
                             <input type="file" accept=".png,.json" @change="handleEditFileSelect" class="hidden">
                         </label>
-                    </div>
-                    <!-- Name -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">名称</label>
-                        <input v-model="editingCard.name" type="text" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
-                    </div>
-                    <!-- Description -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
-                        <textarea v-model="editingCard.description" rows="3" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
-                    </div>
-                    <!-- Creator Notes -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">创作者备注</label>
-                        <textarea v-model="editingCard.creator_notes" rows="2" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
                     </div>
                     <!-- Actions -->
                     <div class="flex flex-col gap-2 mt-2">
@@ -1423,11 +1777,13 @@
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
                 const cards = ref([]);
+                const uiTemplates = ref([]);
                 const cardSort = ref('latest');
                 const showSortDropdown = ref(false);
                 const loading = ref(true);
                 const searchQuery = ref('');
                 const currentTab = ref('all');
+                const contentSection = ref('all');
                 const myUploadedIds = ref(JSON.parse(safeStorage.getItem('my_uploaded_ids') || '[]'));
                 const configuredPopularTags = ref([]);
                 const configuredTagLibrary = ref([]);
@@ -1438,7 +1794,14 @@
                 const showSearchModal = ref(false);
                 const showUserMenu = ref(false);
                 const uploadingCard = ref(null);
+                const uploadingTemplate = ref(null);
                 const isUploading = ref(false);
+                const isUploadingTemplate = ref(false);
+                const selectedTemplate = ref(null);
+                const selectedTemplateLoading = ref(false);
+                const editingTemplate = ref(null);
+                const showTemplateEditModal = ref(false);
+                const isTemplateEditSaving = ref(false);
                 const selectedCard = ref(null);
                 const previewOpening = reactive({
                     active: false,
@@ -1683,6 +2046,7 @@
                         if (resp.ok) {
                             isAdmin.value = true;
                             fetchCards();
+                            fetchUiTemplates();
                         } else {
                             adminToken.value = '';
                             safeStorage.removeItem('admin_token');
@@ -1720,6 +2084,7 @@
                         showToast('已进入管理员模式', 'success');
                         currentTab.value = 'mine';
                         fetchCards();
+                        fetchUiTemplates();
                     } catch (e) {
                         adminLoginError.value = '网络错误';
                     }
@@ -1731,6 +2096,7 @@
                     safeStorage.removeItem('admin_token');
                     currentTab.value = 'all';
                     fetchCards();
+                    fetchUiTemplates();
                     showToast('已退出管理员模式', 'info');
                 };
 
@@ -1749,6 +2115,7 @@
                             const data = await resp.json();
                             currentUser.value = data.user;
                             fetchCards();
+                            fetchUiTemplates();
                         } else {
                             userToken.value = '';
                             currentUser.value = null;
@@ -1799,6 +2166,8 @@
                         } else {
                             showToast('登录成功', 'success');
                         }
+                        fetchCards();
+                        fetchUiTemplates();
                     } catch (e) {
                         userAuthError.value = '网络错误';
                     }
@@ -1881,6 +2250,14 @@
                     return myUploadedIds.value.includes(card.id);
                 };
 
+                const isTemplateOwnedByCurrentUser = (template) => {
+                    return Boolean(template && isLoggedIn.value && currentUser.value && template.uploader_user_id === currentUser.value.id);
+                };
+
+                const canViewTemplateDownloads = (template) => {
+                    return Boolean(template && (isAdmin.value || isTemplateOwnedByCurrentUser(template) || template.can_view_downloads));
+                };
+
                 const popularTags = computed(() => {
                     const hiddenSet = new Set(hiddenPopularTags.value);
                     if (configuredPopularTags.value.length > 0) {
@@ -1909,9 +2286,7 @@
                 });
 
                 const visiblePopularTags = computed(() => {
-                    return tagsExpanded.value
-                        ? popularTags.value
-                        : popularTags.value.slice(0, collapsedPopularTagCount.value);
+                    return popularTags.value;
                 });
 
                 const showPopularTagsToggle = computed(() => {
@@ -1952,6 +2327,73 @@
                     } else {
                         searchQuery.value = tag;
                     }
+                };
+
+                const isUiTemplateCard = (card) => {
+                    if (!card) return false;
+                    if (card.has_ui_templates || Number(card.ui_template_count || 0) > 0) return true;
+                    const normalizedTags = Array.isArray(card.tags)
+                        ? card.tags.map(tag => String(tag).trim().toLowerCase().replace(/[\s_-]/g, ''))
+                        : [];
+                    return normalizedTags.some(tag => ['ui模板', '模板ui', 'uitemplate', 'uitemplates'].includes(tag));
+                };
+
+                const uiTemplateCardsCount = computed(() => {
+                    return uiTemplates.value.length;
+                });
+
+                const emptyStateTitle = computed(() => {
+                    if (contentSection.value === 'uitemplates') {
+                        if (currentTab.value === 'mine' && isAdmin.value) return '没有待审核的 UI 模板';
+                        if (currentTab.value === 'mine') return '你还没有上传 UI 模板';
+                        return searchQuery.value ? '没有找到匹配的 UI 模板' : 'UI模板还没有作品';
+                    }
+                    return '没有找到匹配的角色卡';
+                });
+
+                const emptyStateDescription = computed(() => {
+                    if (contentSection.value === 'uitemplates') {
+                        if (currentTab.value === 'mine' && isAdmin.value) return '新的模板投稿会出现在这里。';
+                        if (currentTab.value === 'mine') return '上传一个独立模板文件，就能在这里管理它。';
+                        return searchQuery.value
+                            ? '换个关键词试试，或清空搜索看看全部模板。'
+                            : '上传独立的 UI 模板文件后，会显示在这个专属分区。';
+                    }
+                    return '换个关键词试试，或上传您的第一张角色卡！';
+                });
+
+                const emptyStateActionLabel = computed(() => {
+                    if (searchQuery.value) return '清除搜索条件';
+                    if (contentSection.value === 'uitemplates') return isAdmin.value && currentTab.value === 'mine' ? '返回广场' : '上传';
+                    return '上传角色卡';
+                });
+
+                const showEmptyStateAction = computed(() => {
+                    if (searchQuery.value) return true;
+                    return contentSection.value === 'uitemplates' && currentTab.value === 'mine' && isAdmin.value;
+                });
+
+                const uploadButtonLabel = computed(() => {
+                    return '上传';
+                });
+
+                const formatTemplateVariableBadge = (template) => {
+                    return `${Number(template?.variable_count || 0)}个变量`;
+                };
+
+                const formatCardUiVariableBadge = (card) => {
+                    return `${Number(card?.ui_template_variable_count || 0)}个变量`;
+                };
+
+                const calculateTemplateHeatFromCounts = (template) => {
+                    if (!template) return 0;
+                    return Math.round((template.views_count || 0) * 1.0 + (template.comment_count || 0) * 1.5 + (template.downloads_count || 0) * 2.5);
+                };
+
+                const computeTemplateHeat = (template) => {
+                    if (!template) return 0;
+                    if (Number.isFinite(Number(template.heat_score))) return Number(template.heat_score);
+                    return calculateTemplateHeatFromCounts(template);
                 };
 
                 const filteredCards = computed(() => {
@@ -2001,6 +2443,48 @@
                     return result;
                 });
 
+                const filteredUiTemplates = computed(() => {
+                    let result = [...uiTemplates.value];
+
+                    if (currentTab.value === 'mine') {
+                        if (isAdmin.value) {
+                            result = result.filter(item => item.review_status === 'pending');
+                        } else {
+                            result = result.filter(item => isTemplateOwnedByCurrentUser(item));
+                        }
+                    }
+
+                    if (searchQuery.value) {
+                        const q = searchQuery.value.toLowerCase();
+                        result = result.filter(item =>
+                            String(item.title || '').toLowerCase().includes(q) ||
+                            String(item.description || '').toLowerCase().includes(q) ||
+                            String(item.file_name || '').toLowerCase().includes(q) ||
+                            String(item.content_preview || '').toLowerCase().includes(q)
+                        );
+                    }
+
+                    const heatScore = (item) => computeTemplateHeat(item);
+                    const sortMode = cardSort.value;
+                    if (sortMode === 'featured') {
+                        result = result.filter(item => item.is_featured);
+                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    } else if (sortMode === 'daily') {
+                        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                        result = result.filter(item => new Date(item.created_at) >= oneDayAgo);
+                        result.sort((a, b) => heatScore(b) - heatScore(a));
+                    } else if (sortMode === 'weekly') {
+                        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        result = result.filter(item => new Date(item.created_at) >= oneWeekAgo);
+                        result.sort((a, b) => heatScore(b) - heatScore(a));
+                    } else if (sortMode === 'hot') {
+                        result.sort((a, b) => heatScore(b) - heatScore(a));
+                    } else {
+                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    }
+                    return result;
+                });
+
                 const showToast = (message, type = 'info', duration = 3000) => {
                     const id = Date.now();
                     toasts.value.push({ id, message, type });
@@ -2043,6 +2527,8 @@
                         // Process tags for each card
                         cards.value = (data || []).map(card => {
                             parseCreatorNotes(card);
+                            card.ui_template_count = Number(card.ui_template_count || 0);
+                            card.has_ui_templates = isUiTemplateCard(card);
                             // Use the lightweight thumbnail in lists and the full asset in detail view.
                             card.thumbnail_url = API_BASE + '/api/cards/' + card.id + '/thumbnail';
                             card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
@@ -2053,6 +2539,35 @@
                         showToast('加载失败，请检查服务器连接', 'error');
                     } finally {
                         loading.value = false;
+                    }
+                };
+
+                const fetchUiTemplates = async () => {
+                    try {
+                        const headers = {};
+                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                        const resp = await fetch(API_BASE + '/api/ui-templates', { headers });
+                        if (!resp.ok) throw new Error('加载失败');
+                        uiTemplates.value = await resp.json();
+                    } catch (err) {
+                        console.error('Fetch UI templates error:', err);
+                        showToast('UI模板加载失败', 'error');
+                    }
+                };
+
+                const applyTemplateMetrics = (templateId, metrics) => {
+                    if (!templateId || !metrics) return;
+                    const apply = (template) => {
+                        if (!template) return;
+                        if (metrics.comment_count !== undefined) template.comment_count = Number(metrics.comment_count || 0);
+                        if (metrics.views_count !== undefined) template.views_count = Number(metrics.views_count || 0);
+                        if (metrics.heat_score !== undefined) template.heat_score = Number(metrics.heat_score || 0);
+                        if (metrics.downloads_count !== undefined) template.downloads_count = Number(metrics.downloads_count || 0);
+                    };
+                    apply(uiTemplates.value.find(item => item.id === templateId));
+                    if (selectedTemplate.value && selectedTemplate.value.id === templateId) {
+                        apply(selectedTemplate.value);
                     }
                 };
 
@@ -2326,14 +2841,508 @@
                         reader.readAsText(file);
                     }
                 };
+
+                const formatFileSize = (bytes) => {
+                    const value = Number(bytes || 0);
+                    if (value < 1024) return value + ' B';
+                    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB';
+                    return (value / 1024 / 1024).toFixed(1) + ' MB';
+                };
+
+                const buildTemplateTitleFromFileName = (fileName) => {
+                    return String(fileName || 'UI模板')
+                        .replace(/\.[^.]+$/, '')
+                        .replace(/[_-]+/g, ' ')
+                        .trim() || 'UI模板';
+                };
+
+                const isJsonTemplateFile = (file) => {
+                    return Boolean(file && /\.json$/i.test(file.name || ''));
+                };
+
+                const parseJsonTemplateContent = (content) => {
+                    try {
+                        JSON.parse(content);
+                        return true;
+                    } catch (err) {
+                        return false;
+                    }
+                };
+
+                const escapePreviewHtml = (value) => {
+                    return String(value ?? '')
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                };
+
+                const stripTemplateCodeFence = (value) => {
+                    const text = String(value ?? '').trim();
+                    if (!text.startsWith('```')) return String(value ?? '');
+                    return text
+                        .replace(/^```[a-zA-Z0-9_-]*\s*\n?/, '')
+                        .replace(/\n?```\s*$/, '')
+                        .trim();
+                };
+
+                const pickPreviewMarkupFromObject = (value) => {
+                    if (!value || typeof value !== 'object') return '';
+                    if (Array.isArray(value)) {
+                        for (const item of value) {
+                            const markup = pickPreviewMarkupFromObject(item);
+                            if (markup) return markup;
+                        }
+                        return '';
+                    }
+                    const direct = value.htmlTemplate || value.template || value.html || value.content || value.markup;
+                    if (typeof direct === 'string') {
+                        const cleaned = stripTemplateCodeFence(direct);
+                        if (/<[^>]+>/.test(cleaned)) return cleaned;
+                    }
+                    const nested = value.data || value.extensions || {};
+                    const collections = [
+                        value.templates,
+                        value.uiTemplates,
+                        value.ui_templates,
+                        nested.templates,
+                        nested.uiTemplates,
+                        nested.ui_templates,
+                        nested.rp_hub_ui_templates
+                    ].filter(Array.isArray);
+                    for (const collection of collections) {
+                        for (const item of collection) {
+                            const markup = pickPreviewMarkupFromObject(item);
+                            if (markup) return markup;
+                        }
+                    }
+                    return '';
+                };
+
+                const pickPreviewVariablesFromObject = (value) => {
+                    if (!value || typeof value !== 'object') return {};
+                    if (Array.isArray(value)) {
+                        for (const item of value) {
+                            const nested = pickPreviewVariablesFromObject(item);
+                            if (nested && Object.keys(nested).length) return nested;
+                        }
+                        return {};
+                    }
+                    const candidates = [
+                        value.initialVariableState,
+                        value.initialVariables,
+                        value.variableState,
+                        value.variables,
+                        value.previewData,
+                        value.sampleData,
+                        value.data?.initialVariableState,
+                        value.data?.initialVariables,
+                        value.data?.previewData,
+                        value.extensions?.initialVariableState,
+                        value.extensions?.previewData
+                    ];
+                    const found = candidates.find(item => item && typeof item === 'object' && !Array.isArray(item));
+                    if (found) return found;
+                    const collections = [
+                        value.templates,
+                        value.uiTemplates,
+                        value.ui_templates,
+                        value.data?.templates,
+                        value.data?.uiTemplates,
+                        value.data?.ui_templates,
+                        value.extensions?.templates,
+                        value.extensions?.uiTemplates,
+                        value.extensions?.ui_templates
+                    ].filter(Array.isArray);
+                    for (const collection of collections) {
+                        for (const item of collection) {
+                            const nested = pickPreviewVariablesFromObject(item);
+                            if (nested && Object.keys(nested).length) return nested;
+                        }
+                    }
+                    return {};
+                };
+
+                const readPreviewPath = (source, path) => {
+                    if (!source || !path) return undefined;
+                    const normalized = String(path).replace(/\[(\d+)\]/g, '.$1');
+                    if (Object.prototype.hasOwnProperty.call(source, normalized)) return source[normalized];
+                    return normalized.split('.').reduce((acc, key) => {
+                        if (acc === undefined || acc === null) return undefined;
+                        return Object.prototype.hasOwnProperty.call(Object(acc), key) ? acc[key] : undefined;
+                    }, source);
+                };
+
+                const formatPreviewValue = (value) => {
+                    if (value === undefined || value === null || value === '') return '未设置';
+                    if (Array.isArray(value)) return value.length ? value.map(item => formatPreviewValue(item)).join('、') : '暂无';
+                    if (typeof value === 'object') return JSON.stringify(value);
+                    return String(value);
+                };
+
+                const getPreviewTemplateValue = (path, data, context = {}) => {
+                    const key = String(path || '').trim();
+                    if (key === '@number') return (context.index ?? 0) + 1;
+                    if (key === '@index') return context.index ?? 0;
+                    if (key === 'this' || key === '.') return context.item;
+                    const fromItem = context.item && readPreviewPath(context.item, key);
+                    if (fromItem !== undefined) return fromItem;
+                    return readPreviewPath(data, key);
+                };
+
+                const renderPreviewTemplateVariables = (markup, data = {}, context = {}) => {
+                    const state = data && typeof data === 'object' ? data : {};
+                    let rendered = String(markup || '');
+                    rendered = rendered.replace(/{{\s*#each\s+([^}]+?)\s*}}([\s\S]*?)(?:{{\s*else\s*}}([\s\S]*?))?{{\s*\/each\s*}}/g, (match, path, body, emptyBody = '') => {
+                        const items = getPreviewTemplateValue(path, state, context);
+                        if (Array.isArray(items) && items.length) {
+                            return items.map((item, index) => renderPreviewTemplateVariables(body, state, { item, index })).join('');
+                        }
+                        return emptyBody ? renderPreviewTemplateVariables(emptyBody, state, context) : '';
+                    });
+                    return rendered.replace(/{{\s*([^#\/][^}]*?)\s*}}/g, (match, path) => {
+                        const key = String(path || '').trim();
+                        if (!key || key === 'else') return '';
+                        const value = getPreviewTemplateValue(key, state, context);
+                        return escapePreviewHtml(formatPreviewValue(value));
+                    });
+                };
+
+                const buildUiTemplateEmptyMarkup = (message) => {
+                    return `<div style="min-height:360px;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font-weight:700;border:1px dashed #cbd5e1;border-radius:18px;background:white;padding:24px;margin:0;box-sizing:border-box;">${escapePreviewHtml(message)}</div>`;
+                };
+
+                const buildTemplateCssPreviewMarkup = (content) => {
+                    return `<style>${content}</style><div style="display:grid;gap:14px;max-width:420px;margin:24px auto;"><div style="font-size:20px;font-weight:900;">UI 模板样式预览</div><button>主要按钮</button><div style="padding:18px;border-radius:14px;border:1px solid #e5e7eb;background:white;">示例面板</div><input placeholder="输入框预览"></div>`;
+                };
+
+                const openTemplateDetail = async (template) => {
+                    if (!template || selectedTemplateLoading.value) return;
+                    selectedTemplate.value = { ...template, content: '' };
+                    selectedTemplateLoading.value = true;
+                    comments.value = [];
+                    expandedComments.value = new Set();
+                    newComment.content = '';
+                    newComment.reply_to_id = null;
+                    newComment.reply_to_name = '';
+                    fetchComments(template.id, 'template');
+                    try {
+                        const headers = {};
+                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id, { headers });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '预览加载失败');
+                        selectedTemplate.value = data;
+                        const idx = uiTemplates.value.findIndex(item => item.id === data.id);
+                        if (idx >= 0) {
+                            uiTemplates.value[idx] = {
+                                ...uiTemplates.value[idx],
+                                ...data,
+                                content: undefined
+                            };
+                        }
+                    } catch (err) {
+                        showToast('预览加载失败: ' + err.message, 'error');
+                        selectedTemplate.value = null;
+                    } finally {
+                        selectedTemplateLoading.value = false;
+                    }
+                };
+
+                const closeTemplateDetail = () => {
+                    selectedTemplate.value = null;
+                    selectedTemplateLoading.value = false;
+                    if (!selectedCard.value) {
+                        comments.value = [];
+                        expandedComments.value = new Set();
+                        newComment.content = '';
+                        newComment.reply_to_id = null;
+                        newComment.reply_to_name = '';
+                    }
+                };
+
+                const fetchTemplateDetail = async (template) => {
+                    const headers = {};
+                    if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                    else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                    const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id, { headers });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok) throw new Error(data.error || '模板详情加载失败');
+                    return data;
+                };
+
+                const startEditTemplate = async (template) => {
+                    if (!template || (!isAdmin.value && !isTemplateOwnedByCurrentUser(template))) return;
+                    try {
+                        const detail = template.content ? template : await fetchTemplateDetail(template);
+                        editingTemplate.value = {
+                            id: detail.id,
+                            title: detail.title || '',
+                            description: detail.description || '',
+                            content: detail.content || '',
+                            file_name: detail.file_name || 'ui-template.json',
+                            mime_type: detail.mime_type || 'application/json',
+                            file_changed: false
+                        };
+                        showTemplateEditModal.value = true;
+                    } catch (err) {
+                        showToast('编辑加载失败: ' + err.message, 'error');
+                    }
+                };
+
+                const handleEditTemplateFileSelect = (event) => {
+                    const file = event.target.files[0];
+                    if (!file || !editingTemplate.value) return;
+                    if (!isJsonTemplateFile(file)) {
+                        showToast('UI模板只支持 .json 文件', 'warning');
+                        event.target.value = '';
+                        return;
+                    }
+                    const MAX_TEMPLATE_FILE_SIZE = 2 * 1024 * 1024;
+                    if (file.size > MAX_TEMPLATE_FILE_SIZE) {
+                        showToast(`模板文件不能超过 2MB，当前 ${(file.size / 1024 / 1024).toFixed(1)}MB`, 'error');
+                        event.target.value = '';
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const content = String(e.target.result || '');
+                        if (!parseJsonTemplateContent(content)) {
+                            showToast('JSON 模板解析失败，请检查文件内容', 'error');
+                            event.target.value = '';
+                            return;
+                        }
+                        editingTemplate.value.content = content;
+                        editingTemplate.value.file_name = file.name;
+                        editingTemplate.value.mime_type = file.type || 'application/json';
+                        editingTemplate.value.file_changed = true;
+                    };
+                    reader.onerror = () => showToast('模板文件读取失败', 'error');
+                    reader.readAsText(file);
+                };
+
+                const confirmEditTemplate = async () => {
+                    if (!editingTemplate.value || isTemplateEditSaving.value) return;
+                    if (!editingTemplate.value.title.trim()) {
+                        showToast('模板名称不能为空', 'warning');
+                        return;
+                    }
+                    if (editingTemplate.value.file_changed && !String(editingTemplate.value.content || '').trim()) {
+                        showToast('模板内容不能为空', 'warning');
+                        return;
+                    }
+                    isTemplateEditSaving.value = true;
+                    try {
+                        const headers = isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
+                        const payload = {
+                            title: editingTemplate.value.title,
+                            description: editingTemplate.value.description
+                        };
+                        if (editingTemplate.value.file_changed) {
+                            payload.content = editingTemplate.value.content;
+                            payload.file_name = editingTemplate.value.file_name;
+                            payload.mime_type = editingTemplate.value.mime_type;
+                        }
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + editingTemplate.value.id, {
+                            method: 'PUT',
+                            headers,
+                            body: JSON.stringify(payload)
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存失败');
+                        if (data.template) {
+                            const idx = uiTemplates.value.findIndex(item => item.id === data.template.id);
+                            if (idx !== -1) uiTemplates.value[idx] = { ...uiTemplates.value[idx], ...data.template, content: undefined };
+                            if (selectedTemplate.value && selectedTemplate.value.id === data.template.id) {
+                                selectedTemplate.value = data.template;
+                            }
+                        }
+                        showTemplateEditModal.value = false;
+                        editingTemplate.value = null;
+                        showToast(isAdmin.value ? '模板已更新' : '模板已更新，等待审核', 'success');
+                    } catch (err) {
+                        showToast('保存失败: ' + err.message, 'error');
+                    } finally {
+                        isTemplateEditSaving.value = false;
+                    }
+                };
+
+                const handleTemplateFileSelect = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    if (!isJsonTemplateFile(file)) {
+                        showToast('UI模板只支持 .json 文件', 'warning');
+                        event.target.value = '';
+                        return;
+                    }
+                    const MAX_TEMPLATE_FILE_SIZE = 2 * 1024 * 1024;
+                    if (file.size > MAX_TEMPLATE_FILE_SIZE) {
+                        showToast(`模板文件不能超过 2MB，当前 ${(file.size / 1024 / 1024).toFixed(1)}MB`, 'error');
+                        event.target.value = '';
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const content = String(e.target.result || '');
+                        if (!parseJsonTemplateContent(content)) {
+                            showToast('JSON 模板解析失败，请检查文件内容', 'error');
+                            event.target.value = '';
+                            return;
+                        }
+                        uploadingTemplate.value = {
+                            title: buildTemplateTitleFromFileName(file.name),
+                            description: '',
+                            file_name: file.name,
+                            file_size: file.size,
+                            mime_type: file.type || 'application/json',
+                            content,
+                            content_preview: content.slice(0, 900)
+                        };
+                    };
+                    reader.onerror = () => showToast('模板文件读取失败', 'error');
+                    reader.readAsText(file);
+                };
+
                 const handleUploadClick = () => {
                     if (!isLoggedIn.value && !isAdmin.value) {
                         showUserAuthModal.value = true;
                         userAuthMode.value = 'login';
-                        showToast('请先登录后再上传角色卡', 'warning');
+                        showToast(contentSection.value === 'uitemplates' ? '请先登录后再上传UI模板' : '请先登录后再上传角色卡', 'warning');
                         return;
                     }
+                    if (contentSection.value === 'uitemplates') {
+                        uploadingTemplate.value = null;
+                    }
                     showUploadModal.value = true;
+                };
+
+                const confirmTemplateUpload = async () => {
+                    if (!uploadingTemplate.value || isUploadingTemplate.value) return;
+                    if (!uploadingTemplate.value.title.trim()) {
+                        showToast('模板名称不能为空', 'warning');
+                        return;
+                    }
+                    isUploadingTemplate.value = true;
+                    try {
+                        const headers = isLoggedIn.value ? userAuthHeaders() : adminAuthHeaders();
+                        const resp = await fetch(API_BASE + '/api/ui-templates', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({
+                                title: uploadingTemplate.value.title,
+                                description: uploadingTemplate.value.description,
+                                file_name: uploadingTemplate.value.file_name,
+                                mime_type: uploadingTemplate.value.mime_type,
+                                content: uploadingTemplate.value.content
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '上传失败');
+
+                        if (Array.isArray(data) && data[0]) {
+                            uiTemplates.value.unshift(data[0]);
+                        }
+                        showToast(data?.some?.(item => item.pending_review) ? '上传成功，已进入管理员审核队列' : 'UI模板发布成功', 'success');
+                        showUploadModal.value = false;
+                        uploadingTemplate.value = null;
+                        contentSection.value = 'uitemplates';
+                        fetchUiTemplates();
+                    } catch (err) {
+                        showToast('上传失败: ' + err.message, 'error');
+                    } finally {
+                        isUploadingTemplate.value = false;
+                    }
+                };
+
+                const getDownloadFileName = (disposition, fallback) => {
+                    const header = String(disposition || '');
+                    const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
+                    if (encoded) {
+                        try { return decodeURIComponent(encoded[1]); } catch (e) {}
+                    }
+                    const quoted = header.match(/filename="([^"]+)"/i);
+                    return quoted ? quoted[1] : fallback;
+                };
+
+                const downloadTemplate = async (template) => {
+                    if (!template) return;
+                    try {
+                        const headers = {};
+                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id + '/download', { headers });
+                        if (!resp.ok) {
+                            const data = await resp.json().catch(() => ({}));
+                            throw new Error(data.error || '下载失败');
+                        }
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = getDownloadFileName(resp.headers.get('Content-Disposition'), template.file_name || `${template.title || 'ui-template'}.ui`);
+                        a.rel = 'noopener';
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+                        const shouldIncrementVisibleCount = !isAdmin.value && !isTemplateOwnedByCurrentUser(template) && canViewTemplateDownloads(template);
+                        if (shouldIncrementVisibleCount) {
+                            template.downloads_count = (template.downloads_count || 0) + 1;
+                            const listTemplate = uiTemplates.value.find(item => item.id === template.id);
+                            if (listTemplate && listTemplate !== template) {
+                                listTemplate.downloads_count = (listTemplate.downloads_count || 0) + 1;
+                            }
+                        }
+                        showToast('模板下载已开始', 'success');
+                    } catch (err) {
+                        showToast('下载失败: ' + err.message, 'error');
+                    }
+                };
+
+                const reviewTemplate = async (template, status) => {
+                    if (!isAdmin.value || !template) return;
+                    let reason = '';
+                    if (status === 'rejected') {
+                        reason = prompt('请输入拒绝原因（可留空）：') || '';
+                    }
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ui-templates/' + template.id + '/review', {
+                            method: 'PUT',
+                            headers: adminAuthHeaders(),
+                            body: JSON.stringify({ status, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '审核失败');
+                        if (data.template) {
+                            const idx = uiTemplates.value.findIndex(item => item.id === template.id);
+                            if (idx !== -1) uiTemplates.value[idx] = { ...uiTemplates.value[idx], ...data.template };
+                        }
+                        showToast(status === 'approved' ? '已通过模板审核' : '已拒绝该模板', status === 'approved' ? 'success' : 'warning');
+                    } catch (err) {
+                        showToast(err.message || '审核失败', 'error');
+                    }
+                };
+
+                const deleteTemplate = async (template) => {
+                    if (!template || !confirm(`确定要删除模板 "${template.title}" 吗？此操作无法撤销。`)) return;
+                    try {
+                        const headers = isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id, {
+                            method: 'DELETE',
+                            headers
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '删除失败');
+                        uiTemplates.value = uiTemplates.value.filter(item => item.id !== template.id);
+                        showToast('模板已删除', 'success');
+                    } catch (err) {
+                        showToast('删除失败: ' + err.message, 'error');
+                    }
                 };
 
                 const confirmUpload = async () => {
@@ -2413,6 +3422,31 @@
                     }
                 };
 
+                const toggleTemplateFeatured = async (template) => {
+                    if (!isAdmin.value || !template) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id + '/feature', {
+                            method: 'PUT',
+                            headers: adminAuthHeaders()
+                        });
+                        if (!resp.ok) {
+                            const errData = await resp.json().catch(() => null);
+                            throw new Error(errData?.error || '操作失败');
+                        }
+                        const result = await resp.json();
+                        const idx = uiTemplates.value.findIndex(item => item.id === template.id);
+                        if (idx !== -1) {
+                            uiTemplates.value[idx] = { ...uiTemplates.value[idx], is_featured: result.is_featured };
+                        }
+                        if (selectedTemplate.value && selectedTemplate.value.id === template.id) {
+                            selectedTemplate.value = { ...selectedTemplate.value, is_featured: result.is_featured };
+                        }
+                        showToast(result.is_featured ? '已设为精选模板' : '已取消精选模板', 'success');
+                    } catch (err) {
+                        showToast('精选模板失败: ' + err.message, 'error');
+                    }
+                };
+
                 const reviewCard = async (card, status) => {
                     if (!isAdmin.value || !card) return;
                     let reason = '';
@@ -2433,6 +3467,8 @@
                             if (idx !== -1) {
                                 const updated = { ...cards.value[idx], ...data.card };
                                 parseCreatorNotes(updated);
+                                updated.ui_template_count = Number(updated.ui_template_count || 0);
+                                updated.has_ui_templates = isUiTemplateCard(updated);
                                 updated.thumbnail_url = API_BASE + '/api/cards/' + updated.id + '/thumbnail';
                                 updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
                                 cards.value[idx] = updated;
@@ -2640,24 +3676,6 @@
                     }
                 };
 
-                const getUiTemplateValue = (source, path) => {
-                    if (!source || !path) return undefined;
-                    if (Object.prototype.hasOwnProperty.call(source, path)) return source[path];
-                    return String(path).split('.').reduce((acc, key) => (
-                        acc && Object.prototype.hasOwnProperty.call(acc, key) ? acc[key] : undefined
-                    ), source);
-                };
-
-                const escapeUiTemplateValue = (value) => {
-                    const printable = value && typeof value === 'object' ? JSON.stringify(value) : value;
-                    return String(printable ?? '')
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-                };
-
                 const collectUiTemplateList = (value) => {
                     if (!value) return [];
                     if (typeof value === 'string') {
@@ -2674,19 +3692,88 @@
                     return [];
                 };
 
+                const getUiTemplateMarkup = (template) => {
+                    const candidates = [
+                        template?.htmlTemplate,
+                        template?.template,
+                        template?.html,
+                        template?.content,
+                        template?.markup
+                    ];
+                    return candidates.find(item => typeof item === 'string' && item.trim()) || '';
+                };
+
                 const renderUiTemplateSource = (template) => {
-                    const htmlTemplate = template?.htmlTemplate || template?.template || template?.html || template?.content || '';
+                    const htmlTemplate = getUiTemplateMarkup(template);
                     if (!htmlTemplate) return '';
                     const variables = clonePreviewObject(
                         template.initialVariableState
+                        || template.initialVariables
                         || template.variables
                         || template.variableState
+                        || template.previewData
+                        || template.sampleData
                         || {}
                     );
-                    return String(htmlTemplate).replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, key) => {
-                        const value = getUiTemplateValue(variables, key);
-                        return escapeUiTemplateValue(value);
-                    });
+                    return renderPreviewTemplateVariables(stripTemplateCodeFence(htmlTemplate), variables);
+                };
+
+                const normalizeUiTemplatePreviewItem = (template, index, options = {}) => {
+                    const html = getUiTemplateMarkup(template);
+                    if (!html) return null;
+                    const fallbackName = options.fallbackName || 'UI模板';
+                    const fallbackVariables = options.fallbackVariables || {};
+                    const idPrefix = options.idPrefix || 'embedded-ui';
+                    return {
+                        ...template,
+                        id: template.id || `${idPrefix}-${index + 1}`,
+                        name: template.name || template.title || `${fallbackName} ${index + 1}`,
+                        htmlTemplate: stripTemplateCodeFence(String(html)),
+                        initialVariableState: clonePreviewObject(
+                            template.initialVariableState
+                            || template.initialVariables
+                            || template.variables
+                            || template.variableState
+                            || template.previewData
+                            || template.sampleData
+                            || fallbackVariables
+                            || {}
+                        ),
+                        order: Number.isFinite(Number(template.order)) ? Number(template.order) : 100
+                    };
+                };
+
+                const extractUiTemplatePreviewItems = (sources = [], options = {}) => {
+                    const seen = new Set();
+                    const templates = [];
+                    const addTemplate = (template) => {
+                        const normalized = normalizeUiTemplatePreviewItem(template, templates.length, options);
+                        if (!normalized) return;
+                        const key = template.id || `${normalized.name || ''}:${String(normalized.htmlTemplate).slice(0, 120)}`;
+                        if (seen.has(key)) return;
+                        seen.add(key);
+                        templates.push(normalized);
+                    };
+                    const visit = (candidate) => {
+                        if (!candidate) return;
+                        if (typeof candidate === 'string') {
+                            const cleaned = stripTemplateCodeFence(candidate);
+                            try {
+                                visit(JSON.parse(cleaned));
+                            } catch (e) {
+                                if (/<[a-z][\s\S]*>/i.test(cleaned)) addTemplate({ htmlTemplate: cleaned });
+                            }
+                            return;
+                        }
+                        if (Array.isArray(candidate)) {
+                            candidate.forEach(visit);
+                            return;
+                        }
+                        if (getUiTemplateMarkup(candidate)) addTemplate(candidate);
+                        collectUiTemplateList(candidate).forEach(addTemplate);
+                    };
+                    sources.forEach(visit);
+                    return templates.sort((a, b) => (b.order || 0) - (a.order || 0));
                 };
 
                 const extractEmbeddedUiTemplates = (rawData = {}) => {
@@ -2701,37 +3788,60 @@
                         rawData.extensions?.ui_templates,
                         rawData.extensions?.rp_hub_ui_templates
                     ];
-                    const seen = new Set();
-                    const templates = [];
-                    candidates.forEach(candidate => {
-                        collectUiTemplateList(candidate).forEach((template) => {
-                            const html = template?.htmlTemplate || template?.template || template?.html || template?.content || '';
-                            if (!html) return;
-                            const key = template.id || `${template.name || ''}:${String(html).slice(0, 120)}`;
-                            if (seen.has(key)) return;
-                            seen.add(key);
-                            templates.push({
-                                ...template,
-                                id: template.id || `embedded-ui-${templates.length + 1}`,
-                                name: template.name || `UI模板 ${templates.length + 1}`,
-                                htmlTemplate: String(html),
-                                initialVariableState: clonePreviewObject(
-                                    template.initialVariableState
-                                    || template.variables
-                                    || template.variableState
-                                    || {}
-                                ),
-                                order: Number.isFinite(Number(template.order)) ? Number(template.order) : 100
-                            });
-                        });
+                    return extractUiTemplatePreviewItems(candidates, {
+                        fallbackName: 'UI模板',
+                        idPrefix: 'embedded-ui'
                     });
-                    return templates.sort((a, b) => (b.order || 0) - (a.order || 0));
+                };
+
+                const buildStandaloneUiTemplatePreviewItems = (template) => {
+                    if (!template) return [];
+                    const content = String(template.content || '');
+                    const fileExt = String(template.file_ext || template.file_name?.split('.').pop() || '').toLowerCase();
+                    const baseOptions = {
+                        fallbackName: template.title || 'UI模板',
+                        idPrefix: `standalone-ui-${template.id || 'preview'}`
+                    };
+                    if (!content.trim()) {
+                        return extractUiTemplatePreviewItems([{ htmlTemplate: buildUiTemplateEmptyMarkup('这个模板暂时没有可预览内容') }], baseOptions);
+                    }
+                    const cleanedContent = stripTemplateCodeFence(content);
+                    if (fileExt === 'json' || cleanedContent.trim().startsWith('{') || cleanedContent.trim().startsWith('[')) {
+                        try {
+                            const parsed = JSON.parse(cleanedContent);
+                            const fallbackVariables = pickPreviewVariablesFromObject(parsed);
+                            const items = extractUiTemplatePreviewItems([parsed], {
+                                ...baseOptions,
+                                fallbackVariables
+                            });
+                            if (items.length) return items;
+                            const markup = pickPreviewMarkupFromObject(parsed);
+                            if (markup) {
+                                return extractUiTemplatePreviewItems([{
+                                    htmlTemplate: markup,
+                                    initialVariableState: fallbackVariables
+                                }], baseOptions);
+                            }
+                            return extractUiTemplatePreviewItems([{ htmlTemplate: buildUiTemplateEmptyMarkup('这个 JSON 模板没有找到可直接预览的 HTML UI') }], baseOptions);
+                        } catch (e) {
+                            return extractUiTemplatePreviewItems([{ htmlTemplate: buildUiTemplateEmptyMarkup('JSON 模板解析失败，无法生成预览') }], baseOptions);
+                        }
+                    }
+                    if (fileExt === 'css') {
+                        return extractUiTemplatePreviewItems([{ htmlTemplate: buildTemplateCssPreviewMarkup(cleanedContent) }], baseOptions);
+                    }
+                    if (/<html[\s>]|<!doctype/i.test(cleanedContent) || /<[a-z][\s\S]*>/i.test(cleanedContent)) {
+                        return extractUiTemplatePreviewItems([{ htmlTemplate: cleanedContent }], baseOptions);
+                    }
+                    return extractUiTemplatePreviewItems([{ htmlTemplate: buildUiTemplateEmptyMarkup('该模板文件不是可直接渲染的 HTML UI') }], baseOptions);
                 };
 
                 const renderUiTemplatePreview = (template) => {
                     const html = renderUiTemplateSource(template);
                     return html ? renderMarkdown(html) : '';
                 };
+
+                const selectedTemplatePreviewItems = computed(() => buildStandaloneUiTemplatePreviewItems(selectedTemplate.value));
 
                 const buildPreviewCardModel = (card, dataOverride) => {
                     const raw = dataOverride || card.data || {};
@@ -2987,12 +4097,15 @@
                     return iframe;
                 };
 
-                const fetchComments = async (cardId) => {
+                const fetchComments = async (targetId, targetType = 'card') => {
                     loadingComments.value = true;
                     comments.value = [];
                     try {
                         const headers = isLoggedIn.value ? { 'Authorization': 'Bearer ' + userToken.value } : {};
-                        const resp = await fetch(API_BASE + '/api/cards/' + cardId + '/comments', { headers });
+                        const url = targetType === 'template'
+                            ? API_BASE + '/api/ui-templates/' + targetId + '/comments'
+                            : API_BASE + '/api/cards/' + targetId + '/comments';
+                        const resp = await fetch(url, { headers });
                         if (!resp.ok) throw new Error('获取评论失败');
                         const data = await resp.json();
                         comments.value = data || [];
@@ -3022,10 +4135,15 @@
                         showToast('评论包含过多连续重复字符，请修改后再提交', 'warning');
                         return;
                     }
-                    if (!selectedCard.value) return;
+                    const isTemplateComment = !!selectedTemplate.value && !selectedCard.value;
+                    const target = isTemplateComment ? selectedTemplate.value : selectedCard.value;
+                    if (!target) return;
 
                     try {
-                        const resp = await fetch(API_BASE + '/api/cards/' + selectedCard.value.id + '/comments', {
+                        const url = isTemplateComment
+                            ? API_BASE + '/api/ui-templates/' + target.id + '/comments'
+                            : API_BASE + '/api/cards/' + target.id + '/comments';
+                        const resp = await fetch(url, {
                             method: 'POST',
                             headers: userAuthHeaders(),
                             body: JSON.stringify({ content: newComment.content.trim(), reply_to_id: newComment.reply_to_id || undefined })
@@ -3066,7 +4184,19 @@
                         newComment.reply_to_name = '';
 
                         // Update local comment_count on the card to reflect heat change
-                        if (selectedCard.value) {
+                        if (isTemplateComment && selectedTemplate.value) {
+                            if (data.template_metrics) {
+                                applyTemplateMetrics(selectedTemplate.value.id, data.template_metrics);
+                            } else {
+                                const listTemplate = uiTemplates.value.find(item => item.id === selectedTemplate.value.id);
+                                if (listTemplate) {
+                                    listTemplate.comment_count = (listTemplate.comment_count || 0) + 1;
+                                    listTemplate.heat_score = calculateTemplateHeatFromCounts(listTemplate);
+                                }
+                                selectedTemplate.value.comment_count = (selectedTemplate.value.comment_count || 0) + 1;
+                                selectedTemplate.value.heat_score = calculateTemplateHeatFromCounts(selectedTemplate.value);
+                            }
+                        } else if (selectedCard.value) {
                             const listCard = cards.value.find(c => c.id === selectedCard.value.id);
                             if (listCard) {
                                 listCard.comment_count = (listCard.comment_count || 0) + 1;
@@ -3158,7 +4288,8 @@
                         return;
                     }
                     try {
-                        const resp = await fetch(API_BASE + '/api/comments/' + comment.id + '/like', {
+                        const isTemplateComment = !!comment.template_id || (!!selectedTemplate.value && !selectedCard.value);
+                        const resp = await fetch(API_BASE + (isTemplateComment ? '/api/ui-template-comments/' : '/api/comments/') + comment.id + '/like', {
                             method: 'POST',
                             headers: userAuthHeaders()
                         });
@@ -3200,17 +4331,32 @@
                     if (!confirm('确定要删除这条评论吗？')) return;
                     try {
                         const headers = isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
-                        const resp = await fetch(API_BASE + '/api/comments/' + commentId, {
+                        const comment = comments.value.find(c => c.id === commentId);
+                        const isTemplateComment = !!comment?.template_id || (!!selectedTemplate.value && !selectedCard.value);
+                        const resp = await fetch(API_BASE + (isTemplateComment ? '/api/ui-template-comments/' : '/api/comments/') + commentId, {
                             method: 'DELETE',
                             headers
                         });
-                        if (!resp.ok) throw new Error('删除失败');
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '删除失败');
                         
                         const removedCount = comments.value.filter(c => c.id === commentId).length;
                         comments.value = comments.value.filter(c => c.id !== commentId);
 
                         // Update local comment_count on the card to reflect heat change immediately
-                        if (selectedCard.value) {
+                        if (isTemplateComment && selectedTemplate.value) {
+                            if (data.template_metrics) {
+                                applyTemplateMetrics(selectedTemplate.value.id, data.template_metrics);
+                            } else {
+                                const listTemplate = uiTemplates.value.find(item => item.id === selectedTemplate.value.id);
+                                if (listTemplate) {
+                                    listTemplate.comment_count = Math.max(0, (listTemplate.comment_count || 0) - removedCount);
+                                    listTemplate.heat_score = calculateTemplateHeatFromCounts(listTemplate);
+                                }
+                                selectedTemplate.value.comment_count = Math.max(0, (selectedTemplate.value.comment_count || 0) - removedCount);
+                                selectedTemplate.value.heat_score = calculateTemplateHeatFromCounts(selectedTemplate.value);
+                            }
+                        } else if (selectedCard.value) {
                             const listCard = cards.value.find(c => c.id === selectedCard.value.id);
                             if (listCard) {
                                 listCard.comment_count = Math.max(0, (listCard.comment_count || 0) - removedCount);
@@ -3530,10 +4676,14 @@
                                 avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar?v=' + assetVersion
                             };
                             parseCreatorNotes(updatedCard);
+                            updatedCard.ui_template_count = Number(updatedCard.ui_template_count || 0);
+                            updatedCard.has_ui_templates = isUiTemplateCard(updatedCard);
                             const idx = cards.value.findIndex(c => c.id === editingCard.value.id);
                             if (idx !== -1) {
                                 updatedCard = { ...cards.value[idx], ...updatedCard };
                                 parseCreatorNotes(updatedCard);
+                                updatedCard.ui_template_count = Number(updatedCard.ui_template_count || 0);
+                                updatedCard.has_ui_templates = isUiTemplateCard(updatedCard);
                                 cards.value[idx] = updatedCard;
                             } else {
                                 cards.value.unshift(updatedCard);
@@ -3564,11 +4714,22 @@
                 const PAGE_SIZE = 10;
                 const currentPage = ref(1);
 
-                const totalPages = computed(() => Math.ceil(filteredCards.value.length / PAGE_SIZE));
+                const currentListLength = computed(() => {
+                    return contentSection.value === 'uitemplates'
+                        ? filteredUiTemplates.value.length
+                        : filteredCards.value.length;
+                });
+
+                const totalPages = computed(() => Math.ceil(currentListLength.value / PAGE_SIZE));
 
                 const pagedCards = computed(() => {
                     const start = (currentPage.value - 1) * PAGE_SIZE;
                     return filteredCards.value.slice(start, start + PAGE_SIZE);
+                });
+
+                const pagedUiTemplates = computed(() => {
+                    const start = (currentPage.value - 1) * PAGE_SIZE;
+                    return filteredUiTemplates.value.slice(start, start + PAGE_SIZE);
                 });
 
                 const pageNumbers = computed(() => {
@@ -3585,7 +4746,7 @@
                 });
 
                 // Reset to page 1 when filters change
-                watch([searchQuery, cardSort, currentTab], () => { currentPage.value = 1; });
+                watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value === 'register') resetCaptcha();
                 });
@@ -3621,9 +4782,17 @@
                     } catch {}
                 };
 
+                const handleWindowMessage = (event) => {
+                    const data = event.data || {};
+                    if (data.type === 'slash_command') {
+                        showToast(`触发指令：${data.content}`, 'success');
+                    }
+                };
+
                 onMounted(() => {
                     loadPublicSettings();
                     fetchCards();
+                    fetchUiTemplates();
                     checkAdminToken();
                     checkUserToken();
                     trackVisit();
@@ -3632,25 +4801,28 @@
                     window.addEventListener('focus', handleWindowFocus);
                     document.addEventListener('visibilitychange', handleVisibilityChange);
                     document.addEventListener('click', () => { showSortDropdown.value = false; showUserMenu.value = false; });
-                    window.addEventListener('message', (event) => {
-                        if (event.data && event.data.type === 'slash_command') {
-                            showToast(`触发指令：${event.data.content}`, 'success');
-                        }
-                    });
+                    window.addEventListener('message', handleWindowMessage);
                 });
 
                 onUnmounted(() => {
                     window.removeEventListener('resize', handleWindowResize);
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
+                    window.removeEventListener('message', handleWindowMessage);
                 });
 
                 return {
-                    cards, cardSort, showSortDropdown, loading, searchQuery, filteredCards, pagedCards, defaultAvatar,
-                    showUploadModal, showSearchModal, showUserMenu, uploadingCard, isUploading, handleFileSelect, confirmUpload, handleUploadClick,
+                    cards, uiTemplates, cardSort, showSortDropdown, loading, searchQuery, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
+                    editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
+                    selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
+                    handleFileSelect, handleTemplateFileSelect, confirmUpload, confirmTemplateUpload, handleUploadClick,
+                    downloadTemplate, reviewTemplate, deleteTemplate, toggleTemplateFeatured, formatFileSize, isTemplateOwnedByCurrentUser, canViewTemplateDownloads, computeTemplateHeat,
                     selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard,
                     previewOpening, stopPreviewOpening,
-                    toasts, currentTab, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
+                    toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
+                    isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
+                    formatTemplateVariableBadge, formatCardUiVariableBadge,
                     handleMobileScroll,
                     isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
@@ -3670,11 +4842,12 @@
                     // Visit Tracking
                     totalVisits,
                     tagsExpanded, showTagLibrary, allTags,
-                    currentPage, totalPages, pageNumbers
+                    currentPage, totalPages, pageNumbers, currentListLength
                 };
             }
         }).mount('#app');
     </script>
 </body>
 </html>
+
 

@@ -49,6 +49,7 @@ const captchaTokens = new Map(); // token -> { createdAt, used }
 
 // ============== Upload Rate Limiting ==============
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_UI_TEMPLATE_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB text template
 const UPLOAD_RATE_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_UPLOADS_PER_WINDOW = 2;
 const uploadRateMap = new Map(); // key (userId or ip) -> [timestamp, ...]
@@ -524,6 +525,250 @@ function hashCardData(data) {
     return crypto.createHash('sha256').update(stableStringify(data)).digest('hex');
 }
 
+function parseStoredCardData(data) {
+    if (!data) return null;
+    if (typeof data === 'object') return data;
+    try {
+        return JSON.parse(data);
+    } catch {
+        return null;
+    }
+}
+
+function normalizeUiTemplateCollection(value) {
+    if (!value) return [];
+    if (typeof value === 'string') {
+        try {
+            return normalizeUiTemplateCollection(JSON.parse(value));
+        } catch {
+            return [];
+        }
+    }
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value.templates)) return value.templates;
+    if (Array.isArray(value.uiTemplates)) return value.uiTemplates;
+    if (Array.isArray(value.ui_templates)) return value.ui_templates;
+    if (typeof value === 'object') return Object.values(value);
+    return [];
+}
+
+function stripTemplateCodeFence(value) {
+    const text = String(value || '').trim();
+    if (!text.startsWith('```')) return String(value || '');
+    return text
+        .replace(/^```[a-zA-Z0-9_-]*\s*\n?/, '')
+        .replace(/\n?```\s*$/, '')
+        .trim();
+}
+
+function addVariableKeysFromObject(value, target) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    Object.keys(value).forEach(key => {
+        if (!key || String(key).startsWith('_')) return;
+        target.add(String(key));
+    });
+}
+
+function addVariableKeysFromMarkup(markup, target) {
+    const text = stripTemplateCodeFence(markup);
+    for (const match of text.matchAll(/{{\s*([^}]+?)\s*}}/g)) {
+        const raw = String(match[1] || '').trim();
+        if (!raw || raw === 'else' || raw.startsWith('/') || raw.startsWith('@')) continue;
+        if (raw.startsWith('#each ')) {
+            const path = raw.replace(/^#each\s+/, '').trim();
+            if (path) target.add(path.split('.')[0]);
+            continue;
+        }
+        if (raw.startsWith('#')) continue;
+        target.add(raw.split('.')[0]);
+    }
+}
+
+function collectUiTemplateVariableKeys(value, target = new Set()) {
+    if (!value) return target;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            try {
+                return collectUiTemplateVariableKeys(JSON.parse(trimmed), target);
+            } catch {
+                addVariableKeysFromMarkup(trimmed, target);
+                return target;
+            }
+        }
+        addVariableKeysFromMarkup(trimmed, target);
+        return target;
+    }
+    if (Array.isArray(value)) {
+        value.forEach(item => collectUiTemplateVariableKeys(item, target));
+        return target;
+    }
+    if (typeof value !== 'object') return target;
+
+    const beforeDeclaredCount = target.size;
+    [
+        value.initialVariableState,
+        value.initialVariables,
+        value.variableState,
+        value.variables,
+        value.variableSchema,
+        value.previewData,
+        value.sampleData
+    ].forEach(candidate => addVariableKeysFromObject(candidate, target));
+    const hasDeclaredVariables = target.size > beforeDeclaredCount;
+
+    if (!hasDeclaredVariables) {
+        [
+            value.htmlTemplate,
+            value.template,
+            value.html,
+            value.content,
+            value.markup
+        ].filter(item => typeof item === 'string').forEach(markup => addVariableKeysFromMarkup(markup, target));
+    }
+
+    [
+        value.templates,
+        value.uiTemplates,
+        value.ui_templates,
+        value.data?.templates,
+        value.data?.uiTemplates,
+        value.data?.ui_templates,
+        value.extensions?.templates,
+        value.extensions?.uiTemplates,
+        value.extensions?.ui_templates,
+        value.extensions?.rp_hub_ui_templates
+    ].filter(Boolean).forEach(candidate => {
+        normalizeUiTemplateCollection(candidate).forEach(item => collectUiTemplateVariableKeys(item, target));
+    });
+
+    return target;
+}
+
+function getUiTemplateVariableCount(value) {
+    return collectUiTemplateVariableKeys(value).size;
+}
+
+function getUiTemplateCount(rawData) {
+    const parsed = parseStoredCardData(rawData);
+    const content = parsed?.data || parsed || {};
+    const candidates = [
+        content.uiTemplates,
+        content.ui_templates,
+        parsed?.uiTemplates,
+        parsed?.ui_templates,
+        content.extensions?.uiTemplates,
+        content.extensions?.ui_templates,
+        content.extensions?.rp_hub_ui_templates,
+        parsed?.extensions?.uiTemplates,
+        parsed?.extensions?.ui_templates,
+        parsed?.extensions?.rp_hub_ui_templates
+    ];
+
+    return candidates.reduce((count, candidate) => {
+        return count + normalizeUiTemplateCollection(candidate).filter(template => {
+            if (typeof template === 'string') return template.trim().length > 0;
+            if (!template || typeof template !== 'object') return false;
+            return Boolean(template.htmlTemplate || template.template || template.html || template.content);
+        }).length;
+    }, 0);
+}
+
+function getEmbeddedUiTemplateVariableCount(rawData) {
+    const parsed = parseStoredCardData(rawData);
+    const content = parsed?.data || parsed || {};
+    const candidates = [
+        content.uiTemplates,
+        content.ui_templates,
+        parsed?.uiTemplates,
+        parsed?.ui_templates,
+        content.extensions?.uiTemplates,
+        content.extensions?.ui_templates,
+        content.extensions?.rp_hub_ui_templates,
+        parsed?.extensions?.uiTemplates,
+        parsed?.extensions?.ui_templates,
+        parsed?.extensions?.rp_hub_ui_templates
+    ];
+    const keys = new Set();
+    candidates.forEach(candidate => {
+        normalizeUiTemplateCollection(candidate).forEach(template => collectUiTemplateVariableKeys(template, keys));
+    });
+    return keys.size;
+}
+
+function attachUiTemplateSummary(card, { keepData = false } = {}) {
+    if (!card) return card;
+    const uiTemplateCount = getUiTemplateCount(card.data);
+    card.has_ui_templates = uiTemplateCount > 0 ? 1 : 0;
+    card.ui_template_count = uiTemplateCount;
+    card.ui_template_variable_count = getEmbeddedUiTemplateVariableCount(card.data);
+    if (!keepData) delete card.data;
+    return card;
+}
+
+function sanitizeUiTemplateFileName(fileName) {
+    const cleaned = String(fileName || 'ui-template.json')
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replace(/\s+/g, ' ')
+        .replace(/[. ]+$/g, '');
+    return (cleaned || 'ui-template.json').slice(0, 160);
+}
+
+function getFileExt(fileName) {
+    const match = String(fileName || '').match(/\.([a-z0-9_-]{1,16})$/i);
+    return match ? match[1].toLowerCase() : '';
+}
+
+function isValidJsonContent(content) {
+    try {
+        JSON.parse(String(content || ''));
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
+function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}) {
+    if (!row) return row;
+    const result = { ...row };
+    const commentCount = Number(row.comment_count || 0);
+    const downloadsCount = Number(row.downloads_count || 0);
+    const viewsCount = Number(row.views_count || 0);
+    const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
+    result.content_preview = String(row.content || '').slice(0, 600);
+    result.variable_count = getUiTemplateVariableCount(row.content);
+    result.comment_count = commentCount;
+    result.heat_score = Math.round(viewsCount * 1.0 + commentCount * 1.5 + downloadsCount * 2.5);
+    result.can_view_downloads = canViewDownloads;
+    if (!canViewDownloads) result.downloads_count = null;
+    if (!includeContent) delete result.content;
+    return result;
+}
+
+function getUiTemplateMetrics(templateId, { viewer = {} } = {}) {
+    const row = db.prepare(
+        `SELECT id, uploader_user_id, views_count, downloads_count,
+                (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) AS comment_count
+         FROM ui_templates
+         WHERE id = ?`
+    ).get(templateId);
+    if (!row) return null;
+    const commentCount = Number(row.comment_count || 0);
+    const downloadsCount = Number(row.downloads_count || 0);
+    const viewsCount = Number(row.views_count || 0);
+    const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
+    const metrics = {
+        comment_count: commentCount,
+        views_count: viewsCount,
+        heat_score: Math.round(viewsCount * 1.0 + commentCount * 1.5 + downloadsCount * 2.5)
+    };
+    if (canViewDownloads) {
+        metrics.downloads_count = downloadsCount;
+    }
+    return metrics;
+}
+
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
@@ -553,7 +798,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         const cards = db.prepare(
-            `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
+            `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.data,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
@@ -561,11 +806,359 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
-        ).all(...params);
+        ).all(...params).map(card => attachUiTemplateSummary(card));
         res.json(cards);
     } catch (err) {
         console.error('Fetch cards error:', err);
         res.status(500).json({ error: '获取卡片失败' });
+    }
+});
+
+// ============== UI Template Routes ==============
+app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
+    try {
+        const sortMode = req.query.sort || 'latest';
+        const whereParts = [];
+        const params = [];
+        let orderByClause = 'created_at DESC';
+
+        if (req.admin) {
+            // Admin can review every status.
+        } else if (req.user) {
+            whereParts.push("(review_status = 'approved' OR uploader_user_id = ?)");
+            params.push(req.user.id);
+        } else {
+            whereParts.push("review_status = 'approved'");
+        }
+
+        const heatExpr = `((IFNULL(views_count, 0) * 1.0)
+            + ((SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) * 1.5)
+            + (IFNULL(downloads_count, 0) * 2.5))`;
+        if (sortMode === 'featured') {
+            whereParts.push('is_featured = 1');
+            orderByClause = 'created_at DESC';
+        } else if (sortMode === 'hot') {
+            orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
+        } else if (sortMode === 'daily') {
+            whereParts.push("created_at >= datetime('now', '-1 day')");
+            orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
+        } else if (sortMode === 'weekly') {
+            whereParts.push("created_at >= datetime('now', '-7 days')");
+            orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
+        }
+
+        const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+        const templates = db.prepare(
+            `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
+                    downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
+                    rejection_reason, uploader_ip_address, created_at,
+                    (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) AS comment_count
+             FROM ui_templates
+             ${whereClause}
+             ORDER BY ${orderByClause}`
+        ).all(...params).map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
+        res.json(templates);
+    } catch (err) {
+        console.error('Fetch UI templates error:', err);
+        res.status(500).json({ error: '获取 UI 模板失败' });
+    }
+});
+
+app.post('/api/ui-templates', requireUserOrAdmin, (req, res) => {
+    try {
+        const { title, description, file_name, mime_type, content } = req.body;
+        const normalizedTitle = String(title || '').trim().slice(0, 120);
+        const normalizedContent = typeof content === 'string' ? content : '';
+        if (!normalizedTitle) return res.status(400).json({ error: '模板名称不能为空' });
+        if (!normalizedContent.trim()) return res.status(400).json({ error: '模板文件内容不能为空' });
+
+        const fileSize = Buffer.byteLength(normalizedContent, 'utf8');
+        if (fileSize > MAX_UI_TEMPLATE_FILE_SIZE_BYTES) {
+            return res.status(400).json({ error: `模板文件不能超过 2MB (${(fileSize / 1024 / 1024).toFixed(1)}MB)` });
+        }
+
+        const safeFileName = sanitizeUiTemplateFileName(file_name || `${normalizedTitle}.json`);
+        const fileExt = getFileExt(safeFileName);
+        if (fileExt !== 'json') {
+            return res.status(400).json({ error: 'UI模板只支持 .json 文件' });
+        }
+        if (!isValidJsonContent(normalizedContent)) {
+            return res.status(400).json({ error: 'JSON 模板解析失败，请检查文件内容' });
+        }
+
+        if (!req.admin) {
+            const rateKey = req.user ? `user:${req.user.id}` : `ip:${getRequestIp(req)}`;
+            if (!checkUploadRate(rateKey)) {
+                return res.status(429).json({ error: '上传太频繁，每分钟最多上传 2 个文件，请稍后再试' });
+            }
+            recordUpload(rateKey);
+        }
+
+        const id = generateId();
+        const now = new Date().toISOString();
+        const uploaderUserId = req.user ? req.user.id : null;
+        const reviewStatus = req.admin ? 'approved' : 'pending';
+        const reviewedBy = req.admin ? req.admin.id : null;
+        const reviewedAt = req.admin ? now : null;
+        const uploaderIp = getRequestIp(req);
+
+        db.prepare(
+            `INSERT INTO ui_templates
+             (id, title, description, file_name, file_ext, mime_type, content, file_size,
+              uploader_user_id, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+            id, normalizedTitle, String(description || '').trim().slice(0, 1000), safeFileName,
+            fileExt, String(mime_type || 'application/json').slice(0, 120), normalizedContent, fileSize,
+            uploaderUserId, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+        );
+
+        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(id);
+        logOperation({
+            userType: req.user ? 'user' : 'admin',
+            userId: uploaderUserId || req.admin?.id,
+            username: req.user?.username || req.admin?.username,
+            action: req.admin ? 'upload_ui_template' : 'upload_ui_template_pending',
+            targetType: 'ui_template',
+            targetId: id,
+            ip: uploaderIp,
+            details: { title: normalizedTitle, file_name: safeFileName, review_status: reviewStatus }
+        });
+
+        template.comment_count = 0;
+        res.json([sanitizeUiTemplateRow(template, { viewer: { admin: req.admin, user: req.user } }), { pending_review: reviewStatus === 'pending' }]);
+    } catch (err) {
+        console.error('Create UI template error:', err);
+        res.status(500).json({ error: '创建 UI 模板失败' });
+    }
+});
+
+app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
+    try {
+        const status = String(req.body.status || '').trim();
+        const reason = String(req.body.reason || '').trim().slice(0, 500);
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ error: '无效的审核状态' });
+        }
+        const template = db.prepare('SELECT id, title, review_status FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const now = new Date().toISOString();
+        db.prepare(
+            `UPDATE ui_templates
+             SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
+             WHERE id = ?`
+        ).run(status, req.admin.id, now, status === 'rejected' ? reason : null, req.params.id);
+
+        const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: status === 'approved' ? 'admin_approve_ui_template' : 'admin_reject_ui_template',
+            targetType: 'ui_template',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { title: template.title, reason: status === 'rejected' ? reason : undefined }
+        });
+        updated.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+        res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin } }) });
+    } catch (err) {
+        console.error('Review UI template error:', err);
+        res.status(500).json({ error: '审核模板失败' });
+    }
+});
+
+app.put('/api/ui-templates/:id/feature', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const template = db.prepare('SELECT id, title, is_featured FROM ui_templates WHERE id = ?').get(id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+
+        const newFeatured = template.is_featured ? 0 : 1;
+        db.prepare('UPDATE ui_templates SET is_featured = ? WHERE id = ?').run(newFeatured, id);
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: newFeatured ? 'feature_ui_template' : 'unfeature_ui_template',
+            targetType: 'ui_template',
+            targetId: id,
+            ip: getRequestIp(req),
+            details: { title: template.title }
+        });
+
+        res.json({ id, is_featured: newFeatured });
+    } catch (err) {
+        console.error('Feature UI template error:', err);
+        res.status(500).json({ error: '操作失败' });
+    }
+});
+
+app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
+    try {
+        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const isOwner = req.user && template.uploader_user_id === req.user.id;
+        if (!req.admin && !isOwner) return res.status(403).json({ error: '无权编辑此模板' });
+
+        const fields = [];
+        const values = [];
+        const setField = (name, value) => {
+            fields.push(`${name} = ?`);
+            values.push(value);
+        };
+        const hasContentUpdate = Object.prototype.hasOwnProperty.call(req.body, 'content');
+        const hasFileNameUpdate = Object.prototype.hasOwnProperty.call(req.body, 'file_name');
+        const hasMimeTypeUpdate = Object.prototype.hasOwnProperty.call(req.body, 'mime_type');
+
+        if (Object.prototype.hasOwnProperty.call(req.body, 'title')) {
+            const title = String(req.body.title || '').trim().slice(0, 120);
+            if (!title) return res.status(400).json({ error: '模板名称不能为空' });
+            setField('title', title);
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'description')) {
+            setField('description', String(req.body.description || '').trim().slice(0, 1000));
+        }
+        if (hasContentUpdate || hasFileNameUpdate) {
+            const safeFileName = hasFileNameUpdate
+                ? sanitizeUiTemplateFileName(req.body.file_name || template.file_name)
+                : sanitizeUiTemplateFileName(template.file_name || 'ui-template.json');
+            const fileExt = getFileExt(safeFileName);
+            if (fileExt !== 'json') {
+                return res.status(400).json({ error: 'UI模板只支持 .json 文件' });
+            }
+            const nextContent = hasContentUpdate ? req.body.content : template.content;
+            if (!isValidJsonContent(nextContent)) {
+                return res.status(400).json({ error: 'JSON 模板解析失败，请检查文件内容' });
+            }
+        }
+        if (hasContentUpdate) {
+            const content = typeof req.body.content === 'string' ? req.body.content : '';
+            if (!content.trim()) return res.status(400).json({ error: '模板文件内容不能为空' });
+            const fileSize = Buffer.byteLength(content, 'utf8');
+            if (fileSize > MAX_UI_TEMPLATE_FILE_SIZE_BYTES) {
+                return res.status(400).json({ error: '模板文件不能超过 2MB' });
+            }
+            setField('content', content);
+            setField('file_size', fileSize);
+        }
+        if (hasFileNameUpdate) {
+            const safeFileName = sanitizeUiTemplateFileName(req.body.file_name || template.file_name);
+            setField('file_name', safeFileName);
+            setField('file_ext', getFileExt(safeFileName));
+        }
+        if (hasMimeTypeUpdate) {
+            setField('mime_type', String(req.body.mime_type || template.mime_type || 'application/json').slice(0, 120));
+        }
+
+        if (!req.admin && fields.length > 0) {
+            setField('review_status', 'pending');
+            setField('reviewed_by_admin_id', null);
+            setField('reviewed_at', null);
+            setField('rejection_reason', null);
+        }
+
+        if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+        values.push(req.params.id);
+        db.prepare(`UPDATE ui_templates SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+
+        const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        updated.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+        logOperation({
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: 'edit_ui_template',
+            targetType: 'ui_template',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { title: updated.title }
+        });
+        res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin, user: req.user }, includeContent: true }) });
+    } catch (err) {
+        console.error('Update UI template error:', err);
+        res.status(500).json({ error: '更新 UI 模板失败' });
+    }
+});
+
+app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
+    try {
+        const template = db.prepare('SELECT id, title, uploader_user_id FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const isOwner = req.user && template.uploader_user_id === req.user.id;
+        if (!req.admin && !isOwner) return res.status(403).json({ error: '无权删除此模板' });
+
+        db.prepare('DELETE FROM ui_templates WHERE id = ?').run(req.params.id);
+        logOperation({
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: 'delete_ui_template',
+            targetType: 'ui_template',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { title: template.title }
+        });
+        res.json([{ id: req.params.id }]);
+    } catch (err) {
+        console.error('Delete UI template error:', err);
+        res.status(500).json({ error: '删除模板失败' });
+    }
+});
+
+app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
+    try {
+        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const canView = template.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && template.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '模板不存在' });
+
+        if (!req.admin && !(req.user && template.uploader_user_id === req.user.id)) {
+            db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
+            template.views_count = (template.views_count || 0) + 1;
+        }
+        template.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+
+        res.json(sanitizeUiTemplateRow(template, { includeContent: true, viewer: { admin: req.admin, user: req.user } }));
+    } catch (err) {
+        console.error('Fetch UI template detail error:', err);
+        res.status(500).json({ error: '获取 UI 模板详情失败' });
+    }
+});
+
+app.get('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
+    try {
+        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const canView = template.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && template.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '模板不存在' });
+
+        const isOwner = req.user && template.uploader_user_id === req.user.id;
+        if (!req.admin && !isOwner) {
+            db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
+        }
+        logOperation({
+            userType: req.admin ? 'admin' : (req.user ? 'user' : 'anonymous'),
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: 'download_ui_template',
+            targetType: 'ui_template',
+            targetId: req.params.id,
+            ip: getRequestIp(req)
+        });
+
+        const fileName = sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
+        res.setHeader('Content-Type', template.mime_type || 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', createAttachmentDisposition(fileName));
+        res.send(template.content);
+    } catch (err) {
+        console.error('Download UI template error:', err);
+        res.status(500).json({ error: '下载模板失败' });
     }
 });
 
@@ -956,6 +1549,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
+        attachUiTemplateSummary(card, { keepData: true });
         res.json(card);
     } catch (err) {
         console.error('Fetch card detail error:', err);
@@ -1032,6 +1626,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
+        attachUiTemplateSummary(card, { keepData: true });
         logOperation({
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
@@ -1184,6 +1779,7 @@ app.put('/api/cards/:id', (req, res) => {
 
         const updated = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
         try { updated.data = updated.data ? JSON.parse(updated.data) : null; } catch (e) { updated.data = null; }
+        attachUiTemplateSummary(updated, { keepData: true });
         res.json([updated]);
     } catch (err) {
         if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
@@ -1388,6 +1984,16 @@ app.post('/api/cards/:id/like', authenticateUser, (req, res) => {
     }
 });
 
+function countTodayCreditComments(userId, todayStr) {
+    const cardCount = db.prepare(
+        "SELECT COUNT(*) as count FROM character_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
+    ).get(userId, todayStr, todayStr).count;
+    const templateCount = db.prepare(
+        "SELECT COUNT(*) as count FROM ui_template_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
+    ).get(userId, todayStr, todayStr).count;
+    return (cardCount || 0) + (templateCount || 0);
+}
+
 // ============== Comment Routes ==============
 app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
     try {
@@ -1475,9 +2081,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         // Check daily comment credit limit (max 2 comments per day earn credits)
         const todayStr = now.slice(0, 10); // YYYY-MM-DD
-        const todayCommentCount = db.prepare(
-            "SELECT COUNT(*) as count FROM character_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
-        ).get(userId, todayStr, todayStr).count;
+        const todayCommentCount = countTodayCreditComments(userId, todayStr);
         const canEarnCredits = todayCommentCount < 2;
 
         // Insert comment and optionally add credits
@@ -1503,6 +2107,181 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
     } catch (err) {
         console.error('Create comment error:', err);
         res.status(500).json({ error: '发布评论失败' });
+    }
+});
+
+app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) => {
+    try {
+        const templateId = req.params.templateId;
+        const userId = req.user ? req.user.id : null;
+        const template = db.prepare('SELECT id, uploader_user_id, review_status FROM ui_templates WHERE id = ?').get(templateId);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const canView = template.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && template.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '模板不存在' });
+
+        const comments = db.prepare(
+            `SELECT c.*, u.username as author_name,
+                    (SELECT ut.uploader_user_id FROM ui_templates ut WHERE ut.id = c.template_id) as template_uploader_id
+             FROM ui_template_comments c
+             LEFT JOIN users u ON c.user_id = u.id
+             WHERE c.template_id = ?
+             ORDER BY c.created_at ASC`
+        ).all(templateId);
+
+        const hotComment = db.prepare(
+            `SELECT id FROM ui_template_comments
+             WHERE template_id = ? AND likes_count >= 5
+             ORDER BY likes_count DESC LIMIT 1`
+        ).get(templateId);
+
+        let likedCommentIds = new Set();
+        if (userId) {
+            const liked = db.prepare(
+                'SELECT comment_id FROM ui_template_comment_likes WHERE user_id = ? AND comment_id IN (SELECT id FROM ui_template_comments WHERE template_id = ?)'
+            ).all(userId, templateId);
+            likedCommentIds = new Set(liked.map(l => l.comment_id));
+        }
+
+        res.json(comments.map(c => ({
+            ...c,
+            user_liked: likedCommentIds.has(c.id),
+            is_hot: hotComment && hotComment.id === c.id
+        })));
+    } catch (err) {
+        console.error('Fetch UI template comments error:', err);
+        res.status(500).json({ error: '获取评论失败' });
+    }
+});
+
+app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) => {
+    try {
+        const { content, reply_to_id } = req.body;
+        if (!content || !content.trim()) {
+            return res.status(400).json({ error: '评论内容不能为空' });
+        }
+        if (content.trim().length < 5) {
+            return res.status(400).json({ error: '评论内容不能少于5个字' });
+        }
+        if (content.length > 5000) {
+            return res.status(400).json({ error: '评论内容过长（最多5000字）' });
+        }
+        if (/(.)\1{4,}/.test(content.trim())) {
+            return res.status(400).json({ error: '评论内容包含过多连续重复字符，请修改后再提交' });
+        }
+
+        const userId = req.user.id;
+        const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
+        if (!user) return res.status(401).json({ error: '用户不存在' });
+        const template = db.prepare("SELECT id, uploader_user_id FROM ui_templates WHERE id = ? AND review_status = 'approved'").get(req.params.templateId);
+        if (!template) return res.status(404).json({ error: '模板不存在或尚未通过审核' });
+
+        const id = generateId();
+        const now = new Date().toISOString();
+
+        let replyToName = null;
+        if (reply_to_id) {
+            const replyComment = db.prepare(
+                'SELECT c.id, u.username FROM ui_template_comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ? AND c.template_id = ?'
+            ).get(reply_to_id, req.params.templateId);
+            if (replyComment) replyToName = replyComment.username || '匿名用户';
+        }
+
+        const todayStr = now.slice(0, 10);
+        const canEarnCredits = countTodayCreditComments(userId, todayStr) < 2;
+
+        const insertComment = db.transaction(() => {
+            db.prepare(
+                'INSERT INTO ui_template_comments (id, template_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            ).run(id, req.params.templateId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
+
+            if (canEarnCredits) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+            }
+        });
+        insertComment();
+
+        const comment = db.prepare('SELECT * FROM ui_template_comments WHERE id = ?').get(id);
+        comment.author_name = user.username;
+        comment.user_liked = false;
+        comment.is_hot = false;
+        comment.template_uploader_id = template.uploader_user_id || null;
+
+        const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
+        res.json({
+            comment,
+            new_credits: updatedUser.download_credits,
+            credits_earned: canEarnCredits,
+            template_metrics: getUiTemplateMetrics(req.params.templateId, { viewer: { user: req.user } })
+        });
+    } catch (err) {
+        console.error('Create UI template comment error:', err);
+        res.status(500).json({ error: '发布评论失败' });
+    }
+});
+
+app.post('/api/ui-template-comments/:id/like', authenticateUser, (req, res) => {
+    try {
+        const commentId = req.params.id;
+        const userId = req.user.id;
+        const comment = db.prepare('SELECT id, template_id FROM ui_template_comments WHERE id = ?').get(commentId);
+        if (!comment) return res.status(404).json({ error: '评论不存在' });
+
+        const existing = db.prepare('SELECT id FROM ui_template_comment_likes WHERE comment_id = ? AND user_id = ?').get(commentId, userId);
+        if (existing) {
+            const unlikeTransaction = db.transaction(() => {
+                db.prepare('DELETE FROM ui_template_comment_likes WHERE comment_id = ? AND user_id = ?').run(commentId, userId);
+                db.prepare('UPDATE ui_template_comments SET likes_count = CASE WHEN likes_count > 0 THEN likes_count - 1 ELSE 0 END WHERE id = ?').run(commentId);
+            });
+            unlikeTransaction();
+            const updated = db.prepare('SELECT likes_count FROM ui_template_comments WHERE id = ?').get(commentId);
+            return res.json({ liked: false, likes_count: updated.likes_count });
+        }
+
+        const likeTransaction = db.transaction(() => {
+            db.prepare('INSERT INTO ui_template_comment_likes (comment_id, user_id) VALUES (?, ?)').run(commentId, userId);
+            db.prepare('UPDATE ui_template_comments SET likes_count = likes_count + 1 WHERE id = ?').run(commentId);
+        });
+        likeTransaction();
+        const updated = db.prepare('SELECT likes_count FROM ui_template_comments WHERE id = ?').get(commentId);
+        return res.json({ liked: true, likes_count: updated.likes_count });
+    } catch (err) {
+        console.error('UI template comment like error:', err);
+        res.status(500).json({ error: '操作失败' });
+    }
+});
+
+app.delete('/api/ui-template-comments/:id', requireUserOrAdmin, (req, res) => {
+    try {
+        const comment = db.prepare('SELECT id, template_id, user_id, content FROM ui_template_comments WHERE id = ?').get(req.params.id);
+        if (!comment) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        if (!req.admin && (!req.user || comment.user_id !== req.user.id)) {
+            return res.status(403).json({ error: '只能删除自己发布的评论' });
+        }
+        const result = db.prepare('DELETE FROM ui_template_comments WHERE id = ?').run(req.params.id);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: '评论不存在' });
+        }
+        logOperation({
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: req.admin ? 'admin_delete_ui_template_comment' : 'delete_own_ui_template_comment',
+            targetType: 'ui_template_comment',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { content: comment.content?.substring(0, 50) }
+        });
+        res.json({
+            success: true,
+            template_metrics: getUiTemplateMetrics(comment.template_id, { viewer: { admin: req.admin, user: req.user } })
+        });
+    } catch (err) {
+        console.error('Delete UI template comment error:', err);
+        res.status(500).json({ error: '删除评论失败' });
     }
 });
 
@@ -1725,8 +2504,9 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
 
         thumbnailCache.delete(id);
         const updated = db.prepare(
-            'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at FROM character_cards WHERE id = ?'
+            'SELECT id, name, description, creator_notes, data, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at FROM character_cards WHERE id = ?'
         ).get(id);
+        attachUiTemplateSummary(updated);
 
         logOperation({
             userType: 'admin',

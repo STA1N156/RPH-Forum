@@ -83,6 +83,30 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS ui_template_comments (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            user_id INTEGER,
+            nickname TEXT DEFAULT '匿名用户',
+            content TEXT NOT NULL,
+            likes_count INTEGER DEFAULT 0,
+            reply_to_id TEXT,
+            reply_to_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (template_id) REFERENCES ui_templates(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ui_template_comment_likes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(comment_id, user_id),
+            FOREIGN KEY (comment_id) REFERENCES ui_template_comments(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS card_likes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             card_id TEXT NOT NULL,
@@ -91,6 +115,29 @@ function initDatabase() {
             UNIQUE(card_id, user_id),
             FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS ui_templates (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            file_name TEXT NOT NULL,
+            file_ext TEXT,
+            mime_type TEXT,
+            content TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            downloads_count INTEGER DEFAULT 0,
+            views_count INTEGER DEFAULT 0,
+            is_featured INTEGER DEFAULT 0,
+            uploader_user_id INTEGER,
+            review_status TEXT DEFAULT 'approved',
+            reviewed_by_admin_id INTEGER,
+            reviewed_at DATETIME,
+            rejection_reason TEXT,
+            uploader_ip_address TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (reviewed_by_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS login_attempts (
@@ -143,8 +190,13 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_user ON comment_likes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_id ON ui_template_comments(template_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_comment ON ui_template_comment_likes(comment_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_user ON ui_template_comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_card_likes_card ON card_likes(card_id);
         CREATE INDEX IF NOT EXISTS idx_card_likes_user ON card_likes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts(ip_address, attempt_time);
         CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
@@ -169,6 +221,8 @@ function initDatabase() {
     try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_data_hash_unique ON character_cards (data_hash) WHERE data_hash IS NOT NULL'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("ALTER TABLE character_cards ADD COLUMN review_status TEXT DEFAULT 'approved'"); } catch (e) { /* column exists */ }
@@ -178,6 +232,11 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_ip_address TEXT'); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec("UPDATE ui_templates SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
+    try { db.exec('ALTER TABLE ui_templates ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_featured ON ui_templates(is_featured, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
