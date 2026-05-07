@@ -172,6 +172,17 @@
             touch-action: pan-y;
         }
 
+        .template-detail-scroll {
+            overscroll-behavior: none;
+            overscroll-behavior-y: none;
+        }
+
+        @media (max-width: 767px) {
+            .template-detail-scroll {
+                -webkit-overflow-scrolling: auto;
+            }
+        }
+
         .mobile-bg-img {
             will-change: transform, filter, opacity;
             transform: translateZ(0);
@@ -833,7 +844,7 @@
         </div>
 
         <!-- UI Template Detail Modal -->
-        <div v-if="selectedTemplate" class="fixed inset-0 z-50 bg-white overflow-y-auto no-scrollbar animate-detail-slide-up-mobile md:flex md:items-center md:justify-center md:bg-black/60 md:p-4 md:backdrop-blur-sm md:overflow-hidden md:animate-fade-in">
+        <div v-if="selectedTemplate" class="fixed inset-0 z-50 bg-white overflow-y-auto no-scrollbar template-detail-scroll animate-detail-slide-up-mobile md:flex md:items-center md:justify-center md:bg-black/60 md:p-4 md:backdrop-blur-sm md:overflow-hidden md:animate-fade-in">
             <div class="relative w-full min-h-full bg-white md:flex md:min-h-0 md:max-h-[90vh] md:max-w-3xl md:flex-col md:overflow-hidden md:rounded-[2.5rem] md:shadow-2xl md:animate-detail-scale-in">
             <button @click="closeTemplateDetail" class="fixed top-4 right-4 z-[60] w-10 h-10 rounded-2xl bg-gray-100/95 text-gray-500 hover:bg-gray-200 hover:text-gray-700 flex items-center justify-center shadow-sm backdrop-blur-md transition-all md:absolute md:top-6 md:right-6 md:z-20 md:w-14 md:h-14 md:rounded-[1.4rem]">
                 <svg class="w-5 h-5 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -1183,7 +1194,7 @@
             </div>
             <p class="text-xl font-bold text-white mb-3 tracking-wide">正在准备详情界面</p>
             <p class="text-sm text-gray-400 max-w-[280px] text-center leading-relaxed">{{ previewAsset.loading ? '资源正在加载，请稍等...' : '正在请求数据，请稍候...' }}</p>
-            <button v-if="selectedCard || previewOpening.active" @click="selectedCard = null; stopPreviewOpening()" class="mt-10 px-8 py-3 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all text-sm font-medium border border-white/5 hover:border-white/20 active:scale-95">
+            <button v-if="selectedCard || previewOpening.active" @click="selectedCard = null; selectedTemplate = null; selectedTemplateLoading = false; stopPreviewOpening()" class="mt-10 px-8 py-3 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all text-sm font-medium border border-white/5 hover:border-white/20 active:scale-95">
                 取消进入
             </button>
         </div>
@@ -1414,7 +1425,7 @@
                 </div>
 
                 <!-- Right: Content Section -->
-                <div class="flex-1 flex flex-col min-h-0 bg-white p-10 lg:p-12">
+                <div class="flex-1 flex flex-col min-h-0 bg-white p-10 pb-6 lg:p-12 lg:pb-7">
                     
                     <!-- Close Button -->
                     <button @click="selectedCard = null; stopPreviewOpening()" class="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all z-20">
@@ -1589,7 +1600,7 @@
                     </div>
 
                     <!-- Footer Actions -->
-                    <div class="pt-6 mt-4 border-t border-gray-100 md:pt-8 md:mt-0 flex gap-4 p-6 md:p-0 bg-white md:static sticky bottom-0 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:shadow-none pb-8 md:pb-0 safe-area-pb flex-shrink-0">
+                    <div class="pt-6 mt-4 border-t border-gray-100 md:pt-4 md:mt-0 flex gap-4 p-6 md:p-0 bg-white md:static sticky bottom-0 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:shadow-none pb-8 md:pb-0 safe-area-pb flex-shrink-0">
                         <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
                                 class="flex-1 py-4 md:py-5 rounded-2xl font-bold transition-all shadow-xl flex items-center justify-center gap-3 group"
                                 :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white shadow-gray-200 active:scale-[0.98]' : 'bg-gray-200 text-gray-500 shadow-transparent cursor-not-allowed'">
@@ -2649,7 +2660,7 @@
                 const startPreviewOpening = (card) => {
                     const requestId = ++previewOpenRequestId;
                     previewOpening.active = true;
-                    previewOpening.name = card?.name || '角色卡';
+                    previewOpening.name = card?.name || card?.title || '角色卡';
                     previewOpening.imageUrl = card?.thumbnail_url || card?.avatar_url || card?.avatar || defaultAvatar;
                     return requestId;
                 };
@@ -3016,7 +3027,16 @@
 
                 const openTemplateDetail = async (template) => {
                     if (!template || selectedTemplateLoading.value) return;
-                    selectedTemplate.value = { ...template, content: '' };
+                    const requestId = ++previewOpenRequestId;
+                    let openingShownAt = 0;
+                    const openingTimer = setTimeout(() => {
+                        if (requestId !== previewOpenRequestId || !selectedTemplateLoading.value) return;
+                        previewOpening.active = true;
+                        previewOpening.name = template.title || 'UI模板';
+                        previewOpening.imageUrl = defaultAvatar;
+                        openingShownAt = Date.now();
+                    }, 160);
+                    selectedTemplate.value = null;
                     selectedTemplateLoading.value = true;
                     comments.value = [];
                     expandedComments.value = new Set();
@@ -3031,6 +3051,14 @@
                         const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id, { headers });
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) throw new Error(data.error || '预览加载失败');
+                        if (requestId !== previewOpenRequestId) return;
+                        if (openingShownAt) {
+                            const elapsed = Date.now() - openingShownAt;
+                            if (elapsed < PREVIEW_OPENING_MIN_MS) {
+                                await new Promise(resolve => setTimeout(resolve, PREVIEW_OPENING_MIN_MS - elapsed));
+                            }
+                        }
+                        if (requestId !== previewOpenRequestId) return;
                         selectedTemplate.value = data;
                         const idx = uiTemplates.value.findIndex(item => item.id === data.id);
                         if (idx >= 0) {
@@ -3041,10 +3069,16 @@
                             };
                         }
                     } catch (err) {
-                        showToast('预览加载失败: ' + err.message, 'error');
-                        selectedTemplate.value = null;
+                        if (requestId === previewOpenRequestId) {
+                            showToast('预览加载失败: ' + err.message, 'error');
+                            selectedTemplate.value = null;
+                        }
                     } finally {
-                        selectedTemplateLoading.value = false;
+                        clearTimeout(openingTimer);
+                        if (requestId === previewOpenRequestId) {
+                            selectedTemplateLoading.value = false;
+                            stopPreviewOpening({ cancelPending: false });
+                        }
                     }
                 };
 
