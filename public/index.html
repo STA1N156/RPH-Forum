@@ -3304,22 +3304,25 @@
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id + '/download', { headers });
+                        const resp = await fetch(API_BASE + '/api/ui-templates/' + template.id + '/download', {
+                            method: 'POST',
+                            headers
+                        });
+                        const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) {
-                            const data = await resp.json().catch(() => ({}));
                             throw new Error(data.error || '下载失败');
                         }
-                        const blob = await resp.blob();
-                        const url = URL.createObjectURL(blob);
+                        if (!data.download_url) {
+                            throw new Error('下载链接生成失败');
+                        }
                         const a = document.createElement('a');
-                        a.href = url;
-                        a.download = getDownloadFileName(resp.headers.get('Content-Disposition'), template.file_name || `${template.title || 'ui-template'}.ui`);
+                        a.href = data.download_url;
+                        a.download = template.file_name || `${template.title || 'ui-template'}.ui`;
                         a.rel = 'noopener';
                         a.style.display = 'none';
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
-                        setTimeout(() => URL.revokeObjectURL(url), 1000);
 
                         const shouldIncrementVisibleCount = !isAdmin.value && !isTemplateOwnedByCurrentUser(template) && canViewTemplateDownloads(template);
                         if (shouldIncrementVisibleCount) {

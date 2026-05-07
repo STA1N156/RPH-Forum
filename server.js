@@ -1162,6 +1162,72 @@ app.get('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
     }
 });
 
+app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
+    try {
+        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+        const canView = template.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || (req.user && template.uploader_user_id === req.user.id);
+        if (!canView) return res.status(404).json({ error: '模板不存在' });
+
+        const isOwner = req.user && template.uploader_user_id === req.user.id;
+        if (!req.admin && !isOwner) {
+            db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
+        }
+        logOperation({
+            userType: req.admin ? 'admin' : (req.user ? 'user' : 'anonymous'),
+            userId: req.admin?.id || req.user?.id,
+            username: req.admin?.username || req.user?.username,
+            action: 'download_ui_template',
+            targetType: 'ui_template',
+            targetId: req.params.id,
+            ip: getRequestIp(req)
+        });
+
+        const fileName = sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
+        const downloadToken = createUiTemplateDownloadToken(req.params.id, fileName);
+        res.json({
+            success: true,
+            download_url: `/api/ui-templates/${req.params.id}/download/file?token=${encodeURIComponent(downloadToken)}`
+        });
+    } catch (err) {
+        console.error('Prepare UI template download error:', err);
+        res.status(500).json({ error: '下载模板失败' });
+    }
+});
+
+app.get('/api/ui-templates/:id/download/file', (req, res) => {
+    try {
+        const token = typeof req.query.token === 'string' ? req.query.token : '';
+        if (!token) {
+            return res.status(401).json({ error: '下载链接无效或已过期' });
+        }
+
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.role !== 'ui-template-download' || decoded.templateId !== req.params.id) {
+            return res.status(403).json({ error: '下载链接无效或已过期' });
+        }
+
+        const template = db.prepare('SELECT id, title, file_name, mime_type, content FROM ui_templates WHERE id = ?').get(req.params.id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+
+        const fileName = typeof decoded.fileName === 'string' && decoded.fileName.trim()
+            ? sanitizeUiTemplateFileName(decoded.fileName)
+            : sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
+        res.set('Content-Type', template.mime_type || 'text/plain; charset=utf-8');
+        res.set('Cache-Control', 'no-store');
+        res.set('Content-Disposition', createAttachmentDisposition(fileName));
+        res.send(template.content);
+    } catch (err) {
+        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: '下载链接无效或已过期' });
+        }
+        console.error('Download UI template file error:', err);
+        res.status(500).json({ error: '下载模板失败' });
+    }
+});
+
 function buildPlaceholderSvg(name, seed, width, height, fontSize) {
     const firstChar = Array.from(((name || '?').trim() || '?'))[0] || '?';
     const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#14b8a6', '#3b82f6', '#10b981'];
@@ -1336,6 +1402,14 @@ function createAttachmentDisposition(filename) {
 function createCardDownloadToken(cardId, fileName) {
     return jwt.sign(
         { role: 'card-download', cardId, fileName },
+        JWT_SECRET,
+        { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
+    );
+}
+
+function createUiTemplateDownloadToken(templateId, fileName) {
+    return jwt.sign(
+        { role: 'ui-template-download', templateId, fileName },
         JWT_SECRET,
         { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
     );
