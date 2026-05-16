@@ -601,7 +601,7 @@
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                                     {{ template.comment_count || 0 }}
                                 </span>
-                                <span class="flex items-center gap-1 px-2 py-1 rounded-xl text-orange-400">
+                                <span @click.stop="isAdmin ? openHeatEdit(template, 'template') : null" class="flex items-center gap-1 px-2 py-1 rounded-xl text-orange-400" :class="{ 'cursor-pointer hover:bg-orange-50 transition-colors': isAdmin }" :title="isAdmin ? '点击调整热度' : ''">
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
                                     {{ computeTemplateHeat(template) }}
                                 </span>
@@ -706,7 +706,7 @@
                                     </span>
                                 </div>
                                 <!-- Text Note -->
-                                <div v-if="card.clean_notes" class="flex items-center gap-1.5">
+                            <div v-if="card.clean_notes" class="flex items-center gap-1.5" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }">
                                     <svg class="w-3.5 h-3.5 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
                                     <p class="text-xs font-medium text-primary-600 line-clamp-1">{{ card.clean_notes }}</p>
                                 </div>
@@ -1634,10 +1634,10 @@
                     </button>
                 </div>
                 <div class="p-5 space-y-4">
-                    <div class="text-sm font-bold text-gray-600 truncate">卡片：{{ editingHeatCard.name }}</div>
+                    <div class="text-sm font-bold text-gray-600 truncate">{{ editingHeatType === 'template' ? '模板' : '卡片' }}：{{ editingHeatCard.name || editingHeatCard.title }}</div>
                     <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-2">
                         <svg class="w-4 h-4 text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
-                        <span>当前热度：<b class="text-orange-500">{{ computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×1.5 + 下载×2.5）</span>
+                        <span>当前热度：<b class="text-orange-500">{{ editingHeatType === 'template' ? computeTemplateHeat(editingHeatCard) : computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×1.5 + 下载×2.5）</span>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
@@ -1647,6 +1647,15 @@
                             </span>
                         </label>
                         <input v-model.number="heatEditForm.views_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">
+                            <span class="flex items-center gap-1">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                                评论数
+                            </span>
+                        </label>
+                        <input v-model.number="heatEditForm.comment_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
@@ -1708,23 +1717,35 @@
             </div>
         </div>
 
-        <!-- User Auth Modal (Login/Register) -->
+        <!-- User Auth Modal (Login/Register/Forgot Password) -->
         <div v-if="showUserAuthModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100]" @mousedown.self="showUserAuthModal = false">
             <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-scale-in">
-                <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">{{ userAuthMode === 'register' ? '注册账号' : '登录' }}</h3>
-                <p class="text-xs text-gray-400 text-center mb-4">{{ userAuthMode === 'register' ? '注册即送 1 次下载机会' : '登录后评论可获取下载次数' }}</p>
+                <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">{{ authTitle }}</h3>
+                <p class="text-xs text-gray-400 text-center mb-4">{{ authSubtitle }}</p>
                 <form @submit.prevent="handleUserAuth" class="space-y-3">
-                    <input v-model="userAuthForm.username" type="text" placeholder="用户名（2-20个字符）" autocomplete="username"
+                    <input v-if="userAuthMode !== 'forgot'" v-model="userAuthForm.username" type="text" placeholder="用户名（2-20个字符）" autocomplete="username"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
-                    <input v-model="userAuthForm.password" type="password" :placeholder="userAuthMode === 'register' ? '密码（至少6位）' : '密码'" autocomplete="current-password"
+                    <input v-if="userAuthMode !== 'login'" v-model="userAuthForm.email" type="email" placeholder="邮箱"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                    <input v-model="userAuthForm.password" type="password" :placeholder="userAuthMode === 'forgot' ? '新密码（至少6位）' : (userAuthMode === 'register' ? '密码（至少6位）' : '密码')" autocomplete="current-password"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <div v-if="userAuthError" class="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{{ userAuthError }}</div>
+                    <div v-if="emailCodeMessage" class="text-green-600 text-xs bg-green-50 p-2 rounded-lg">{{ emailCodeMessage }}</div>
 
-                    <!-- Slider Captcha (register only) -->
-                    <div v-if="userAuthMode === 'register'" class="space-y-2">
+                    <div v-if="userAuthMode !== 'login'" class="grid grid-cols-[1fr_auto] gap-2">
+                        <input v-model="userAuthForm.emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                        <button type="button" @click="sendAuthEmailCode" :disabled="emailCodeSending || emailCodeCooldown > 0 || !captchaState.verified"
+                            class="px-3 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold shadow-sm shadow-primary-100 transition-colors disabled:bg-primary-300 disabled:hover:bg-primary-300 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap">
+                            {{ emailCodeSending ? '发送中' : (emailCodeCooldown > 0 ? emailCodeCooldown + 's' : '发送验证码') }}
+                        </button>
+                    </div>
+
+                    <!-- Slider Captcha (email code sending only) -->
+                    <div v-if="userAuthMode !== 'login' && !captchaState.verified && emailCodeCooldown <= 0 && !emailCodeSending" class="space-y-2">
                         <div class="text-xs text-gray-500 flex items-center gap-1">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-                            安全验证
+                            发送验证码前先完成安全验证
                         </div>
                         <div class="relative bg-gray-100 rounded-xl h-10 select-none overflow-hidden" ref="captchaTrackRef">
                             <!-- Target slot -->
@@ -1745,13 +1766,15 @@
                         <div v-if="captchaState.error" class="text-red-500 text-xs">{{ captchaState.error }}</div>
                     </div>
 
-                    <button type="submit" :disabled="userAuthMode === 'register' && !captchaState.verified" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                        {{ userAuthMode === 'register' ? '注册' : '登录' }}
+                    <button type="submit" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        {{ userAuthMode === 'register' ? '注册' : (userAuthMode === 'forgot' ? '重置密码' : '登录') }}
                     </button>
                     <div class="text-center text-xs text-gray-400">
                         <span v-if="userAuthMode === 'login'">
                             没有账号？
                             <button type="button" @click="userAuthMode = 'register'; userAuthError = ''" class="text-primary-600 font-bold hover:underline">立即注册</button>
+                            <span class="mx-1">·</span>
+                            <button type="button" @click="userAuthMode = 'forgot'; userAuthError = ''" class="text-primary-600 font-bold hover:underline">忘记密码</button>
                         </span>
                         <span v-else>
                             已有账号？
@@ -1761,6 +1784,50 @@
                     <div class="text-center">
                         <button type="button" @click="showUserAuthModal = false" class="text-xs text-gray-400 hover:text-gray-600">取消</button>
                     </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Required Email Binding Modal -->
+        <div v-if="showEmailBindModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110]">
+            <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-scale-in">
+                <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">绑定邮箱</h3>
+                <p class="text-xs text-gray-400 text-center mb-4">为了保护账号，绑定并验证邮箱后才能进入广场。</p>
+                <form @submit.prevent="handleBindEmail" class="space-y-3">
+                    <input v-model="bindEmailForm.email" type="email" placeholder="邮箱"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                    <div class="grid grid-cols-[1fr_auto] gap-2">
+                        <input v-model="bindEmailForm.emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                        <button type="button" @click="sendBindEmailCode" :disabled="bindEmailSending || bindEmailCooldown > 0 || !captchaState.verified"
+                            class="px-3 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold shadow-sm shadow-primary-100 transition-colors disabled:bg-primary-300 disabled:hover:bg-primary-300 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap">
+                            {{ bindEmailSending ? '发送中' : (bindEmailCooldown > 0 ? bindEmailCooldown + 's' : '发送验证码') }}
+                        </button>
+                    </div>
+                    <div v-if="bindEmailError" class="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{{ bindEmailError }}</div>
+                    <div v-if="bindEmailMessage" class="text-green-600 text-xs bg-green-50 p-2 rounded-lg">{{ bindEmailMessage }}</div>
+                    <div v-if="!captchaState.verified && bindEmailCooldown <= 0 && !bindEmailSending" class="space-y-2">
+                        <div class="text-xs text-gray-500 flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            发送验证码前先完成安全验证
+                        </div>
+                        <div class="relative bg-gray-100 rounded-xl h-10 select-none overflow-hidden" ref="captchaTrackRef">
+                            <div v-if="captchaState.targetX > 0 && !captchaState.verified" class="absolute top-0 h-full w-10 border-2 border-dashed border-primary-300 rounded-lg bg-primary-50/50" :style="{ left: captchaState.targetX + 'px' }"></div>
+                            <div v-if="captchaState.verified" class="absolute inset-0 bg-green-50 flex items-center justify-center gap-1.5 z-10 rounded-xl">
+                                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                <span class="text-xs font-medium text-green-600">验证通过</span>
+                            </div>
+                            <div v-if="!captchaState.verified" class="absolute top-0 left-0 h-full w-10 bg-white border-2 border-primary-400 rounded-xl shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors hover:border-primary-500 z-20"
+                                :style="{ transform: 'translateX(' + captchaState.currentX + 'px)' }"
+                                @mousedown="startCaptchaDrag" @touchstart.prevent="startCaptchaDrag">
+                                <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </div>
+                        </div>
+                        <div v-if="!captchaState.verified && captchaState.currentX < 5" class="text-xs text-gray-400 text-center">向右拖动滑块到指定位置</div>
+                        <div v-if="captchaState.error" class="text-red-500 text-xs">{{ captchaState.error }}</div>
+                    </div>
+                    <button type="submit" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors">完成绑定</button>
+                    <button type="button" @click="handleUserLogout(); showEmailBindModal = false" class="w-full py-2 text-xs text-gray-400 hover:text-gray-600">退出登录</button>
                 </form>
             </div>
         </div>
@@ -1959,10 +2026,31 @@
                 const userToken = ref(safeStorage.getItem('user_token') || '');
                 const currentUser = ref(null);
                 const isLoggedIn = computed(() => !!currentUser.value);
+                const requiresEmailBinding = computed(() => Boolean(currentUser.value?.requires_email_binding));
                 const showUserAuthModal = ref(false);
-                const userAuthMode = ref('login'); // 'login' or 'register'
-                const userAuthForm = reactive({ username: '', password: '' });
+                const userAuthMode = ref('login'); // 'login', 'register', or 'forgot'
+                const userAuthForm = reactive({ username: '', email: '', password: '', emailCode: '' });
                 const userAuthError = ref('');
+                const emailCodeSending = ref(false);
+                const emailCodeCooldown = ref(0);
+                const emailCodeMessage = ref('');
+                const showEmailBindModal = ref(false);
+                const bindEmailForm = reactive({ email: '', emailCode: '' });
+                const bindEmailError = ref('');
+                const bindEmailMessage = ref('');
+                const bindEmailSending = ref(false);
+                const bindEmailCooldown = ref(0);
+                const cooldownTimers = new Map();
+                const authTitle = computed(() => {
+                    if (userAuthMode.value === 'register') return '注册账号';
+                    if (userAuthMode.value === 'forgot') return '忘记密码';
+                    return '登录';
+                });
+                const authSubtitle = computed(() => {
+                    if (userAuthMode.value === 'register') return '用邮箱验证码完成注册，注册即送 1 次下载机会';
+                    if (userAuthMode.value === 'forgot') return '验证邮箱后可以设置新密码';
+                    return '登录后评论可获取下载次数';
+                });
 
                 // Captcha state
                 const captchaTrackRef = ref(null);
@@ -2122,6 +2210,11 @@
                         if (resp.ok) {
                             const data = await resp.json();
                             currentUser.value = data.user;
+                            if (data.user?.requires_email_binding) {
+                                showEmailBindModal.value = true;
+                                await resetCaptcha();
+                                return;
+                            }
                             fetchCards();
                             fetchUiTemplates();
                         } else {
@@ -2141,16 +2234,98 @@
                     'Content-Type': 'application/json'
                 });
 
+                const startEmailCooldown = (targetRef, seconds = 30) => {
+                    targetRef.value = Math.max(1, parseInt(seconds || 30));
+                    const oldTimer = cooldownTimers.get(targetRef);
+                    if (oldTimer) clearInterval(oldTimer);
+                    const timer = setInterval(() => {
+                        targetRef.value = Math.max(0, targetRef.value - 1);
+                        if (targetRef.value <= 0) {
+                            clearInterval(timer);
+                            cooldownTimers.delete(targetRef);
+                        }
+                    }, 1000);
+                    cooldownTimers.set(targetRef, timer);
+                };
+
+                const sendEmailCode = async ({ purpose, email, username, authed = false }) => {
+                    if (!captchaState.verified) throw new Error('请先完成滑块验证');
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (authed) headers.Authorization = 'Bearer ' + userToken.value;
+                    const resp = await fetch(API_BASE + '/api/email/send-code', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            purpose,
+                            email,
+                            username: username || '',
+                            captchaToken: captchaState.token
+                        })
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok) {
+                        const err = new Error(data.error || '验证码发送失败');
+                        err.cooldown_seconds = data.cooldown_seconds || 0;
+                        throw err;
+                    }
+                    await resetCaptcha();
+                    return data;
+                };
+
+                const sendAuthEmailCode = async () => {
+                    userAuthError.value = '';
+                    emailCodeMessage.value = '';
+                    emailCodeSending.value = true;
+                    try {
+                        const purpose = userAuthMode.value === 'forgot' ? 'reset_password' : 'register';
+                        const data = await sendEmailCode({
+                            purpose,
+                            email: userAuthForm.email,
+                            username: userAuthForm.username
+                        });
+                        startEmailCooldown(emailCodeCooldown, data.cooldown_seconds || 30);
+                        emailCodeMessage.value = data.message || '验证码已发送';
+                    } catch (err) {
+                        if (err.cooldown_seconds) startEmailCooldown(emailCodeCooldown, err.cooldown_seconds);
+                        userAuthError.value = err.message || '验证码发送失败';
+                    } finally {
+                        emailCodeSending.value = false;
+                    }
+                };
+
+                const sendBindEmailCode = async () => {
+                    bindEmailError.value = '';
+                    bindEmailMessage.value = '';
+                    bindEmailSending.value = true;
+                    try {
+                        const data = await sendEmailCode({
+                            purpose: 'bind',
+                            email: bindEmailForm.email,
+                            authed: true
+                        });
+                        startEmailCooldown(bindEmailCooldown, data.cooldown_seconds || 30);
+                        bindEmailMessage.value = data.message || '验证码已发送';
+                    } catch (err) {
+                        if (err.cooldown_seconds) startEmailCooldown(bindEmailCooldown, err.cooldown_seconds);
+                        bindEmailError.value = err.message || '验证码发送失败';
+                    } finally {
+                        bindEmailSending.value = false;
+                    }
+                };
+
                 const handleUserAuth = async () => {
                     userAuthError.value = '';
+                    emailCodeMessage.value = '';
                     const isRegister = userAuthMode.value === 'register';
-                    if (isRegister && !captchaState.verified) {
-                        userAuthError.value = '请先完成滑块验证';
-                        return;
+                    const isForgot = userAuthMode.value === 'forgot';
+                    const url = isRegister ? '/api/user/register' : (isForgot ? '/api/user/forgot-password/reset' : '/api/user/login');
+                    const body = isForgot
+                        ? { email: userAuthForm.email, emailCode: userAuthForm.emailCode, newPassword: userAuthForm.password }
+                        : { username: userAuthForm.username, password: userAuthForm.password };
+                    if (isRegister) {
+                        body.email = userAuthForm.email;
+                        body.emailCode = userAuthForm.emailCode;
                     }
-                    const url = isRegister ? '/api/user/register' : '/api/user/login';
-                    const body = { username: userAuthForm.username, password: userAuthForm.password };
-                    if (isRegister) body.captchaToken = captchaState.token;
                     try {
                         const resp = await fetch(API_BASE + url, {
                             method: 'POST',
@@ -2162,12 +2337,27 @@
                             userAuthError.value = data.error || '操作失败';
                             return;
                         }
+                        if (isForgot) {
+                            showToast('密码已重置，请用新密码登录', 'success');
+                            userAuthMode.value = 'login';
+                            userAuthForm.password = '';
+                            userAuthForm.emailCode = '';
+                            return;
+                        }
                         userToken.value = data.token;
                         currentUser.value = data.user;
                         safeStorage.setItem('user_token', data.token);
                         showUserAuthModal.value = false;
                         userAuthForm.username = '';
+                        userAuthForm.email = '';
                         userAuthForm.password = '';
+                        userAuthForm.emailCode = '';
+                        if (data.user?.requires_email_binding) {
+                            showEmailBindModal.value = true;
+                            await resetCaptcha();
+                            showToast('请先绑定邮箱后再进入广场', 'warning');
+                            return;
+                        }
                         if (userAuthMode.value === 'register') {
                             showToast('注册成功！赠送 1 次下载机会', 'success');
                             captchaState.verified = false;
@@ -2187,7 +2377,36 @@
                     safeStorage.removeItem('user_token');
                     r18ConfirmedRaw.value = false;
                     safeStorage.removeItem('r18_confirmed');
+                    showEmailBindModal.value = false;
                     showToast('已退出登录', 'info');
+                };
+
+                const handleBindEmail = async () => {
+                    bindEmailError.value = '';
+                    bindEmailMessage.value = '';
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/bind-email', {
+                            method: 'POST',
+                            headers: userAuthHeaders(),
+                            body: JSON.stringify({
+                                email: bindEmailForm.email,
+                                emailCode: bindEmailForm.emailCode
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '绑定失败');
+                        userToken.value = data.token;
+                        currentUser.value = data.user;
+                        safeStorage.setItem('user_token', data.token);
+                        bindEmailForm.email = '';
+                        bindEmailForm.emailCode = '';
+                        showEmailBindModal.value = false;
+                        showToast('邮箱绑定成功', 'success');
+                        fetchCards();
+                        fetchUiTemplates();
+                    } catch (err) {
+                        bindEmailError.value = err.message || '绑定失败';
+                    }
                 };
 
                 const refreshUserCredits = async () => {
@@ -2507,8 +2726,8 @@
                         card.clean_notes = '';
                         return;
                     }
-                    // Extract tags starting with # (e.g. #Tag)
-                    const regex = /#(\S+)/g;
+                    // Extract tags starting with #, including adjacent tags like #TagA#TagB.
+                    const regex = /#([^#\s]+)/g;
                     const tags = [];
                     let match;
                     const text = card.creator_notes;
@@ -4272,12 +4491,15 @@
                 // ============== Admin Heat Adjustment ==============
                 const showHeatEditModal = ref(false);
                 const editingHeatCard = ref(null);
-                const heatEditForm = reactive({ views_count: 0, downloads_count: 0 });
+                const editingHeatType = ref('card');
+                const heatEditForm = reactive({ views_count: 0, comment_count: 0, downloads_count: 0 });
 
-                const openHeatEdit = (card) => {
+                const openHeatEdit = (card, type = 'card') => {
                     if (!isAdmin.value) return;
                     editingHeatCard.value = card;
+                    editingHeatType.value = type;
                     heatEditForm.views_count = card.views_count || 0;
+                    heatEditForm.comment_count = card.comment_count || 0;
                     heatEditForm.downloads_count = card.downloads_count || 0;
                     showHeatEditModal.value = true;
                 };
@@ -4285,11 +4507,13 @@
                 const submitHeatEdit = async () => {
                     if (!editingHeatCard.value) return;
                     try {
-                        const resp = await fetch(API_BASE + '/api/cards/' + editingHeatCard.value.id + '/heat', {
+                        const isTemplateHeat = editingHeatType.value === 'template';
+                        const resp = await fetch(API_BASE + (isTemplateHeat ? '/api/ui-templates/' : '/api/cards/') + editingHeatCard.value.id + '/heat', {
                             method: 'PUT',
                             headers: adminAuthHeaders(),
                             body: JSON.stringify({
                                 views_count: parseInt(heatEditForm.views_count) || 0,
+                                comment_count: parseInt(heatEditForm.comment_count) || 0,
                                 downloads_count: parseInt(heatEditForm.downloads_count) || 0
                             })
                         });
@@ -4298,14 +4522,22 @@
                             throw new Error(err.error || '调整失败');
                         }
                         const data = await resp.json();
-                        // Update local card data
-                        const listCard = cards.value.find(c => c.id === editingHeatCard.value.id);
-                        if (listCard) {
-                            listCard.views_count = data.views_count;
-                            listCard.downloads_count = data.downloads_count;
+                        const targetList = isTemplateHeat ? uiTemplates.value : cards.value;
+                        const listItem = targetList.find(item => item.id === editingHeatCard.value.id);
+                        if (listItem) {
+                            listItem.views_count = data.views_count;
+                            listItem.comment_count = data.comment_count;
+                            listItem.downloads_count = data.downloads_count;
+                            if (data.heat_score !== undefined) listItem.heat_score = data.heat_score;
                         }
-                        if (selectedCard.value && selectedCard.value.id === editingHeatCard.value.id) {
+                        if (isTemplateHeat && selectedTemplate.value && selectedTemplate.value.id === editingHeatCard.value.id) {
+                            selectedTemplate.value.views_count = data.views_count;
+                            selectedTemplate.value.comment_count = data.comment_count;
+                            selectedTemplate.value.downloads_count = data.downloads_count;
+                            if (data.heat_score !== undefined) selectedTemplate.value.heat_score = data.heat_score;
+                        } else if (!isTemplateHeat && selectedCard.value && selectedCard.value.id === editingHeatCard.value.id) {
                             selectedCard.value.views_count = data.views_count;
+                            selectedCard.value.comment_count = data.comment_count;
                             selectedCard.value.downloads_count = data.downloads_count;
                         }
                         showHeatEditModal.value = false;
@@ -4782,10 +5014,15 @@
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(() => showUserAuthModal.value, (val) => {
-                    if (val && userAuthMode.value === 'register') resetCaptcha();
+                    if (val && userAuthMode.value !== 'login') resetCaptcha();
                 });
                 watch(() => userAuthMode.value, (val) => {
-                    if (val === 'register' && showUserAuthModal.value) resetCaptcha();
+                    if (val !== 'login' && showUserAuthModal.value) resetCaptcha();
+                    userAuthError.value = '';
+                    emailCodeMessage.value = '';
+                });
+                watch(() => showEmailBindModal.value, (val) => {
+                    if (val) resetCaptcha();
                 });
                 watch(selectedCard, (card) => {
                     if (!card) {
@@ -4843,6 +5080,8 @@
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
                     window.removeEventListener('message', handleWindowMessage);
+                    for (const timer of cooldownTimers.values()) clearInterval(timer);
+                    cooldownTimers.clear();
                 });
 
                 return {
@@ -4863,11 +5102,13 @@
                     comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
-                    showHeatEditModal, editingHeatCard, heatEditForm, openHeatEdit, submitHeatEdit,
+                    showHeatEditModal, editingHeatCard, editingHeatType, heatEditForm, openHeatEdit, submitHeatEdit,
                     previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
-                    handleUserAuth, handleUserLogout,
+                    authTitle, authSubtitle, emailCodeSending, emailCodeCooldown, emailCodeMessage,
+                    handleUserAuth, handleUserLogout, sendAuthEmailCode,
+                    showEmailBindModal, bindEmailForm, bindEmailError, bindEmailMessage, bindEmailSending, bindEmailCooldown, sendBindEmailCode, handleBindEmail,
                     captchaTrackRef, captchaState, startCaptchaDrag, resetCaptcha,
                     // R18
                     r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18, r18Countdown,

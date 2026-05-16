@@ -29,6 +29,21 @@
                     "default": "/app/data",
                     "expose": false,
                     "readonly": true
+                },
+                "ZEABUR_EMAIL_API_KEY": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "ZEABUR_EMAIL_FROM": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "PUBLIC_BASE_URL": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
                 }
             },
             "ports": [

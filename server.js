@@ -28,6 +28,13 @@ const DERIVED_JWT_SECRET = process.env.ADMIN_PASSWORD
     ? crypto.createHash('sha256').update(`rp-forum:${process.env.ADMIN_PASSWORD}`).digest('hex')
     : '';
 const JWT_SECRET = EXPLICIT_JWT_SECRET || DERIVED_JWT_SECRET || (IS_PRODUCTION ? '' : crypto.randomBytes(32).toString('hex'));
+const ZEABUR_EMAIL_API_KEY = (process.env.ZEABUR_EMAIL_API_KEY || '').trim();
+const ZEABUR_EMAIL_FROM = (process.env.ZEABUR_EMAIL_FROM || process.env.EMAIL_FROM || '').trim();
+const ZEABUR_EMAIL_ENDPOINT = (process.env.ZEABUR_EMAIL_ENDPOINT || 'https://api.zeabur.com/api/v1/zsend/emails').trim();
+const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
+const HEAT_EMAIL_STEP = 500;
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -213,7 +220,7 @@ function validateAdminTokenPayload(decoded) {
 
 function validateUserTokenPayload(decoded) {
     if (!decoded || decoded.role !== 'user') return null;
-    const user = db.prepare('SELECT id, username, download_credits, token_version, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
     if (!user || user.username !== decoded.username || Number(user.token_version || 0) !== Number(decoded.token_version || 0)) {
         return null;
     }
@@ -222,7 +229,14 @@ function validateUserTokenPayload(decoded) {
         err.code = 'USER_BANNED';
         throw err;
     }
-    return { id: user.id, username: user.username, role: 'user', token_version: user.token_version || 0 };
+    return {
+        id: user.id,
+        username: user.username,
+        email: user.email || '',
+        email_verified: Number(user.email_verified || 0),
+        role: 'user',
+        token_version: user.token_version || 0
+    };
 }
 
 function authenticateAdmin(req, res, next) {
@@ -244,6 +258,25 @@ function authenticateAdmin(req, res, next) {
 }
 
 function authenticateUser(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: '请先登录' });
+    }
+    try {
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = validateUserTokenPayload(decoded);
+        if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+        if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
+        req.user = user;
+        next();
+    } catch (err) {
+        if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
+        return res.status(401).json({ error: '令牌无效或已过期' });
+    }
+}
+
+function authenticateUserAllowUnbound(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '请先登录' });
@@ -293,6 +326,7 @@ function requireUserOrAdmin(req, res, next) {
         if (decoded.role === 'user') {
             const user = validateUserTokenPayload(decoded);
             if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
             req.user = user;
         } else if (decoded.role === 'admin') {
             const admin = validateAdminTokenPayload(decoded);
@@ -351,6 +385,276 @@ function recordLoginAttempt(ip, username, success) {
     db.prepare(
         'INSERT INTO login_attempts (ip_address, username, attempt_time, success) VALUES (?, ?, ?, ?)'
     ).run(ip, username, new Date().toISOString(), success ? 1 : 0);
+}
+
+// ============== Email Helpers ==============
+function normalizeEmail(email) {
+    const value = String(email || '').trim().toLowerCase();
+    if (!value || value.length > 254) return '';
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : '';
+}
+
+function maskEmail(email) {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return '';
+    const [name, domain] = normalized.split('@');
+    const visible = name.length <= 2 ? name[0] || '*' : `${name.slice(0, 2)}***`;
+    return `${visible}@${domain}`;
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function buildSiteUrl(req, pathPart = '/') {
+    const dbBaseUrl = getSettingValue('public_base_url');
+    const configured = (dbBaseUrl || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || '').trim().replace(/\/+$/, '');
+    if (configured) return `${configured}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
+    return `${protocol}://${host}${pathPart.startsWith('/') ? pathPart : `/${pathPart}`}`;
+}
+
+function getSettingValue(key) {
+    try {
+        return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
+    } catch {
+        return '';
+    }
+}
+
+function setSettingValue(key, value) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(key, String(value || ''), new Date().toISOString());
+}
+
+function getEmailConfig() {
+    return {
+        apiKey: getSettingValue('zeabur_email_api_key') || ZEABUR_EMAIL_API_KEY,
+        from: getSettingValue('zeabur_email_from') || ZEABUR_EMAIL_FROM,
+        endpoint: getSettingValue('zeabur_email_endpoint') || ZEABUR_EMAIL_ENDPOINT
+    };
+}
+
+function maskSecret(secret) {
+    const value = String(secret || '').trim();
+    if (!value) return '';
+    if (value.length <= 8) return '********';
+    return `${value.slice(0, 4)}...${value.slice(-6)}`;
+}
+
+function isEmailConfigured() {
+    const config = getEmailConfig();
+    return Boolean(config.apiKey && config.from);
+}
+
+async function sendZeaburEmail({ to, subject, html, text }) {
+    const normalizedTo = normalizeEmail(to);
+    if (!normalizedTo) throw new Error('收件邮箱格式无效');
+    const config = getEmailConfig();
+    if (!config.apiKey || !config.from) {
+        throw new Error('邮件服务未配置，请在后台或环境变量里设置 Zeabur API Key 和发件邮箱');
+    }
+
+    const response = await fetch(config.endpoint || ZEABUR_EMAIL_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+            from: config.from,
+            to: [normalizedTo],
+            subject,
+            html,
+            text
+        })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail = data?.message || data?.error || `HTTP ${response.status}`;
+        throw new Error(`邮件发送失败：${detail}`);
+    }
+    return data;
+}
+
+function sendZeaburEmailQuietly(payload) {
+    sendZeaburEmail(payload).catch((err) => {
+        console.error('[Email] Notification send failed:', err.message);
+    });
+}
+
+function hashEmailCode(email, purpose, code, userId) {
+    return crypto.createHmac('sha256', JWT_SECRET)
+        .update(`${normalizeEmail(email)}:${purpose}:${userId || ''}:${String(code || '').trim()}`)
+        .digest('hex');
+}
+
+function cleanupEmailCodes() {
+    try {
+        db.prepare("DELETE FROM email_verification_codes WHERE expires_at < datetime('now', '-1 day') OR used_at IS NOT NULL").run();
+    } catch (err) {
+        console.error('Cleanup email codes error:', err);
+    }
+}
+
+function createEmailCode({ email, purpose, userId, ip }) {
+    const normalizedEmail = normalizeEmail(email);
+    const code = String(crypto.randomInt(100000, 1000000));
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MINUTES * 60 * 1000).toISOString();
+    const codeHash = hashEmailCode(normalizedEmail, purpose, code, userId);
+    db.prepare(
+        `UPDATE email_verification_codes
+         SET used_at = ?
+         WHERE email = ? AND purpose = ? AND COALESCE(user_id, 0) = COALESCE(?, 0) AND used_at IS NULL`
+    ).run(now.toISOString(), normalizedEmail, purpose, userId || null);
+    db.prepare(
+        `INSERT INTO email_verification_codes
+         (email, purpose, user_id, code_hash, expires_at, ip_address)
+         VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(normalizedEmail, purpose, userId || null, codeHash, expiresAt, ip || null);
+    return { code, expiresAt };
+}
+
+function getEmailCodeCooldown({ email, purpose, userId }) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail || !purpose) return 0;
+    const cutoff = new Date(Date.now() - EMAIL_CODE_COOLDOWN_SECONDS * 1000).toISOString();
+    const recent = db.prepare(
+        `SELECT created_at FROM email_verification_codes
+         WHERE email = ? AND purpose = ? AND COALESCE(user_id, 0) = COALESCE(?, 0)
+           AND created_at > ?
+         ORDER BY created_at DESC LIMIT 1`
+    ).get(normalizedEmail, purpose, userId || null, cutoff);
+    if (!recent) return 0;
+    const elapsed = Math.floor((Date.now() - new Date(recent.created_at).getTime()) / 1000);
+    return Math.max(1, EMAIL_CODE_COOLDOWN_SECONDS - elapsed);
+}
+
+function verifyEmailCode({ email, purpose, userId, code }) {
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedCode = String(code || '').trim();
+    if (!normalizedEmail || !/^\d{6}$/.test(normalizedCode)) {
+        return { ok: false, error: '邮箱验证码不正确' };
+    }
+
+    const record = db.prepare(
+        `SELECT * FROM email_verification_codes
+         WHERE email = ? AND purpose = ? AND COALESCE(user_id, 0) = COALESCE(?, 0)
+           AND used_at IS NULL AND expires_at > ?
+         ORDER BY created_at DESC LIMIT 1`
+    ).get(normalizedEmail, purpose, userId || null, new Date().toISOString());
+
+    if (!record) return { ok: false, error: '验证码不存在或已过期，请重新发送' };
+    if (Number(record.attempts || 0) >= EMAIL_CODE_MAX_ATTEMPTS) {
+        return { ok: false, error: '验证码尝试次数太多，请重新发送' };
+    }
+
+    const expected = record.code_hash;
+    const actual = hashEmailCode(normalizedEmail, purpose, normalizedCode, userId);
+    const match = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+    if (!match) {
+        db.prepare('UPDATE email_verification_codes SET attempts = attempts + 1 WHERE id = ?').run(record.id);
+        return { ok: false, error: '邮箱验证码不正确' };
+    }
+
+    db.prepare('UPDATE email_verification_codes SET used_at = ? WHERE id = ?').run(new Date().toISOString(), record.id);
+    return { ok: true };
+}
+
+function buildUserResponse(user) {
+    return {
+        id: user.id,
+        username: user.username,
+        email: user.email || '',
+        email_verified: Number(user.email_verified || 0),
+        requires_email_binding: !(user.email && Number(user.email_verified || 0) === 1),
+        download_credits: user.download_credits,
+        created_at: user.created_at,
+        is_banned: user.is_banned || 0,
+        ban_reason: user.ban_reason || null
+    };
+}
+
+function userEmailBound(user) {
+    return Boolean(user && user.email && Number(user.email_verified || 0) === 1);
+}
+
+function rejectUnboundEmail(req, res) {
+    return res.status(403).json({
+        error: '请先绑定邮箱再继续使用广场',
+        requires_email_binding: true
+    });
+}
+
+function sendVerificationCodeEmail({ email, code, purpose }) {
+    const purposeLabel = {
+        register: '注册账号',
+        bind: '绑定邮箱',
+        reset_password: '重置密码'
+    }[purpose] || '验证邮箱';
+    return sendZeaburEmail({
+        to: email,
+        subject: `你的邮箱验证码：${code}`,
+        html: `<p>你正在进行「${escapeHtml(purposeLabel)}」。</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>验证码 ${EMAIL_CODE_TTL_MINUTES} 分钟内有效。如果不是你本人操作，可以忽略这封邮件。</p>`,
+        text: `你正在进行「${purposeLabel}」。验证码：${code}。${EMAIL_CODE_TTL_MINUTES} 分钟内有效。`
+    });
+}
+
+function sendReviewResultEmail({ to, username, itemType, title, status, reason, url }) {
+    const approved = status === 'approved';
+    const resultText = approved ? '已通过' : '未通过';
+    const reasonText = reason ? `\n原因：${reason}` : '';
+    sendZeaburEmailQuietly({
+        to,
+        subject: `你的${itemType}审核${resultText}`,
+        html: `<p>${escapeHtml(username || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」审核${escapeHtml(resultText)}。</p>${reason ? `<p>原因：${escapeHtml(reason)}</p>` : ''}<p><a href="${escapeHtml(url)}">打开广场查看</a></p>`,
+        text: `${username || '你好'}，你的${itemType}「${title}」审核${resultText}。${reasonText}\n${url}`
+    });
+}
+
+function computeCardHeatFromRow(row) {
+    return Math.round((row.views_count || 0) * 1.0 + (row.comment_count || 0) * 1.5 + (row.downloads_count || 0) * 2.5);
+}
+
+function maybeSendCardHeatMilestoneEmail(cardId, req) {
+    try {
+        const row = db.prepare(
+            `SELECT cc.id, cc.name, cc.views_count, cc.downloads_count, cc.heat_email_milestone,
+                    u.username, u.email, u.email_verified,
+                    COALESCE(cc.comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = cc.id)) AS comment_count
+             FROM character_cards cc
+             LEFT JOIN users u ON cc.uploader_user_id = u.id
+             WHERE cc.id = ?`
+        ).get(cardId);
+        if (!row || !userEmailBound(row)) return;
+
+        const heat = computeCardHeatFromRow(row);
+        const nextMilestone = Math.floor(heat / HEAT_EMAIL_STEP) * HEAT_EMAIL_STEP;
+        const lastMilestone = Number(row.heat_email_milestone || 0);
+        if (nextMilestone < HEAT_EMAIL_STEP || nextMilestone <= lastMilestone) return;
+
+        const updated = db.prepare(
+            'UPDATE character_cards SET heat_email_milestone = ? WHERE id = ? AND IFNULL(heat_email_milestone, 0) < ?'
+        ).run(nextMilestone, cardId, nextMilestone);
+        if (updated.changes === 0) return;
+
+        const url = buildSiteUrl(req, '/');
+        sendZeaburEmailQuietly({
+            to: row.email,
+            subject: `你的角色卡热度达到 ${nextMilestone}`,
+            html: `<p>${escapeHtml(row.username)}，你的角色卡「${escapeHtml(row.name)}」热度已经达到 ${nextMilestone}。</p><p>当前热度：${heat}</p><p><a href="${escapeHtml(url)}">回到广场看看</a></p>`,
+            text: `${row.username}，你的角色卡「${row.name}」热度已经达到 ${nextMilestone}。\n当前热度：${heat}\n${url}`
+        });
+    } catch (err) {
+        console.error('[Email] Heat milestone check failed:', err.message);
+    }
 }
 
 // ============== Auth Routes ==============
@@ -425,13 +729,54 @@ app.post('/api/captcha/verify', (req, res) => {
 });
 
 // ============== User Registration & Login ==============
-app.post('/api/user/register', async (req, res) => {
+app.post('/api/email/send-code', async (req, res) => {
     try {
-        const { username, password, captchaToken } = req.body;
+        cleanupEmailCodes();
+        const purpose = String(req.body.purpose || '').trim();
+        const email = normalizeEmail(req.body.email);
+        const captchaToken = String(req.body.captchaToken || '').trim();
+        if (!['register', 'bind', 'reset_password'].includes(purpose)) {
+            return res.status(400).json({ error: '验证码用途无效' });
+        }
+        if (!email) return res.status(400).json({ error: '请输入有效邮箱' });
 
-        // Validate captcha
+        let userId = null;
+        if (purpose === 'register') {
+            const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
+            if (existingEmail) return res.status(409).json({ error: '这个邮箱已经注册过了' });
+
+            const username = String(req.body.username || '').trim();
+            if (username) {
+                const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+                if (existingUsername) return res.status(409).json({ error: '用户名已存在' });
+            }
+        } else if (purpose === 'bind') {
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({ error: '请先登录' });
+            }
+            const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+            const user = validateUserTokenPayload(decoded);
+            if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id != ?').get(email, user.id);
+            if (existingEmail) return res.status(409).json({ error: '这个邮箱已经被其他账号绑定' });
+            userId = user.id;
+        } else if (purpose === 'reset_password') {
+            const user = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND email_verified = 1').get(email);
+            if (!user) return res.status(404).json({ error: '没有找到绑定这个邮箱的账号' });
+            userId = user.id;
+        }
+
+        const cooldown = getEmailCodeCooldown({ email, purpose, userId });
+        if (cooldown > 0) {
+            return res.status(429).json({
+                error: `请 ${cooldown} 秒后再发送验证码`,
+                cooldown_seconds: cooldown
+            });
+        }
+
         if (!captchaToken) {
-            return res.status(400).json({ error: '请完成滑块验证' });
+            return res.status(400).json({ error: '请先完成滑块验证' });
         }
         const captchaRecord = captchaTokens.get(captchaToken);
         if (!captchaRecord || !captchaRecord.used) {
@@ -439,31 +784,57 @@ app.post('/api/user/register', async (req, res) => {
         }
         captchaTokens.delete(captchaToken);
 
-        if (!username || !password) {
-            return res.status(400).json({ error: '请输入用户名和密码' });
+        const { code } = createEmailCode({ email, purpose, userId, ip: getRequestIp(req) });
+        await sendVerificationCodeEmail({ email, code, purpose });
+        res.json({
+            success: true,
+            message: `验证码已发送到 ${maskEmail(email)}，${EMAIL_CODE_TTL_MINUTES} 分钟内有效`,
+            cooldown_seconds: EMAIL_CODE_COOLDOWN_SECONDS
+        });
+    } catch (err) {
+        console.error('Send email code error:', err);
+        res.status(500).json({ error: err.message || '发送验证码失败' });
+    }
+});
+
+app.post('/api/user/register', async (req, res) => {
+    try {
+        const { username, password, emailCode } = req.body;
+        const email = normalizeEmail(req.body.email);
+
+        if (!username || !password || !email) {
+            return res.status(400).json({ error: '请输入用户名、邮箱和密码' });
         }
-        if (username.length < 2 || username.length > 20) {
+        const normalizedUsername = String(username || '').trim();
+        if (normalizedUsername.length < 2 || normalizedUsername.length > 20) {
             return res.status(400).json({ error: '用户名长度需为2-20个字符' });
         }
         if (password.length < 6) {
             return res.status(400).json({ error: '密码长度至少6个字符' });
         }
 
-        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(normalizedUsername);
         if (existing) {
             return res.status(409).json({ error: '用户名已存在' });
         }
+        const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
+        if (existingEmail) {
+            return res.status(409).json({ error: '这个邮箱已经注册过了' });
+        }
+
+        const codeCheck = verifyEmailCode({ email, purpose: 'register', userId: null, code: emailCode });
+        if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
 
         const hash = await bcrypt.hash(password, 12);
         const now = new Date().toISOString();
         const result = db.prepare(
-            'INSERT INTO users (username, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?)'
-        ).run(username, hash, now);
+            'INSERT INTO users (username, email, email_verified, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?, 1, ?)'
+        ).run(normalizedUsername, email, hash, now);
 
-        const user = db.prepare('SELECT id, username, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+        const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
         const token = generateUserToken(user);
-        res.json({ token, user });
+        res.json({ token, user: buildUserResponse(user) });
     } catch (err) {
         console.error('Register error:', err);
         res.status(500).json({ error: '注册失败' });
@@ -497,14 +868,64 @@ app.post('/api/user/login', async (req, res) => {
     const token = generateUserToken(user);
     res.json({ 
         token, 
-        user: { id: user.id, username: user.username, download_credits: user.download_credits } 
+        user: buildUserResponse(user)
     });
 });
 
-app.get('/api/user/me', authenticateUser, (req, res) => {
-    const user = db.prepare('SELECT id, username, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
+    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: '用户不存在' });
-    res.json({ user });
+    res.json({ user: buildUserResponse(user) });
+});
+
+app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
+    try {
+        const email = normalizeEmail(req.body.email);
+        const emailCode = String(req.body.emailCode || '').trim();
+        if (!email) return res.status(400).json({ error: '请输入有效邮箱' });
+
+        const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id != ?').get(email, req.user.id);
+        if (existingEmail) return res.status(409).json({ error: '这个邮箱已经被其他账号绑定' });
+
+        const codeCheck = verifyEmailCode({ email, purpose: 'bind', userId: req.user.id, code: emailCode });
+        if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
+
+        db.prepare('UPDATE users SET email = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(email, req.user.id);
+        const updated = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        logOperation({ userType: 'user', userId: req.user.id, username: req.user.username, action: 'bind_email', targetType: 'user', targetId: String(req.user.id), ip: getRequestIp(req), details: { email: maskEmail(email) } });
+        const token = generateUserToken(updated);
+        res.json({ success: true, token, user: buildUserResponse(updated) });
+    } catch (err) {
+        console.error('Bind email error:', err);
+        res.status(500).json({ error: '绑定邮箱失败' });
+    }
+});
+
+app.post('/api/user/forgot-password/reset', async (req, res) => {
+    try {
+        const email = normalizeEmail(req.body.email);
+        const emailCode = String(req.body.emailCode || '').trim();
+        const newPassword = String(req.body.newPassword || '');
+        if (!email || !emailCode || !newPassword) {
+            return res.status(400).json({ error: '请输入邮箱、验证码和新密码' });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: '新密码长度至少6位' });
+        }
+        const user = db.prepare('SELECT id, username FROM users WHERE email = ? COLLATE NOCASE AND email_verified = 1').get(email);
+        if (!user) return res.status(404).json({ error: '没有找到绑定这个邮箱的账号' });
+
+        const codeCheck = verifyEmailCode({ email, purpose: 'reset_password', userId: user.id, code: emailCode });
+        if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
+
+        const hash = await bcrypt.hash(newPassword, 12);
+        db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hash, user.id);
+        logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'reset_password_by_email', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Forgot password reset error:', err);
+        res.status(500).json({ error: '重置密码失败' });
+    }
 });
 
 // ============== Card Routes (Public) ==============
@@ -749,7 +1170,7 @@ function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}
 function getUiTemplateMetrics(templateId, { viewer = {} } = {}) {
     const row = db.prepare(
         `SELECT id, uploader_user_id, views_count, downloads_count,
-                (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) AS comment_count
+                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id)) AS comment_count
          FROM ui_templates
          WHERE id = ?`
     ).get(templateId);
@@ -772,7 +1193,8 @@ function getUiTemplateMetrics(templateId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        const heatExpr = '((IFNULL(cc.views_count, 0) * 1.0) + (IFNULL(comment_count, 0) * 1.5) + (IFNULL(cc.downloads_count, 0) * 2.5))';
+        const commentCountExpr = 'COALESCE(cc.comment_count_override, (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id))';
+        const heatExpr = `((IFNULL(cc.views_count, 0) * 1.0) + (IFNULL(${commentCountExpr}, 0) * 1.5) + (IFNULL(cc.downloads_count, 0) * 2.5))`;
         const whereParts = [];
         const params = [];
         let orderByClause = 'cc.created_at DESC';
@@ -802,7 +1224,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
-                    (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id) AS comment_count
+                    ${commentCountExpr} AS comment_count
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
@@ -831,8 +1253,9 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
             whereParts.push("review_status = 'approved'");
         }
 
+        const templateCommentCountExpr = `COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id))`;
         const heatExpr = `((IFNULL(views_count, 0) * 1.0)
-            + ((SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) * 1.5)
+            + (${templateCommentCountExpr} * 1.5)
             + (IFNULL(downloads_count, 0) * 2.5))`;
         if (sortMode === 'featured') {
             whereParts.push('is_featured = 1');
@@ -852,7 +1275,7 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
             `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at,
-                    (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id) AS comment_count
+                    ${templateCommentCountExpr} AS comment_count
              FROM ui_templates
              ${whereClause}
              ORDER BY ${orderByClause}`
@@ -940,7 +1363,13 @@ app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
         if (!['approved', 'rejected'].includes(status)) {
             return res.status(400).json({ error: '无效的审核状态' });
         }
-        const template = db.prepare('SELECT id, title, review_status FROM ui_templates WHERE id = ?').get(req.params.id);
+        const template = db.prepare(
+            `SELECT ut.id, ut.title, ut.review_status, ut.uploader_user_id,
+                    u.username, u.email, u.email_verified
+             FROM ui_templates ut
+             LEFT JOIN users u ON ut.uploader_user_id = u.id
+             WHERE ut.id = ?`
+        ).get(req.params.id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const now = new Date().toISOString();
         db.prepare(
@@ -960,7 +1389,18 @@ app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
             ip: getRequestIp(req),
             details: { title: template.title, reason: status === 'rejected' ? reason : undefined }
         });
-        updated.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+        if (userEmailBound(template)) {
+            sendReviewResultEmail({
+                to: template.email,
+                username: template.username,
+                itemType: 'UI模板',
+                title: template.title,
+                status,
+                reason: status === 'rejected' ? reason : '',
+                url: buildSiteUrl(req, '/')
+            });
+        }
+        updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
         res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin } }) });
     } catch (err) {
         console.error('Review UI template error:', err);
@@ -1064,7 +1504,7 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
         db.prepare(`UPDATE ui_templates SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
         const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
-        updated.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+        updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
@@ -1120,7 +1560,7 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
             db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
             template.views_count = (template.views_count || 0) + 1;
         }
-        template.comment_count = db.prepare('SELECT COUNT(*) as count FROM ui_template_comments WHERE template_id = ?').get(req.params.id).count;
+        template.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
 
         res.json(sanitizeUiTemplateRow(template, { includeContent: true, viewer: { admin: req.admin, user: req.user } }));
     } catch (err) {
@@ -1740,6 +2180,7 @@ app.delete('/api/cards/:id', (req, res) => {
             } else {
                 const user = validateUserTokenPayload(decoded);
                 if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+                if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
                 userId = user.id;
                 username = user.username || '';
             }
@@ -1797,6 +2238,7 @@ app.put('/api/cards/:id', (req, res) => {
         } else if (decoded.role === 'user' && card.uploader_user_id === decoded.id) {
             const user = validateUserTokenPayload(decoded);
             if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
             if (card.uploader_user_id !== user.id) return res.status(403).json({ error: '无权编辑此卡片' });
             userType = 'user'; userId = user.id; username = user.username;
         } else {
@@ -1831,10 +2273,11 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
-        if (decoded.role === 'user' && !reupload_replace) {
-            fields.push("review_status = 'pending'");
+        if (decoded.role === 'user') {
+            fields.push("review_status = 'approved'");
             fields.push('reviewed_by_admin_id = NULL');
-            fields.push('reviewed_at = NULL');
+            fields.push('reviewed_at = ?');
+            values.push(new Date().toISOString());
             fields.push('rejection_reason = NULL');
         }
 
@@ -1842,8 +2285,8 @@ app.put('/api/cards/:id', (req, res) => {
         values.push(req.params.id);
         const updateCard = db.transaction(() => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-            if (decoded.role === 'user' && !reupload_replace && card.review_status === 'approved' && card.uploader_user_id) {
-                db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
+            if (decoded.role === 'user' && card.review_status !== 'approved' && card.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(card.uploader_user_id);
             }
         });
         updateCard();
@@ -1892,10 +2335,14 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
 app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, name, views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare(
+            `SELECT id, name, views_count, downloads_count,
+                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+             FROM character_cards WHERE id = ?`
+        ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
-        const { views_count, downloads_count } = req.body;
+        const { views_count, downloads_count, comment_count } = req.body;
         const fields = [];
         const values = [];
 
@@ -1911,6 +2358,12 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
             fields.push('downloads_count = ?');
             values.push(d);
         }
+        if (comment_count !== undefined) {
+            const c = parseInt(comment_count);
+            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论数必须是非负整数' });
+            fields.push('comment_count_override = ?');
+            values.push(c);
+        }
 
         if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
 
@@ -1920,21 +2373,102 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
             action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
-            details: { name: card.name, views_count, downloads_count }
+            details: { name: card.name, views_count, downloads_count, comment_count }
         });
 
-        const updated = db.prepare('SELECT views_count, downloads_count FROM character_cards WHERE id = ?').get(id);
-        res.json({ success: true, views_count: updated.views_count, downloads_count: updated.downloads_count });
+        const updated = db.prepare(
+            `SELECT views_count, downloads_count,
+                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+             FROM character_cards WHERE id = ?`
+        ).get(id);
+        maybeSendCardHeatMilestoneEmail(id, req);
+        res.json({
+            success: true,
+            views_count: updated.views_count,
+            downloads_count: updated.downloads_count,
+            comment_count: updated.comment_count,
+            heat_score: Math.round((updated.views_count || 0) * 1.0 + (updated.comment_count || 0) * 1.5 + (updated.downloads_count || 0) * 2.5)
+        });
     } catch (err) {
         console.error('Admin adjust heat error:', err);
         res.status(500).json({ error: '调整热度失败' });
     }
 });
 
+app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
+    try {
+        const { id } = req.params;
+        const template = db.prepare(
+            `SELECT id, title, views_count, downloads_count,
+                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+             FROM ui_templates WHERE id = ?`
+        ).get(id);
+        if (!template) return res.status(404).json({ error: '模板不存在' });
+
+        const { views_count, downloads_count, comment_count } = req.body;
+        const fields = [];
+        const values = [];
+        if (views_count !== undefined) {
+            const v = parseInt(views_count);
+            if (!Number.isInteger(v) || v < 0) return res.status(400).json({ error: '浏览量必须是非负整数' });
+            fields.push('views_count = ?');
+            values.push(v);
+        }
+        if (downloads_count !== undefined) {
+            const d = parseInt(downloads_count);
+            if (!Number.isInteger(d) || d < 0) return res.status(400).json({ error: '下载量必须是非负整数' });
+            fields.push('downloads_count = ?');
+            values.push(d);
+        }
+        if (comment_count !== undefined) {
+            const c = parseInt(comment_count);
+            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论数必须是非负整数' });
+            fields.push('comment_count_override = ?');
+            values.push(c);
+        }
+        if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+
+        values.push(id);
+        db.prepare(`UPDATE ui_templates SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_adjust_ui_template_heat',
+            targetType: 'ui_template',
+            targetId: id,
+            ip: getRequestIp(req),
+            details: { title: template.title, views_count, downloads_count, comment_count }
+        });
+
+        const updated = db.prepare(
+            `SELECT views_count, downloads_count,
+                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+             FROM ui_templates WHERE id = ?`
+        ).get(id);
+        res.json({
+            success: true,
+            views_count: updated.views_count,
+            downloads_count: updated.downloads_count,
+            comment_count: updated.comment_count,
+            heat_score: Math.round((updated.views_count || 0) * 1.0 + (updated.comment_count || 0) * 1.5 + (updated.downloads_count || 0) * 2.5)
+        });
+    } catch (err) {
+        console.error('Admin adjust UI template heat error:', err);
+        res.status(500).json({ error: '调整模板热度失败' });
+    }
+});
+
 app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare(
+            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
+                    u.username, u.email, u.email_verified
+             FROM character_cards cc
+             LEFT JOIN users u ON cc.uploader_user_id = u.id
+             WHERE cc.id = ?`
+        ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const isOwner = req.user && card.uploader_user_id === req.user.id;
         if (card.review_status !== 'approved' && !req.admin && !isOwner) {
@@ -1962,6 +2496,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         });
 
         recordDownload();
+        maybeSendCardHeatMilestoneEmail(id, req);
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
         const fileName = sanitizeDownloadFilename(card.name);
@@ -2163,6 +2698,9 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             db.prepare(
                 'INSERT INTO character_comments (id, card_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.cardId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
+            db.prepare(
+                'UPDATE character_cards SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
+            ).run(req.params.cardId);
 
             if (canEarnCredits) {
                 db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
@@ -2177,6 +2715,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         comment.card_uploader_id = db.prepare('SELECT uploader_user_id FROM character_cards WHERE id = ?').get(req.params.cardId)?.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
+        maybeSendCardHeatMilestoneEmail(req.params.cardId, req);
         res.json({ comment, new_credits: updatedUser.download_credits, credits_earned: canEarnCredits });
     } catch (err) {
         console.error('Create comment error:', err);
@@ -2269,6 +2808,9 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
             db.prepare(
                 'INSERT INTO ui_template_comments (id, template_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.templateId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
+            db.prepare(
+                'UPDATE ui_templates SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
+            ).run(req.params.templateId);
 
             if (canEarnCredits) {
                 db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
@@ -2335,7 +2877,21 @@ app.delete('/api/ui-template-comments/:id', requireUserOrAdmin, (req, res) => {
         if (!req.admin && (!req.user || comment.user_id !== req.user.id)) {
             return res.status(403).json({ error: '只能删除自己发布的评论' });
         }
-        const result = db.prepare('DELETE FROM ui_template_comments WHERE id = ?').run(req.params.id);
+        const deleteComment = db.transaction(() => {
+            const result = db.prepare('DELETE FROM ui_template_comments WHERE id = ?').run(req.params.id);
+            if (result.changes > 0) {
+                db.prepare(
+                    `UPDATE ui_templates
+                     SET comment_count_override = CASE
+                        WHEN comment_count_override > 0 THEN comment_count_override - 1
+                        ELSE 0
+                     END
+                     WHERE id = ? AND comment_count_override IS NOT NULL`
+                ).run(comment.template_id);
+            }
+            return result;
+        });
+        const result = deleteComment();
         if (result.changes === 0) {
             return res.status(404).json({ error: '评论不存在' });
         }
@@ -2402,14 +2958,28 @@ app.post('/api/comments/:id/like', authenticateUser, (req, res) => {
 
 app.delete('/api/comments/:id', requireUserOrAdmin, (req, res) => {
     try {
-        const comment = db.prepare('SELECT id, user_id, content FROM character_comments WHERE id = ?').get(req.params.id);
+        const comment = db.prepare('SELECT id, card_id, user_id, content FROM character_comments WHERE id = ?').get(req.params.id);
         if (!comment) {
             return res.status(404).json({ error: '评论不存在' });
         }
         if (!req.admin && (!req.user || comment.user_id !== req.user.id)) {
             return res.status(403).json({ error: '只能删除自己发布的评论' });
         }
-        const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
+        const deleteComment = db.transaction(() => {
+            const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
+            if (result.changes > 0) {
+                db.prepare(
+                    `UPDATE character_cards
+                     SET comment_count_override = CASE
+                        WHEN comment_count_override > 0 THEN comment_count_override - 1
+                        ELSE 0
+                     END
+                     WHERE id = ? AND comment_count_override IS NOT NULL`
+                ).run(comment.card_id);
+            }
+            return result;
+        });
+        const result = deleteComment();
         if (result.changes === 0) {
             return res.status(404).json({ error: '评论不存在' });
         }
@@ -2556,7 +3126,13 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
             return res.status(400).json({ error: '审核状态无效' });
         }
 
-        const card = db.prepare('SELECT id, name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare(
+            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
+                    u.username, u.email, u.email_verified
+             FROM character_cards cc
+             LEFT JOIN users u ON cc.uploader_user_id = u.id
+             WHERE cc.id = ?`
+        ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
         const now = new Date().toISOString();
@@ -2592,6 +3168,17 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
             ip: getRequestIp(req),
             details: { name: card.name, reason: status === 'rejected' ? reason : undefined }
         });
+        if (userEmailBound(card)) {
+            sendReviewResultEmail({
+                to: card.email,
+                username: card.username,
+                itemType: '角色卡',
+                title: card.name,
+                status,
+                reason: status === 'rejected' ? reason : '',
+                url: buildSiteUrl(req, '/')
+            });
+        }
 
         res.json({ success: true, card: updated });
     } catch (err) {
@@ -2643,8 +3230,22 @@ app.get('/api/admin/comments', authenticateAdmin, (req, res) => {
 
 app.delete('/api/admin/comments/:id', authenticateAdmin, (req, res) => {
     try {
-        const comment = db.prepare('SELECT content FROM character_comments WHERE id = ?').get(req.params.id);
-        const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
+        const comment = db.prepare('SELECT card_id, content FROM character_comments WHERE id = ?').get(req.params.id);
+        const deleteComment = db.transaction(() => {
+            const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
+            if (result.changes > 0 && comment?.card_id) {
+                db.prepare(
+                    `UPDATE character_cards
+                     SET comment_count_override = CASE
+                        WHEN comment_count_override > 0 THEN comment_count_override - 1
+                        ELSE 0
+                     END
+                     WHERE id = ? AND comment_count_override IS NOT NULL`
+                ).run(comment.card_id);
+            }
+            return result;
+        });
+        const result = deleteComment();
         if (result.changes === 0) return res.status(404).json({ error: '评论不存在' });
         logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_comment', targetType: 'comment', targetId: req.params.id, ip: getRequestIp(req), details: { content: comment?.content?.substring(0, 50) } });
         res.json({ success: true });
@@ -2662,6 +3263,78 @@ app.get('/api/admin/settings', authenticateAdmin, (req, res) => {
         res.json(result);
     } catch (err) {
         res.status(500).json({ error: '获取设置失败' });
+    }
+});
+
+app.get('/api/admin/email-settings', authenticateAdmin, (req, res) => {
+    try {
+        const dbApiKey = getSettingValue('zeabur_email_api_key');
+        const config = getEmailConfig();
+        res.json({
+            configured: Boolean(config.apiKey && config.from),
+            api_key_configured: Boolean(config.apiKey),
+            api_key_masked: maskSecret(config.apiKey),
+            api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
+            from: config.from || '',
+            endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
+            public_base_url: getSettingValue('public_base_url') || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || ''
+        });
+    } catch (err) {
+        console.error('Email settings load error:', err);
+        res.status(500).json({ error: '获取邮件设置失败' });
+    }
+});
+
+app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
+    try {
+        const apiKey = typeof req.body.api_key === 'string' ? req.body.api_key.trim() : '';
+        const clearApiKey = req.body.clear_api_key === true || req.body.clear_api_key === 'true';
+        const from = normalizeEmail(req.body.from);
+        const endpoint = String(req.body.endpoint || ZEABUR_EMAIL_ENDPOINT).trim();
+        const publicBaseUrl = String(req.body.public_base_url || '').trim().replace(/\/+$/, '');
+
+        if (!from) return res.status(400).json({ error: '请输入有效的发件邮箱' });
+        if (!/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: '邮件 API 地址必须以 http:// 或 https:// 开头' });
+        if (publicBaseUrl && !/^https?:\/\//i.test(publicBaseUrl)) {
+            return res.status(400).json({ error: '站点公网地址必须以 http:// 或 https:// 开头' });
+        }
+        if (apiKey && apiKey.length < 12) return res.status(400).json({ error: 'API Key 看起来太短了' });
+
+        if (clearApiKey) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run('zeabur_email_api_key');
+        } else if (apiKey) {
+            setSettingValue('zeabur_email_api_key', apiKey);
+        }
+        setSettingValue('zeabur_email_from', from);
+        setSettingValue('zeabur_email_endpoint', endpoint);
+        setSettingValue('public_base_url', publicBaseUrl);
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_update_email_settings',
+            targetType: 'settings',
+            targetId: 'email',
+            ip: getRequestIp(req),
+            details: { from, api_key_updated: Boolean(apiKey), api_key_cleared: clearApiKey }
+        });
+
+        const dbApiKey = getSettingValue('zeabur_email_api_key');
+        const config = getEmailConfig();
+        res.json({
+            success: true,
+            configured: Boolean(config.apiKey && config.from),
+            api_key_configured: Boolean(config.apiKey),
+            api_key_masked: maskSecret(config.apiKey),
+            api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
+            from: config.from || '',
+            endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
+            public_base_url: publicBaseUrl
+        });
+    } catch (err) {
+        console.error('Email settings save error:', err);
+        res.status(500).json({ error: '保存邮件设置失败' });
     }
 });
 
@@ -2810,7 +3483,25 @@ app.get('/api/admin/logs', authenticateAdmin, (req, res) => {
         const total = db.prepare(`SELECT COUNT(*) as count FROM operation_logs${where}`).get(...params).count;
         const logs = db.prepare(
             `SELECT * FROM operation_logs${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-        ).all(...params, limit, offset);
+        ).all(...params, limit, offset).map((log) => {
+            let details = {};
+            try { details = log.details ? JSON.parse(log.details) : {}; } catch {}
+            let targetLabel = '';
+            if (log.target_type === 'card' && log.target_id) {
+                targetLabel = db.prepare('SELECT name FROM character_cards WHERE id = ?').get(log.target_id)?.name || details.name || '';
+            } else if (log.target_type === 'ui_template' && log.target_id) {
+                targetLabel = db.prepare('SELECT title FROM ui_templates WHERE id = ?').get(log.target_id)?.title || details.title || '';
+            } else if (log.target_type === 'user') {
+                targetLabel = details.username || log.username || '';
+            } else if (log.target_type === 'comment') {
+                targetLabel = details.content || '';
+            }
+            return {
+                ...log,
+                details_json: details,
+                target_label: targetLabel || ''
+            };
+        });
 
         res.json({ logs, total, page, limit, totalPages: Math.ceil(total / limit) });
     } catch (err) {
@@ -2924,7 +3615,7 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
         }
         const total = db.prepare(`SELECT COUNT(*) as count FROM users${where}`).get(...params).count;
         const users = db.prepare(
-            `SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+            `SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
 
         res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -2950,7 +3641,7 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
             return res.status(404).json({ error: '用户不存在' });
         }
 
-        const user = db.prepare('SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
+        const user = db.prepare('SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
@@ -2995,7 +3686,7 @@ app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
         }
 
         const updated = db.prepare(
-            'SELECT id, username, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
+            'SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
         ).get(userId);
         logOperation({
             userType: 'admin',
@@ -3089,6 +3780,7 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
 
         db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
         const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+        maybeSendCardHeatMilestoneEmail(id, req);
         res.json({ success: true, views_count: updated.views_count });
     } catch (err) {
         console.error('Card view count error:', err);
@@ -3208,6 +3900,7 @@ initDatabase();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);
+setInterval(cleanupEmailCodes, 60 * 60 * 1000);
 setInterval(cleanupOldLogs, 24 * 60 * 60 * 1000);
 
 const server = app.listen(PORT, HOST, () => {

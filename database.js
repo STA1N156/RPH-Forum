@@ -31,6 +31,8 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
+            email TEXT,
+            email_verified INTEGER DEFAULT 0,
             password_hash TEXT NOT NULL,
             download_credits INTEGER DEFAULT 1,
             token_version INTEGER DEFAULT 0,
@@ -51,12 +53,14 @@ function initDatabase() {
             data TEXT,
             creator_notes TEXT,
             downloads_count INTEGER DEFAULT 0,
+            comment_count_override INTEGER,
             uploader_user_id INTEGER,
             review_status TEXT DEFAULT 'approved',
             reviewed_by_admin_id INTEGER,
             reviewed_at DATETIME,
             rejection_reason TEXT,
             uploader_ip_address TEXT,
+            heat_email_milestone INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL
         );
@@ -128,6 +132,7 @@ function initDatabase() {
             file_size INTEGER DEFAULT 0,
             downloads_count INTEGER DEFAULT 0,
             views_count INTEGER DEFAULT 0,
+            comment_count_override INTEGER,
             is_featured INTEGER DEFAULT 0,
             uploader_user_id INTEGER,
             review_status TEXT DEFAULT 'approved',
@@ -186,6 +191,20 @@ function initDatabase() {
             FOREIGN KEY (created_by_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS email_verification_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            purpose TEXT NOT NULL,
+            user_id INTEGER,
+            code_hash TEXT NOT NULL,
+            attempts INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME,
+            ip_address TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
@@ -202,10 +221,14 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
         CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
+        CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
     try { db.exec('ALTER TABLE admin_users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL AND email != ''"); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN ban_reason TEXT'); } catch (e) { /* column exists */ }
@@ -217,6 +240,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN data_hash TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN comment_count_override INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_likes_count ON character_cards(likes_count DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_data_hash_unique ON character_cards (data_hash) WHERE data_hash IS NOT NULL'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
@@ -230,13 +254,16 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN reviewed_at DATETIME'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN rejection_reason TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_ip_address TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN heat_email_milestone INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec("UPDATE ui_templates SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('ALTER TABLE ui_templates ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE ui_templates ADD COLUMN comment_count_override INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_featured ON ui_templates(is_featured, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';

@@ -89,7 +89,7 @@
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                         用户管理
                     </button>
-                    <button @click="currentPage = 'tags'; showMobileMenu = false; loadSettings()" :class="currentPage === 'tags' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                    <button v-if="false" @click="currentPage = 'tags'; showMobileMenu = false; loadSettings()" :class="currentPage === 'tags' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
                         标签管理
                     </button>
@@ -463,6 +463,7 @@
                                     <div>
                                         <p class="text-base font-semibold text-gray-900">{{ user.username }}</p>
                                         <p class="text-xs text-gray-400 mt-1">ID {{ user.id }}</p>
+                                        <p class="text-xs text-gray-500 mt-1 break-all">{{ user.email || '未绑定邮箱' }}</p>
                                     </div>
                                     <span class="text-xs px-2 py-1 rounded-full" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'">{{ user.is_banned ? '已封禁' : (user.last_login ? '最近活跃' : '从未登录') }}</span>
                                 </div>
@@ -506,6 +507,7 @@
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">邮箱</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">密码操作</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载积分</th>
@@ -517,6 +519,12 @@
                                     <tr v-for="user in userData.users" :key="user.id" class="hover:bg-gray-50">
                                         <td class="px-6 py-4 text-sm text-gray-900 font-mono">{{ user.id }}</td>
                                         <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ user.username }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-600 max-w-[220px] break-all">
+                                            <div>{{ user.email || '未绑定邮箱' }}</div>
+                                            <span class="inline-flex mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="user.email_verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                                {{ user.email_verified ? '已验证' : '未验证' }}
+                                            </span>
+                                        </td>
                                         <td class="px-6 py-4 text-sm">
                                             <div class="space-y-2 w-44">
                                                 <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">{{ user.is_banned ? '已封禁' : '正常' }}</span>
@@ -603,7 +611,7 @@
                                     </div>
                                     <div class="rounded-xl bg-gray-50 p-3">
                                         <p class="text-xs text-gray-400">目标</p>
-                                        <p class="mt-1 text-gray-700">{{ log.target_type ? log.target_type + '#' + log.target_id : '-' }}</p>
+                                        <p class="mt-1 text-gray-700">{{ formatLogTarget(log) }}</p>
                                     </div>
                                 </div>
                                 <div class="rounded-xl bg-gray-50 p-3 text-sm text-gray-600 break-all">
@@ -650,7 +658,7 @@
                                             }">{{ getActionLabel(log.action) }}</span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500">
-                                            <span v-if="log.target_type">{{ log.target_type }}#{{ log.target_id }}</span>
+                                            <span>{{ formatLogTarget(log) }}</span>
                                             <span v-else>-</span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500 font-mono">{{ log.ip_address || '-' }}</td>
@@ -669,7 +677,7 @@
                     </div>
 
                     <!-- Tags -->
-                    <div v-if="currentPage === 'tags'">
+                    <div v-if="false">
                         <div class="max-w-4xl space-y-4 md:space-y-5">
                             <div class="bg-gradient-to-r from-amber-50 via-orange-50 to-white rounded-2xl border border-amber-200 p-4 md:p-5">
                                 <div class="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
@@ -920,17 +928,58 @@
                                             <span class="text-sm text-gray-700">允许匿名评论</span>
                                         </label>
                                     </div>
-                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-                                        热门标签和标签库已经单独放到左侧的“标签管理”页面，方便管理员直接维护。
-                                    </div>
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                         <button @click="saveSettings" :disabled="settingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
                                             {{ settingsSaving ? '保存中...' : '保存设置' }}
                                         </button>
-                                        <button @click="currentPage = 'tags'; loadSettings()" class="px-6 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
-                                            前往标签管理
-                                        </button>
                                     </div>
+                                </div>
+                            </div>
+
+                            <!-- Email Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div class="flex items-start justify-between gap-4 mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">Zeabur 邮箱配置</h3>
+                                        <p class="text-sm text-gray-500 mt-1">用于注册验证码、忘记密码、审核结果和热度通知。</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="emailSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                        {{ emailSettings.configured ? '已启用' : '未启用' }}
+                                    </span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        当前 Key：{{ emailSettings.api_key_configured ? emailSettings.api_key_masked : '未配置' }}
+                                        <span v-if="emailSettings.api_key_source === 'environment'">（来自环境变量）</span>
+                                        <span v-if="emailSettings.api_key_source === 'admin'">（来自后台配置）</span>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur API Key</label>
+                                        <input v-model="emailSettings.api_key" type="password" autocomplete="off" placeholder="留空则保留当前 Key"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input v-model="emailSettings.clear_api_key" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
+                                        清除后台保存的 Key，改用环境变量
+                                    </label>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">发件邮箱</label>
+                                        <input v-model="emailSettings.from" type="email" placeholder="例如 noreply@example.com"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">站点公网地址</label>
+                                        <input v-model="emailSettings.public_base_url" type="url" placeholder="例如 https://forum.example.com"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur Email API 地址</label>
+                                        <input v-model="emailSettings.endpoint" type="url"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <button @click="saveEmailSettings" :disabled="emailSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                        {{ emailSettingsSaving ? '保存中...' : '保存邮箱配置' }}
+                                    </button>
                                 </div>
                             </div>
 
@@ -1091,6 +1140,18 @@
                     hidden_popular_tags: '',
                     hidden_tag_library: ''
                 });
+                const emailSettings = reactive({
+                    configured: false,
+                    api_key_configured: false,
+                    api_key_masked: '',
+                    api_key_source: 'none',
+                    api_key: '',
+                    clear_api_key: false,
+                    from: '',
+                    endpoint: 'https://api.zeabur.com/api/v1/zsend/emails',
+                    public_base_url: ''
+                });
+                const emailSettingsSaving = ref(false);
                 const tagPreviewCards = ref([]);
                 const tagEditor = reactive({
                     popular: [],
@@ -1443,7 +1504,7 @@
                     }
                     const text = String(card.creator_notes || '');
                     const tags = [];
-                    const regex = /#(\S+)/g;
+                    const regex = /#([^#\s]+)/g;
                     let match;
                     while ((match = regex.exec(text)) !== null) {
                         if (match[1]) tags.push(match[1].trim());
@@ -1777,15 +1838,34 @@
                         admin_unban_user: '解除用户封禁',
                         admin_update_user_credits: '调整下载次数',
                         admin_reset_user_password: '重置用户密码',
-                        admin_update_tag_settings: '更新标签配置'
+                        admin_update_tag_settings: '更新标签配置',
+                        admin_update_email_settings: '更新邮件配置',
+                        admin_adjust_heat: '调整角色卡热度',
+                        admin_adjust_ui_template_heat: '调整模板热度'
                     };
                     return labels[action] || action;
                 }
 
+                function formatLogTarget(log) {
+                    if (!log || !log.target_type) return '-';
+                    if (log.target_label) return log.target_label;
+                    const names = {
+                        card: '角色卡',
+                        ui_template: 'UI模板',
+                        user: '用户',
+                        comment: '评论',
+                        ip: 'IP',
+                        settings: '设置'
+                    };
+                    const prefix = names[log.target_type] || log.target_type;
+                    return log.target_id ? `${prefix} ${log.target_id}` : prefix;
+                }
+
                 async function loadSettings() {
                     try {
-                        const [settingsResp] = await Promise.all([
+                        const [settingsResp, emailResp] = await Promise.all([
                             fetch(API_BASE + '/api/admin/settings', { headers: authHeaders() }),
+                            fetch(API_BASE + '/api/admin/email-settings', { headers: authHeaders() }),
                             loadTagPreviewCards()
                         ]);
                         if (settingsResp.ok) {
@@ -1793,6 +1873,10 @@
                             Object.assign(siteSettings, data);
                             syncTagEditorFromSettings();
                             captureSavedTagSnapshot();
+                        }
+                        if (emailResp.ok) {
+                            const data = await emailResp.json();
+                            Object.assign(emailSettings, data, { api_key: '', clear_api_key: false });
                         }
                     } catch (err) {
                         console.error('Settings error:', err);
@@ -1818,6 +1902,31 @@
                         showToast(err.message || '保存失败', 'error');
                     } finally {
                         settingsSaving.value = false;
+                    }
+                }
+
+                async function saveEmailSettings() {
+                    emailSettingsSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/email-settings', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({
+                                api_key: emailSettings.api_key,
+                                clear_api_key: emailSettings.clear_api_key,
+                                from: emailSettings.from,
+                                endpoint: emailSettings.endpoint,
+                                public_base_url: emailSettings.public_base_url
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存邮箱配置失败');
+                        Object.assign(emailSettings, data, { api_key: '', clear_api_key: false });
+                        showToast('邮箱配置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存邮箱配置失败', 'error');
+                    } finally {
+                        emailSettingsSaving.value = false;
                     }
                 }
 
@@ -1945,14 +2054,14 @@
                     getReviewStatusLabel, reviewAdminCard,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
                     userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, resetUserPassword, toggleUserBan,
-                    logData, logPage, logActionFilter, loadLogs, getActionLabel,
+                    logData, logPage, logActionFilter, loadLogs, getActionLabel, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
-                    siteSettings, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
+                    siteSettings, emailSettings, emailSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
                     settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
                     addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,
                     handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
                     toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
-                    restoreSavedTagSnapshot, loadSettings, saveSettings,
+                    restoreSavedTagSnapshot, loadSettings, saveSettings, saveEmailSettings,
                     passwordForm, passwordError, passwordSuccess, changePassword,
                     dataExporting, dataImporting, importResult, exportData, importData
                 };
