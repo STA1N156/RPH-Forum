@@ -279,7 +279,7 @@
 <body class="bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
         <!-- Toast Notification Container -->
-        <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none items-center">
+        <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[999] flex flex-col gap-2 pointer-events-none items-center">
             <transition-group name="list" tag="div" class="flex flex-col items-center">
                 <div v-for="toast in toasts" :key="toast.id"
                      class="pointer-events-auto flex items-center px-6 py-3 mb-2 rounded-full shadow-lg border bg-white text-gray-800 min-w-[300px] transform transition-all duration-300 backdrop-blur-sm bg-opacity-95"
@@ -343,6 +343,10 @@
                             <button @click="currentTab = 'mine'; showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                                 我的卡片
+                            </button>
+                            <button @click="openNewApiModal" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m-7-6a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
+                                提现收益
                             </button>
                             <button @click="currentTab = 'all'; showUserMenu = false" v-if="currentTab === 'mine'" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
@@ -1832,6 +1836,89 @@
             </div>
         </div>
 
+        <!-- STA1N API Reward Modal -->
+        <div v-if="showNewApiModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4" @click.self="showNewApiModal = false">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-scale-in overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m-7-6a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">提现收益</h3>
+                            <p class="text-xs text-gray-400 mt-0.5">角色卡和 UI 模板收益都会汇总在这里</p>
+                        </div>
+                    </div>
+                    <button @click="showNewApiModal = false" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div v-if="newApiRewardLoading" class="py-8 text-center text-sm text-gray-400">加载中...</div>
+                    <template v-else>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="rounded-2xl bg-amber-50 border border-amber-100 p-4 min-h-[92px] flex flex-col items-center justify-center text-center gap-2">
+                                <p class="text-xs text-amber-500 font-bold">可提现</p>
+                                <div class="flex items-end justify-center gap-1.5">
+                                    <span class="text-3xl font-black text-amber-600 font-mono leading-none">{{ formatCookieAmount(newApiReward.available_cookies) }}</span>
+                                    <span class="text-lg leading-none pb-0.5">🍪</span>
+                                </div>
+                            </div>
+                            <div class="rounded-2xl bg-blue-50 border border-blue-100 p-4 min-h-[92px] flex flex-col items-center justify-center text-center gap-2">
+                                <p class="text-xs text-blue-400 font-bold">总热度</p>
+                                <p class="text-3xl font-black text-blue-700 font-mono leading-none">{{ newApiReward.total_heat || 0 }}</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                                <p class="text-xs text-gray-400 font-bold">角色卡</p>
+                                <p class="text-base font-black text-gray-700 font-mono">{{ newApiReward.card_heat || 0 }}</p>
+                            </div>
+                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                                <p class="text-xs text-gray-400 font-bold">UI模板</p>
+                                <p class="text-base font-black text-gray-700 font-mono">{{ newApiReward.template_heat || 0 }}</p>
+                            </div>
+                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                                <p class="text-xs text-gray-400 font-bold">已提现</p>
+                                <p class="text-base font-black text-gray-700 font-mono">{{ formatCookieAmount(newApiReward.redeemed_cookies) }}🍪</p>
+                            </div>
+                        </div>
+                        <div class="rounded-2xl border border-gray-100 p-4 space-y-3">
+                            <div class="flex items-center gap-3">
+                                <label class="block text-sm font-bold text-gray-700">STA1N API 用户 ID</label>
+                            </div>
+                            <div v-if="newApiReward.newapi_user_id" class="flex items-center gap-2">
+                                <div class="flex-1 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 text-sm font-mono break-all">{{ newApiReward.newapi_user_id }}</div>
+                                <button @click="unbindNewApiUser" :disabled="newApiUnbinding" class="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition-colors disabled:opacity-60">
+                                    {{ newApiUnbinding ? '解绑中' : '解绑' }}
+                                </button>
+                            </div>
+                            <div v-else class="flex gap-2">
+                                <input v-model.trim="newApiForm.userId" inputmode="numeric" placeholder="例如 123"
+                                    class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
+                                <button @click="bindNewApiUser" :disabled="newApiSaving" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
+                                    {{ newApiSaving ? '保存中' : '绑定' }}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="rounded-2xl border border-gray-100 p-4 space-y-3">
+                            <label class="block text-sm font-bold text-gray-700">提现 🍪 数量</label>
+                            <div class="flex gap-2">
+                                <input v-model.number="newApiForm.cookies" type="number" min="1" step="0.01" :max="newApiReward.available_cookies || 1"
+                                    class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
+                                <button @click="redeemNewApiQuota" :disabled="newApiRedeeming || !newApiReward.newapi_configured || !newApiReward.newapi_user_id || (newApiReward.available_cookies || 0) < 1"
+                                    class="px-4 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-bold disabled:opacity-60 disabled:cursor-not-allowed">
+                                    {{ newApiRedeeming ? '提现中' : '提现' }}
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-400">最少提现 1🍪。收益会发到绑定的 STA1N API 用户 ID 上。</p>
+                            <p v-if="!newApiReward.newapi_configured" class="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">管理员还没配置 STA1N API，暂时不能提现。</p>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -2040,6 +2127,38 @@
                 const bindEmailMessage = ref('');
                 const bindEmailSending = ref(false);
                 const bindEmailCooldown = ref(0);
+                const showNewApiModal = ref(false);
+                const newApiRewardLoading = ref(false);
+                const newApiSaving = ref(false);
+                const newApiUnbinding = ref(false);
+                const newApiRedeeming = ref(false);
+                const newApiReward = reactive({
+                    newapi_user_id: '',
+                    card_heat: 0,
+                    template_heat: 0,
+                    total_heat: 0,
+                    total_cookies: 0,
+                    redeemed_cookies: 0,
+                    available_cookies: 0,
+                    available_quota: 0,
+                    heat_per_cookie: 8,
+                    quota_per_cookie: 50000,
+                    min_redeem_cookies: 1,
+                    newapi_configured: false
+                });
+                const newApiForm = reactive({ userId: '', cookies: 1 });
+                const floorToTwoDecimals = (value) => {
+                    const number = Number(value || 0);
+                    if (!Number.isFinite(number)) return 0;
+                    return Math.floor(number * 100 + 1e-8) / 100;
+                };
+                const formatCookieAmount = (value) => floorToTwoDecimals(value).toFixed(2);
+                const clampCookieAmount = (value, available) => {
+                    const max = floorToTwoDecimals(available || 0);
+                    if (max < 1) return 1;
+                    const amount = floorToTwoDecimals(value || 1);
+                    return Math.max(1, Math.min(amount, max));
+                };
                 const cooldownTimers = new Map();
                 const authTitle = computed(() => {
                     if (userAuthMode.value === 'register') return '注册账号';
@@ -2382,6 +2501,7 @@
                     r18ConfirmedRaw.value = false;
                     safeStorage.removeItem('r18_confirmed');
                     showEmailBindModal.value = false;
+                    showNewApiModal.value = false;
                     showToast('已退出登录', 'info');
                 };
 
@@ -2424,6 +2544,113 @@
                             currentUser.value = { ...currentUser.value, ...data.user };
                         }
                     } catch (e) { /* ignore */ }
+                };
+
+                const loadNewApiReward = async () => {
+                    if (!userToken.value) return;
+                    newApiRewardLoading.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/newapi/reward', {
+                            headers: userAuthHeaders()
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '加载提现收益失败');
+                        Object.assign(newApiReward, data);
+                        newApiForm.userId = data.newapi_user_id || currentUser.value?.newapi_user_id || '';
+                        newApiForm.cookies = clampCookieAmount(newApiForm.cookies, data.available_cookies);
+                    } catch (err) {
+                        showToast(err.message || '加载提现收益失败', 'error');
+                    } finally {
+                        newApiRewardLoading.value = false;
+                    }
+                };
+
+                const openNewApiModal = async () => {
+                    showUserMenu.value = false;
+                    if (!isLoggedIn.value) {
+                        showUserAuthModal.value = true;
+                        userAuthMode.value = 'login';
+                        return;
+                    }
+                    showNewApiModal.value = true;
+                    await loadNewApiReward();
+                };
+
+                const bindNewApiUser = async () => {
+                    const id = String(newApiForm.userId || '').trim();
+                    if (!/^\d{1,18}$/.test(id)) {
+                        showToast('请输入有效的 STA1N API 用户 ID', 'warning');
+                        return;
+                    }
+                    newApiSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/newapi/bind', {
+                            method: 'PUT',
+                            headers: userAuthHeaders(),
+                            body: JSON.stringify({ newapi_user_id: id })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '绑定失败');
+                        currentUser.value = { ...currentUser.value, ...data.user };
+                        Object.assign(newApiReward, data.reward || {});
+                        newApiForm.userId = data.user?.newapi_user_id || data.reward?.newapi_user_id || id;
+                        showToast('STA1N API 用户 ID 已绑定', 'success');
+                    } catch (err) {
+                        showToast(err.message || '绑定失败', 'error');
+                    } finally {
+                        newApiSaving.value = false;
+                    }
+                };
+
+                const unbindNewApiUser = async () => {
+                    if (!newApiReward.newapi_user_id) return;
+                    newApiUnbinding.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/newapi/bind', {
+                            method: 'DELETE',
+                            headers: userAuthHeaders()
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '解绑失败');
+                        currentUser.value = { ...currentUser.value, ...data.user };
+                        Object.assign(newApiReward, data.reward || {});
+                        newApiForm.userId = '';
+                        showToast('STA1N API 用户 ID 已解绑', 'success');
+                    } catch (err) {
+                        showToast(err.message || '解绑失败', 'error');
+                    } finally {
+                        newApiUnbinding.value = false;
+                    }
+                };
+
+                const redeemNewApiQuota = async () => {
+                    const cookies = floorToTwoDecimals(newApiForm.cookies);
+                    if (String(newApiForm.cookies).includes('.') && !/^\d+(?:\.\d{1,2})?$/.test(String(newApiForm.cookies))) {
+                        showToast('提现数量最多支持 2 位小数', 'warning');
+                        return;
+                    }
+                    if (cookies < 1) {
+                        showToast('最少提现 1🍪', 'warning');
+                        return;
+                    }
+                    newApiRedeeming.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/newapi/redeem', {
+                            method: 'POST',
+                            headers: userAuthHeaders(),
+                            body: JSON.stringify({ cookies })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '提现失败');
+                        Object.assign(newApiReward, data.reward || {});
+                        newApiForm.cookies = clampCookieAmount(1, newApiReward.available_cookies);
+                        showToast(`提现成功：${formatCookieAmount(data.cookies)}🍪`, 'success');
+                    } catch (err) {
+                        showToast(err.message || '提现失败', 'error');
+                        await loadNewApiReward();
+                    } finally {
+                        newApiRedeeming.value = false;
+                    }
                 };
 
                 const saveMyCardId = (id) => {
@@ -4150,9 +4377,14 @@
                         try {
                             const viewHeaders = { 'Content-Type': 'application/json' };
                             if (isLoggedIn.value) Object.assign(viewHeaders, userAuthHeaders());
-                            fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: viewHeaders });
-                            const listCard = cards.value.find(c => c.id === card.id);
-                            if (listCard) listCard.views_count = (listCard.views_count || 0) + 1;
+                            fetch(API_BASE + '/api/cards/' + card.id + '/view', { method: 'POST', headers: viewHeaders })
+                                .then(response => response.ok ? response.json() : null)
+                                .then(data => {
+                                    if (!data || data.counted === false) return;
+                                    const listCard = cards.value.find(c => c.id === card.id);
+                                    if (listCard) listCard.views_count = Number(data.views_count ?? ((listCard.views_count || 0) + 1));
+                                })
+                                .catch(error => console.error('Track view error:', error));
                         } catch (e) {
                             console.error('Track view error:', e);
                         }
@@ -5113,6 +5345,8 @@
                     authTitle, authSubtitle, emailCodeSending, emailCodeCooldown, emailCodeMessage,
                     handleUserAuth, handleUserLogout, sendAuthEmailCode,
                     showEmailBindModal, bindEmailForm, bindEmailError, bindEmailMessage, bindEmailSending, bindEmailCooldown, sendBindEmailCode, handleBindEmail,
+                    showNewApiModal, newApiRewardLoading, newApiSaving, newApiUnbinding, newApiRedeeming, newApiReward, newApiForm,
+                    openNewApiModal, bindNewApiUser, unbindNewApiUser, redeemNewApiQuota, formatCookieAmount,
                     captchaTrackRef, captchaState, startCaptchaDrag, resetCaptcha,
                     // R18
                     r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18, r18Countdown,

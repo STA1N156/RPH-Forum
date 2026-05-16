@@ -33,6 +33,8 @@ function initDatabase() {
             username TEXT UNIQUE NOT NULL,
             email TEXT,
             email_verified INTEGER DEFAULT 0,
+            newapi_user_id TEXT,
+            newapi_redeemed_cookies REAL DEFAULT 0,
             password_hash TEXT NOT NULL,
             download_credits INTEGER DEFAULT 1,
             token_version INTEGER DEFAULT 0,
@@ -180,6 +182,18 @@ function initDatabase() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS account_view_limits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type TEXT NOT NULL,
+            content_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            view_count INTEGER DEFAULT 0,
+            window_started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_view_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(content_type, content_id, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS ip_bans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ip_pattern TEXT UNIQUE NOT NULL,
@@ -205,6 +219,22 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS newapi_redemptions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            newapi_user_id TEXT NOT NULL,
+            cookies REAL NOT NULL,
+            quota INTEGER NOT NULL,
+            heat_used REAL NOT NULL,
+            quota_before INTEGER,
+            quota_after INTEGER,
+            status TEXT DEFAULT 'pending',
+            error TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
@@ -220,14 +250,20 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_operation_logs_action ON operation_logs(action);
         CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_account_view_limits_lookup ON account_view_limits(content_type, content_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_account_view_limits_last ON account_view_limits(last_view_at);
         CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
         CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
     try { db.exec('ALTER TABLE admin_users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN newapi_user_id TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN newapi_redeemed_cookies REAL DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_newapi_user_unique ON users(newapi_user_id) WHERE newapi_user_id IS NOT NULL AND newapi_user_id != ''"); } catch (e) { /* index exists */ }
     try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL AND email != ''"); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
@@ -264,6 +300,7 @@ function initDatabase() {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_featured ON ui_templates(is_featured, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
@@ -312,6 +349,7 @@ function cleanupLoginAttempts() {
 function cleanupOldLogs() {
     db.prepare("DELETE FROM operation_logs WHERE created_at < datetime('now', '-90 days')").run();
     db.prepare("DELETE FROM page_views WHERE created_at < datetime('now', '-30 days')").run();
+    db.prepare("DELETE FROM account_view_limits WHERE last_view_at < datetime('now', '-30 days')").run();
 }
 
 module.exports = { db, initDatabase, cleanupLoginAttempts, cleanupOldLogs };

@@ -32,10 +32,18 @@ const ZEABUR_EMAIL_API_KEY = (process.env.ZEABUR_EMAIL_API_KEY || '').trim();
 const ZEABUR_EMAIL_FROM = (process.env.ZEABUR_EMAIL_FROM || process.env.EMAIL_FROM || '').trim();
 const ZEABUR_EMAIL_ENDPOINT = (process.env.ZEABUR_EMAIL_ENDPOINT || 'https://api.zeabur.com/api/v1/zsend/emails').trim();
 const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || process.env.ADMIN_EMAILS || '').trim();
+const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
+const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
+const NEWAPI_ADMIN_USER_ID = (process.env.NEWAPI_ADMIN_USER_ID || process.env.NEWAPI_USER_ID || '').trim();
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
 const HEAT_EMAIL_STEP = 500;
+const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '8', 10));
+const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
+const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_WINDOW_HOURS || '24', 10) || 24);
+const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
+const NEWAPI_USER_STATUS_ENABLED = 1;
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -489,6 +497,93 @@ function getAdminNotificationEmails() {
     return parseEmailList(getSettingValue('admin_notification_emails') || ADMIN_NOTIFICATION_EMAILS);
 }
 
+function normalizeBaseUrl(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function getNewApiConfig() {
+    return {
+        baseUrl: normalizeBaseUrl(getSettingValue('newapi_base_url') || NEWAPI_BASE_URL),
+        adminToken: getSettingValue('newapi_admin_token') || NEWAPI_ADMIN_TOKEN,
+        adminUserId: String(getSettingValue('newapi_admin_user_id') || NEWAPI_ADMIN_USER_ID || '').trim()
+    };
+}
+
+function isNewApiConfigured() {
+    const config = getNewApiConfig();
+    return Boolean(config.baseUrl && config.adminToken);
+}
+
+function getNewApiHeaders() {
+    const config = getNewApiConfig();
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.adminToken}`
+    };
+    if (config.adminUserId) {
+        headers['New-Api-User'] = config.adminUserId;
+    }
+    return headers;
+}
+
+async function requestNewApi(pathPart, options = {}) {
+    const config = getNewApiConfig();
+    if (!config.baseUrl || !config.adminToken) {
+        throw new Error('STA1N API 未配置，请先在后台设置地址和管理员 Token');
+    }
+    const response = await fetch(`${config.baseUrl}${pathPart}`, {
+        ...options,
+        headers: {
+            ...getNewApiHeaders(),
+            ...(options.headers || {})
+        }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || data?.error || `STA1N API 请求失败：HTTP ${response.status}`);
+    }
+    return data?.data !== undefined ? data.data : data;
+}
+
+async function getNewApiUserInfo(newApiUserId) {
+    return requestNewApi(`/api/user/${encodeURIComponent(newApiUserId)}`);
+}
+
+async function manageNewApiUser(payload) {
+    return requestNewApi('/api/user/manage', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    });
+}
+
+async function addNewApiQuota(newApiUserId, quotaToAdd) {
+    const id = Number(newApiUserId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error('STA1N API 用户 ID 无效');
+    const userInfo = await getNewApiUserInfo(newApiUserId);
+    const currentQuota = Number(userInfo?.quota || 0);
+    if (!Number.isFinite(currentQuota)) {
+        throw new Error('STA1N API 返回的用户额度无效');
+    }
+    if (userInfo?.status !== undefined && Number(userInfo.status) !== NEWAPI_USER_STATUS_ENABLED) {
+        throw new Error('这个 STA1N API 账号当前是禁用状态，请先让管理员启用后再提现');
+    }
+    const nextQuota = currentQuota + quotaToAdd;
+    await manageNewApiUser({
+        id,
+        action: 'add_quota',
+        mode: 'add',
+        value: quotaToAdd
+    });
+    const updatedUserInfo = await getNewApiUserInfo(newApiUserId).catch(() => null);
+    const updatedQuota = Number(updatedUserInfo?.quota);
+    return {
+        userInfo,
+        updatedUserInfo,
+        quotaBefore: currentQuota,
+        quotaAfter: Number.isFinite(updatedQuota) ? updatedQuota : nextQuota
+    };
+}
+
 function maskSecret(secret) {
     const value = String(secret || '').trim();
     if (!value) return '';
@@ -624,6 +719,8 @@ function buildUserResponse(user) {
         username: user.username,
         email: user.email || '',
         email_verified: Number(user.email_verified || 0),
+        newapi_user_id: user.newapi_user_id || '',
+        newapi_redeemed_cookies: floorToTwoDecimals(Math.max(0, Number(user.newapi_redeemed_cookies || 0))),
         requires_email_binding: !userEmailBound(user),
         download_credits: user.download_credits,
         created_at: user.created_at,
@@ -699,6 +796,103 @@ function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, 
 
 function computeCardHeatFromRow(row) {
     return Math.round((row.views_count || 0) * 1.0 + (row.comment_count || 0) * 1.5 + (row.downloads_count || 0) * 2.5);
+}
+
+function computeTemplateHeatFromRow(row) {
+    return Math.round((row.views_count || 0) * 1.0 + (row.comment_count || 0) * 1.5 + (row.downloads_count || 0) * 2.5);
+}
+
+function floorToTwoDecimals(value) {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return 0;
+    return Math.floor(number * 100 + 1e-8) / 100;
+}
+
+function parseCookieAmount(value) {
+    const raw = String(value ?? '').trim();
+    if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) return null;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount)) return null;
+    return floorToTwoDecimals(amount);
+}
+
+function recordAccountViewHeat(req, contentType, contentId) {
+    const userId = req.user?.id;
+    if (!userId) return { counted: true, limited: false };
+
+    const now = new Date().toISOString();
+    const windowModifier = `-${VIEW_HEAT_ACCOUNT_WINDOW_HOURS} hours`;
+    const row = db.prepare(
+        `SELECT id, view_count,
+                CASE WHEN datetime(window_started_at) <= datetime('now', ?) THEN 1 ELSE 0 END AS expired
+         FROM account_view_limits
+         WHERE content_type = ? AND content_id = ? AND user_id = ?`
+    ).get(windowModifier, contentType, String(contentId), userId);
+
+    if (!row) {
+        db.prepare(
+            `INSERT INTO account_view_limits (content_type, content_id, user_id, view_count, window_started_at, last_view_at)
+             VALUES (?, ?, ?, 1, ?, ?)`
+        ).run(contentType, String(contentId), userId, now, now);
+        return { counted: true, limited: false };
+    }
+
+    if (Number(row.expired || 0) === 1) {
+        db.prepare(
+            `UPDATE account_view_limits
+             SET view_count = 1, window_started_at = ?, last_view_at = ?
+             WHERE id = ?`
+        ).run(now, now, row.id);
+        return { counted: true, limited: false };
+    }
+
+    if (Number(row.view_count || 0) >= VIEW_HEAT_ACCOUNT_MAX_PER_ITEM) {
+        db.prepare('UPDATE account_view_limits SET last_view_at = ? WHERE id = ?').run(now, row.id);
+        return { counted: false, limited: true };
+    }
+
+    db.prepare(
+        `UPDATE account_view_limits
+         SET view_count = view_count + 1, last_view_at = ?
+         WHERE id = ?`
+    ).run(now, row.id);
+    return { counted: true, limited: false };
+}
+
+function getUserNewApiRewardStats(userId) {
+    const user = db.prepare('SELECT newapi_user_id, newapi_redeemed_cookies FROM users WHERE id = ?').get(userId);
+    const cardRows = db.prepare(
+        `SELECT views_count, downloads_count,
+                COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+         FROM character_cards
+         WHERE uploader_user_id = ? AND review_status = 'approved'`
+    ).all(userId);
+    const templateRows = db.prepare(
+        `SELECT views_count, downloads_count,
+                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+         FROM ui_templates
+         WHERE uploader_user_id = ? AND review_status = 'approved'`
+    ).all(userId);
+    const cardHeat = cardRows.reduce((sum, row) => sum + computeCardHeatFromRow(row), 0);
+    const templateHeat = templateRows.reduce((sum, row) => sum + computeTemplateHeatFromRow(row), 0);
+    const totalHeat = cardHeat + templateHeat;
+    const totalCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
+    const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies || 0)));
+    const availableCookies = floorToTwoDecimals(Math.max(0, totalCookies - redeemedCookies));
+    return {
+        newapi_user_id: user?.newapi_user_id || '',
+        card_heat: cardHeat,
+        template_heat: templateHeat,
+        total_heat: totalHeat,
+        total_cookies: totalCookies,
+        redeemed_cookies: redeemedCookies,
+        available_cookies: availableCookies,
+        available_quota: Math.round(availableCookies * NEWAPI_QUOTA_PER_COOKIE),
+        heat_per_cookie: NEWAPI_HEAT_PER_COOKIE,
+        quota_per_cookie: NEWAPI_QUOTA_PER_COOKIE,
+        min_redeem_cookies: 1,
+        newapi_configured: isNewApiConfigured()
+    };
 }
 
 function maybeSendCardHeatMilestoneEmail(cardId, req) {
@@ -911,7 +1105,7 @@ app.post('/api/user/register', async (req, res) => {
             'INSERT INTO users (username, email, email_verified, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?, 1, ?)'
         ).run(normalizedUsername, email, hash, now);
 
-        const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
         const token = generateUserToken(user);
         res.json({ token, user: buildUserResponse(user) });
@@ -953,7 +1147,7 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
-    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user: buildUserResponse(user) });
 });
@@ -972,7 +1166,7 @@ app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
         if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
 
         db.prepare('UPDATE users SET email = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(email, req.user.id);
-        const updated = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({ userType: 'user', userId: req.user.id, username: req.user.username, action: 'bind_email', targetType: 'user', targetId: String(req.user.id), ip: getRequestIp(req), details: { email: maskEmail(email) } });
         const token = generateUserToken(updated);
         res.json({ success: true, token, user: buildUserResponse(updated) });
@@ -1008,6 +1202,165 @@ app.post('/api/user/forgot-password/reset', async (req, res) => {
     } catch (err) {
         console.error('Forgot password reset error:', err);
         res.status(500).json({ error: '重置密码失败' });
+    }
+});
+
+app.get('/api/user/newapi/reward', authenticateUser, (req, res) => {
+    try {
+        res.json(getUserNewApiRewardStats(req.user.id));
+    } catch (err) {
+        console.error('New API reward status error:', err);
+        res.status(500).json({ error: '获取可兑换额度失败' });
+    }
+});
+
+app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
+    try {
+        const rawId = String(req.body.newapi_user_id || '').trim();
+        if (!/^\d{1,18}$/.test(rawId)) {
+            return res.status(400).json({ error: '请输入有效的 STA1N API 用户 ID' });
+        }
+        const current = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
+        if (current?.newapi_user_id && current.newapi_user_id !== rawId) {
+            return res.status(409).json({ error: '请先解绑当前 STA1N API 用户 ID，再绑定新的 ID' });
+        }
+        const existing = db.prepare('SELECT id FROM users WHERE newapi_user_id = ? AND id != ?').get(rawId, req.user.id);
+        if (existing) {
+            return res.status(409).json({ error: '这个 STA1N API 用户 ID 已被其他账号绑定' });
+        }
+        db.prepare('UPDATE users SET newapi_user_id = ? WHERE id = ?').run(rawId, req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'bind_newapi_user',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: { newapi_user_id: rawId }
+        });
+        res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
+    } catch (err) {
+        console.error('Bind New API user error:', err);
+        res.status(500).json({ error: '绑定 STA1N API 用户 ID 失败' });
+    }
+});
+
+app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
+    try {
+        const current = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
+        if (!current?.newapi_user_id) {
+            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+            return res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
+        }
+        db.prepare("UPDATE users SET newapi_user_id = '' WHERE id = ?").run(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'unbind_newapi_user',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: { newapi_user_id: current.newapi_user_id }
+        });
+        res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
+    } catch (err) {
+        console.error('Unbind STA1N API user error:', err);
+        res.status(500).json({ error: '解绑 STA1N API 用户 ID 失败' });
+    }
+});
+
+app.post('/api/user/newapi/redeem', authenticateUser, async (req, res) => {
+    let reservation = null;
+    try {
+        const requestedCookies = parseCookieAmount(req.body.cookies);
+        if (requestedCookies === null) {
+            return res.status(400).json({ error: '提现数量最多支持 2 位小数' });
+        }
+        if (requestedCookies < 1) {
+            return res.status(400).json({ error: '最少提现 1🍪' });
+        }
+        if (!isNewApiConfigured()) {
+            return res.status(400).json({ error: 'STA1N API 未配置，请联系管理员' });
+        }
+
+        const reserve = db.transaction(() => {
+            const user = db.prepare('SELECT id, username, newapi_user_id, newapi_redeemed_cookies FROM users WHERE id = ?').get(req.user.id);
+            if (!user) throw new Error('用户不存在');
+            if (!user.newapi_user_id) throw new Error('请先绑定 STA1N API 用户 ID');
+            const stats = getUserNewApiRewardStats(req.user.id);
+            if (stats.available_cookies < 1) throw new Error('当前还没有可提现的 🍪');
+            if (requestedCookies > stats.available_cookies) throw new Error(`最多可提现 ${stats.available_cookies.toFixed(2)}🍪`);
+
+            const quota = Math.round(requestedCookies * NEWAPI_QUOTA_PER_COOKIE);
+            const heatUsed = floorToTwoDecimals(requestedCookies * NEWAPI_HEAT_PER_COOKIE);
+            const redemptionId = generateId();
+            db.prepare(
+                `UPDATE users
+                 SET newapi_redeemed_cookies = IFNULL(newapi_redeemed_cookies, 0) + ?
+                 WHERE id = ?`
+            ).run(requestedCookies, req.user.id);
+            db.prepare(
+                `INSERT INTO newapi_redemptions
+                 (id, user_id, newapi_user_id, cookies, quota, heat_used, status)
+                 VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+            ).run(redemptionId, req.user.id, user.newapi_user_id, requestedCookies, quota, heatUsed);
+            return { redemptionId, newapiUserId: user.newapi_user_id, cookies: requestedCookies, quota, heatUsed };
+        });
+
+        reservation = reserve();
+        const newApiResult = await addNewApiQuota(reservation.newapiUserId, reservation.quota);
+        db.prepare(
+            `UPDATE newapi_redemptions
+             SET status = 'success', quota_before = ?, quota_after = ?, completed_at = ?
+             WHERE id = ?`
+        ).run(newApiResult.quotaBefore, newApiResult.quotaAfter, new Date().toISOString(), reservation.redemptionId);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'newapi_redeem',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: {
+                newapi_user_id: reservation.newapiUserId,
+                cookies: reservation.cookies,
+                quota: reservation.quota,
+                quota_before: newApiResult.quotaBefore,
+                quota_after: newApiResult.quotaAfter
+            }
+        });
+        res.json({
+            success: true,
+            cookies: reservation.cookies,
+            quota: reservation.quota,
+            quota_before: newApiResult.quotaBefore,
+            quota_after: newApiResult.quotaAfter,
+            reward: getUserNewApiRewardStats(req.user.id)
+        });
+    } catch (err) {
+        if (reservation) {
+            try {
+                db.prepare(
+                    `UPDATE users
+                     SET newapi_redeemed_cookies = MAX(0, IFNULL(newapi_redeemed_cookies, 0) - ?)
+                     WHERE id = ?`
+                ).run(reservation.cookies, req.user.id);
+                db.prepare(
+                    `UPDATE newapi_redemptions
+                     SET status = 'failed', error = ?, completed_at = ?
+                     WHERE id = ?`
+                ).run(String(err.message || '兑换失败').slice(0, 500), new Date().toISOString(), reservation.redemptionId);
+            } catch (rollbackErr) {
+                console.error('New API redemption rollback error:', rollbackErr);
+            }
+        }
+        console.error('New API redeem error:', err);
+        res.status(reservation ? 502 : 400).json({ error: err.message || '提现失败' });
     }
 });
 
@@ -1647,8 +2000,11 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
         if (!req.admin && !(req.user && template.uploader_user_id === req.user.id)) {
-            db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
-            template.views_count = (template.views_count || 0) + 1;
+            const viewLimit = recordAccountViewHeat(req, 'ui_template', req.params.id);
+            if (viewLimit.counted) {
+                db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
+                template.views_count = (template.views_count || 0) + 1;
+            }
         }
         template.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
 
@@ -3482,6 +3838,81 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
     }
 });
 
+app.get('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
+    try {
+        const dbToken = getSettingValue('newapi_admin_token');
+        const config = getNewApiConfig();
+        res.json({
+            configured: Boolean(config.baseUrl && config.adminToken),
+            base_url: config.baseUrl || '',
+            admin_user_id: config.adminUserId || '',
+            admin_token_configured: Boolean(config.adminToken),
+            admin_token_masked: maskSecret(config.adminToken),
+            admin_token_source: dbToken ? 'admin' : (NEWAPI_ADMIN_TOKEN ? 'environment' : 'none'),
+            heat_per_cookie: NEWAPI_HEAT_PER_COOKIE,
+            quota_per_cookie: NEWAPI_QUOTA_PER_COOKIE
+        });
+    } catch (err) {
+        console.error('New API settings load error:', err);
+        res.status(500).json({ error: '获取 STA1N API 设置失败' });
+    }
+});
+
+app.put('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
+    try {
+        const baseUrl = normalizeBaseUrl(req.body.base_url);
+        const adminUserId = String(req.body.admin_user_id || '').trim();
+        const adminToken = typeof req.body.admin_token === 'string' ? req.body.admin_token.trim() : '';
+        const clearAdminToken = req.body.clear_admin_token === true || req.body.clear_admin_token === 'true';
+
+        if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+            return res.status(400).json({ error: 'STA1N API 地址必须以 http:// 或 https:// 开头' });
+        }
+        if (adminUserId && !/^\d{1,18}$/.test(adminUserId)) {
+            return res.status(400).json({ error: '管理用户 ID 必须是数字' });
+        }
+        if (adminToken && adminToken.length < 8) {
+            return res.status(400).json({ error: '管理员 Token 看起来太短了' });
+        }
+
+        setSettingValue('newapi_base_url', baseUrl);
+        setSettingValue('newapi_admin_user_id', adminUserId);
+        if (clearAdminToken) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run('newapi_admin_token');
+        } else if (adminToken) {
+            setSettingValue('newapi_admin_token', adminToken);
+        }
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_update_newapi_settings',
+            targetType: 'settings',
+            targetId: 'newapi',
+            ip: getRequestIp(req),
+            details: { base_url: baseUrl, admin_user_id: adminUserId, token_updated: Boolean(adminToken), token_cleared: clearAdminToken }
+        });
+
+        const dbToken = getSettingValue('newapi_admin_token');
+        const config = getNewApiConfig();
+        res.json({
+            success: true,
+            configured: Boolean(config.baseUrl && config.adminToken),
+            base_url: config.baseUrl || '',
+            admin_user_id: config.adminUserId || '',
+            admin_token_configured: Boolean(config.adminToken),
+            admin_token_masked: maskSecret(config.adminToken),
+            admin_token_source: dbToken ? 'admin' : (NEWAPI_ADMIN_TOKEN ? 'environment' : 'none'),
+            heat_per_cookie: NEWAPI_HEAT_PER_COOKIE,
+            quota_per_cookie: NEWAPI_QUOTA_PER_COOKIE
+        });
+    } catch (err) {
+        console.error('New API settings save error:', err);
+        res.status(500).json({ error: '保存 STA1N API 设置失败' });
+    }
+});
+
 const PUBLIC_SETTINGS_KEYS = new Set([
     'site_name',
     'site_description',
@@ -3768,7 +4199,7 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
         }
         const total = db.prepare(`SELECT COUNT(*) as count FROM users${where}`).get(...params).count;
         const users = db.prepare(
-            `SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+            `SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
 
         res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -3794,7 +4225,7 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
             return res.status(404).json({ error: '用户不存在' });
         }
 
-        const user = db.prepare('SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
@@ -3839,7 +4270,7 @@ app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
         }
 
         const updated = db.prepare(
-            'SELECT id, username, email, email_verified, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
+            'SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
         ).get(userId);
         logOperation({
             userType: 'admin',
@@ -3881,17 +4312,31 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
-        // Skip view count increment for card owner
+        // Skip view count increment for admins and card owners.
         const isOwner = req.user && card.uploader_user_id === req.user.id;
-        if (isOwner) {
+        if (req.admin || isOwner) {
             const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
-            return res.json({ success: true, views_count: current.views_count });
+            return res.json({ success: true, views_count: current.views_count, counted: false });
+        }
+
+        const viewLimit = recordAccountViewHeat(req, 'card', id);
+        if (!viewLimit.counted) {
+            const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+            return res.json({
+                success: true,
+                views_count: current.views_count,
+                counted: false,
+                account_limit: {
+                    max_per_item: VIEW_HEAT_ACCOUNT_MAX_PER_ITEM,
+                    window_hours: VIEW_HEAT_ACCOUNT_WINDOW_HOURS
+                }
+            });
         }
 
         db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
         const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
         maybeSendCardHeatMilestoneEmail(id, req);
-        res.json({ success: true, views_count: updated.views_count });
+        res.json({ success: true, views_count: updated.views_count, counted: true });
     } catch (err) {
         console.error('Card view count error:', err);
         res.status(500).json({ error: '记录浏览量失败' });

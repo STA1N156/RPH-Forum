@@ -49,6 +49,31 @@
                     "default": "",
                     "expose": false,
                     "readonly": false
+                },
+                "NEWAPI_BASE_URL": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "NEWAPI_ADMIN_TOKEN": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "NEWAPI_ADMIN_USER_ID": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "VIEW_HEAT_ACCOUNT_WINDOW_HOURS": {
+                    "default": "24",
+                    "expose": false,
+                    "readonly": false
+                },
+                "VIEW_HEAT_ACCOUNT_MAX_PER_ITEM": {
+                    "default": "1",
+                    "expose": false,
+                    "readonly": false
                 }
             },
             "ports": [
