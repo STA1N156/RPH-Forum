@@ -31,6 +31,7 @@ const JWT_SECRET = EXPLICIT_JWT_SECRET || DERIVED_JWT_SECRET || (IS_PRODUCTION ?
 const ZEABUR_EMAIL_API_KEY = (process.env.ZEABUR_EMAIL_API_KEY || '').trim();
 const ZEABUR_EMAIL_FROM = (process.env.ZEABUR_EMAIL_FROM || process.env.EMAIL_FROM || '').trim();
 const ZEABUR_EMAIL_ENDPOINT = (process.env.ZEABUR_EMAIL_ENDPOINT || 'https://api.zeabur.com/api/v1/zsend/emails').trim();
+const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || process.env.ADMIN_EMAILS || '').trim();
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
@@ -394,6 +395,30 @@ function normalizeEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : '';
 }
 
+function parseEmailList(value) {
+    const seen = new Set();
+    const emails = [];
+    String(value || '')
+        .split(/[\s,;，；]+/)
+        .map(item => normalizeEmail(item))
+        .filter(Boolean)
+        .forEach((email) => {
+            if (!seen.has(email)) {
+                seen.add(email);
+                emails.push(email);
+            }
+        });
+    return emails;
+}
+
+function findInvalidEmails(value) {
+    return String(value || '')
+        .split(/[\s,;，；]+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .filter(item => !normalizeEmail(item));
+}
+
 function maskEmail(email) {
     const normalized = normalizeEmail(email);
     if (!normalized) return '';
@@ -438,6 +463,10 @@ function getEmailConfig() {
         from: getSettingValue('zeabur_email_from') || ZEABUR_EMAIL_FROM,
         endpoint: getSettingValue('zeabur_email_endpoint') || ZEABUR_EMAIL_ENDPOINT
     };
+}
+
+function getAdminNotificationEmails() {
+    return parseEmailList(getSettingValue('admin_notification_emails') || ADMIN_NOTIFICATION_EMAILS);
 }
 
 function maskSecret(secret) {
@@ -616,6 +645,22 @@ function sendReviewResultEmail({ to, username, itemType, title, status, reason, 
         subject: `你的${itemType}审核${resultText}`,
         html: `<p>${escapeHtml(username || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」审核${escapeHtml(resultText)}。</p>${reason ? `<p>原因：${escapeHtml(reason)}</p>` : ''}<p><a href="${escapeHtml(url)}">打开广场查看</a></p>`,
         text: `${username || '你好'}，你的${itemType}「${title}」审核${resultText}。${reasonText}\n${url}`
+    });
+}
+
+function sendAdminReviewPendingEmail({ itemType, title, uploader, ip, url }) {
+    const recipients = getAdminNotificationEmails();
+    if (recipients.length === 0) return;
+    const uploaderText = uploader || '未知用户';
+    const html = `<p>有新的${escapeHtml(itemType)}进入待审核。</p><p>名称：${escapeHtml(title)}</p><p>上传者：${escapeHtml(uploaderText)}</p>${ip ? `<p>上传 IP：${escapeHtml(ip)}</p>` : ''}<p><a href="${escapeHtml(url)}">打开后台审核</a></p>`;
+    const text = `有新的${itemType}进入待审核。\n名称：${title}\n上传者：${uploaderText}${ip ? `\n上传 IP：${ip}` : ''}\n${url}`;
+    recipients.forEach((to) => {
+        sendZeaburEmailQuietly({
+            to,
+            subject: `新的${itemType}待审核：${title}`,
+            html,
+            text
+        });
     });
 }
 
@@ -2151,6 +2196,15 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             ip: uploaderIp,
             details: { name, review_status: reviewStatus }
         });
+        if (reviewStatus === 'pending') {
+            sendAdminReviewPendingEmail({
+                itemType: '角色卡',
+                title: name,
+                uploader: req.user?.username || '',
+                ip: uploaderIp,
+                url: buildSiteUrl(req, '/admin')
+            });
+        }
 
         res.json([card, { pending_review: reviewStatus === 'pending' }]);
     } catch (err) {
@@ -3277,7 +3331,9 @@ app.get('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
             from: config.from || '',
             endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
-            public_base_url: getSettingValue('public_base_url') || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || ''
+            public_base_url: getSettingValue('public_base_url') || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || '',
+            admin_emails: getAdminNotificationEmails().join('\n'),
+            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none')
         });
     } catch (err) {
         console.error('Email settings load error:', err);
@@ -3292,6 +3348,8 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         const from = normalizeEmail(req.body.from);
         const endpoint = String(req.body.endpoint || ZEABUR_EMAIL_ENDPOINT).trim();
         const publicBaseUrl = String(req.body.public_base_url || '').trim().replace(/\/+$/, '');
+        const adminEmailsRaw = String(req.body.admin_emails || '').trim();
+        const invalidAdminEmails = findInvalidEmails(adminEmailsRaw);
 
         if (!from) return res.status(400).json({ error: '请输入有效的发件邮箱' });
         if (!/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: '邮件 API 地址必须以 http:// 或 https:// 开头' });
@@ -3299,15 +3357,20 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             return res.status(400).json({ error: '站点公网地址必须以 http:// 或 https:// 开头' });
         }
         if (apiKey && apiKey.length < 12) return res.status(400).json({ error: 'API Key 看起来太短了' });
+        if (invalidAdminEmails.length > 0) {
+            return res.status(400).json({ error: `管理员通知邮箱格式不正确：${invalidAdminEmails.slice(0, 3).join('、')}` });
+        }
 
         if (clearApiKey) {
             db.prepare('DELETE FROM settings WHERE key = ?').run('zeabur_email_api_key');
         } else if (apiKey) {
             setSettingValue('zeabur_email_api_key', apiKey);
         }
+        const adminEmails = parseEmailList(adminEmailsRaw);
         setSettingValue('zeabur_email_from', from);
         setSettingValue('zeabur_email_endpoint', endpoint);
         setSettingValue('public_base_url', publicBaseUrl);
+        setSettingValue('admin_notification_emails', adminEmails.join('\n'));
 
         logOperation({
             userType: 'admin',
@@ -3317,7 +3380,7 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             targetType: 'settings',
             targetId: 'email',
             ip: getRequestIp(req),
-            details: { from, api_key_updated: Boolean(apiKey), api_key_cleared: clearApiKey }
+            details: { from, api_key_updated: Boolean(apiKey), api_key_cleared: clearApiKey, admin_email_count: adminEmails.length }
         });
 
         const dbApiKey = getSettingValue('zeabur_email_api_key');
@@ -3330,7 +3393,9 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
             from: config.from || '',
             endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
-            public_base_url: publicBaseUrl
+            public_base_url: publicBaseUrl,
+            admin_emails: getAdminNotificationEmails().join('\n'),
+            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none')
         });
     } catch (err) {
         console.error('Email settings save error:', err);
@@ -3474,11 +3539,41 @@ app.get('/api/admin/logs', authenticateAdmin, (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const offset = (page - 1) * limit;
-        const action = req.query.action || '';
+        const action = String(req.query.action || '').trim();
+        const search = String(req.query.search || '').trim().slice(0, 120);
 
-        let where = '';
+        const whereParts = [];
         const params = [];
-        if (action) { where = ' WHERE action = ?'; params.push(action); }
+        if (action) {
+            whereParts.push('action = ?');
+            params.push(action);
+        }
+        if (search) {
+            const keyword = `%${search.toLowerCase()}%`;
+            whereParts.push(`(
+                LOWER(COALESCE(username, '')) LIKE ?
+                OR LOWER(COALESCE(action, '')) LIKE ?
+                OR LOWER(COALESCE(user_type, '')) LIKE ?
+                OR LOWER(COALESCE(target_type, '')) LIKE ?
+                OR LOWER(COALESCE(target_id, '')) LIKE ?
+                OR LOWER(COALESCE(ip_address, '')) LIKE ?
+                OR LOWER(COALESCE(details, '')) LIKE ?
+                OR EXISTS (
+                    SELECT 1 FROM character_cards cc
+                    WHERE operation_logs.target_type = 'card'
+                      AND cc.id = operation_logs.target_id
+                      AND LOWER(cc.name) LIKE ?
+                )
+                OR EXISTS (
+                    SELECT 1 FROM ui_templates ut
+                    WHERE operation_logs.target_type = 'ui_template'
+                      AND ut.id = operation_logs.target_id
+                      AND LOWER(ut.title) LIKE ?
+                )
+            )`);
+            params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+        }
+        const where = whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : '';
         
         const total = db.prepare(`SELECT COUNT(*) as count FROM operation_logs${where}`).get(...params).count;
         const logs = db.prepare(

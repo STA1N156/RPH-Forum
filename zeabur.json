@@ -44,6 +44,11 @@
                     "default": "",
                     "expose": false,
                     "readonly": false
+                },
+                "ADMIN_NOTIFICATION_EMAILS": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
                 }
             },
             "ports": [

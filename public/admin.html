@@ -571,25 +571,34 @@
                     <div v-if="currentPage === 'logs'">
                         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
                             <span class="text-sm text-gray-500">共 {{ logData.total || 0 }} 条记录</span>
-                            <select v-model="logActionFilter" @change="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="">全部操作</option>
-                                <option value="login">登录</option>
-                                <option value="register">注册</option>
-                                <option value="upload">上传</option>
-                                <option value="upload_pending">上传待审核</option>
-                                <option value="download">下载</option>
-                                <option value="edit">编辑</option>
-                                <option value="delete">删除</option>
-                                <option value="admin_login">管理员登录</option>
-                                <option value="admin_delete_card">管理员删卡</option>
-                                <option value="admin_delete_comment">管理员删评论</option>
-                                <option value="admin_approve_card">审核通过</option>
-                                <option value="admin_reject_card">审核拒绝</option>
-                                <option value="admin_ban_ip">封禁 IP</option>
-                                <option value="admin_unban_ip">解除 IP 封禁</option>
-                                <option value="admin_ban_user">封禁用户</option>
-                                <option value="admin_unban_user">解除用户封禁</option>
-                            </select>
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div class="relative">
+                                    <input v-model.trim="logSearch" @keyup.enter="logPage = 1; loadLogs()" type="search" placeholder="搜索用户、卡名、IP、详情"
+                                        class="w-full sm:w-64 pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <button @click="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">搜索</button>
+                                <button v-if="logSearch" @click="logSearch = ''; logPage = 1; loadLogs()" class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition">清空</button>
+                                <select v-model="logActionFilter" @change="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">全部操作</option>
+                                    <option value="login">登录</option>
+                                    <option value="register">注册</option>
+                                    <option value="upload">上传</option>
+                                    <option value="upload_pending">上传待审核</option>
+                                    <option value="download">下载</option>
+                                    <option value="edit">编辑</option>
+                                    <option value="delete">删除</option>
+                                    <option value="admin_login">管理员登录</option>
+                                    <option value="admin_delete_card">管理员删卡</option>
+                                    <option value="admin_delete_comment">管理员删评论</option>
+                                    <option value="admin_approve_card">审核通过</option>
+                                    <option value="admin_reject_card">审核拒绝</option>
+                                    <option value="admin_ban_ip">封禁 IP</option>
+                                    <option value="admin_unban_ip">解除 IP 封禁</option>
+                                    <option value="admin_ban_user">封禁用户</option>
+                                    <option value="admin_unban_user">解除用户封禁</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="md:hidden space-y-4">
                             <div v-for="log in logData.logs" :key="'mobile-log-' + log.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
@@ -973,6 +982,12 @@
                                             class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                                     </div>
                                     <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">管理员通知邮箱</label>
+                                        <textarea v-model="emailSettings.admin_emails" rows="3" placeholder="可填写多个邮箱，用换行、逗号或分号分隔"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"></textarea>
+                                        <p class="text-xs text-gray-400 mt-1">有角色卡进入待审核时，会提醒这里填写的邮箱。</p>
+                                    </div>
+                                    <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur Email API 地址</label>
                                         <input v-model="emailSettings.endpoint" type="url"
                                             class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
@@ -1093,6 +1108,7 @@
                 const logData = ref({ logs: [], total: 0, totalPages: 0 });
                 const logPage = ref(1);
                 const logActionFilter = ref('');
+                const logSearch = ref('');
 
                 // IP bans
                 const ipBanData = ref({ bans: [], current_ip: '' });
@@ -1149,7 +1165,9 @@
                     clear_api_key: false,
                     from: '',
                     endpoint: 'https://api.zeabur.com/api/v1/zsend/emails',
-                    public_base_url: ''
+                    public_base_url: '',
+                    admin_emails: '',
+                    admin_emails_source: 'none'
                 });
                 const emailSettingsSaving = ref(false);
                 const tagPreviewCards = ref([]);
@@ -1768,6 +1786,7 @@
                     try {
                         let url = API_BASE + `/api/admin/logs?page=${logPage.value}`;
                         if (logActionFilter.value) url += `&action=${encodeURIComponent(logActionFilter.value)}`;
+                        if (logSearch.value) url += `&search=${encodeURIComponent(logSearch.value)}`;
                         const resp = await fetch(url, { headers: authHeaders() });
                         if (resp.ok) logData.value = await resp.json();
                     } catch (err) {
@@ -1916,7 +1935,8 @@
                                 clear_api_key: emailSettings.clear_api_key,
                                 from: emailSettings.from,
                                 endpoint: emailSettings.endpoint,
-                                public_base_url: emailSettings.public_base_url
+                                public_base_url: emailSettings.public_base_url,
+                                admin_emails: emailSettings.admin_emails
                             })
                         });
                         const data = await resp.json().catch(() => ({}));
@@ -2054,7 +2074,7 @@
                     getReviewStatusLabel, reviewAdminCard,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
                     userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, resetUserPassword, toggleUserBan,
-                    logData, logPage, logActionFilter, loadLogs, getActionLabel, formatLogTarget,
+                    logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
                     siteSettings, emailSettings, emailSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
                     settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
