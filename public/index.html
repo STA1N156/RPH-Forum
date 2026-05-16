@@ -1725,7 +1725,7 @@
                 <form @submit.prevent="handleUserAuth" class="space-y-3">
                     <input v-if="userAuthMode !== 'forgot'" v-model="userAuthForm.username" type="text" placeholder="用户名（2-20个字符）" autocomplete="username"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
-                    <input v-if="userAuthMode !== 'login'" v-model="userAuthForm.email" type="email" placeholder="邮箱"
+                    <input v-if="userAuthMode !== 'login'" v-model="userAuthForm.email" type="email" placeholder="QQ邮箱（例如 123456@qq.com）"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <input v-model="userAuthForm.password" type="password" :placeholder="userAuthMode === 'forgot' ? '新密码（至少6位）' : (userAuthMode === 'register' ? '密码（至少6位）' : '密码')" autocomplete="current-password"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
@@ -1794,7 +1794,7 @@
                 <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">绑定邮箱</h3>
                 <p class="text-xs text-gray-400 text-center mb-4">为了保护账号，绑定并验证邮箱后才能进入广场。</p>
                 <form @submit.prevent="handleBindEmail" class="space-y-3">
-                    <input v-model="bindEmailForm.email" type="email" placeholder="邮箱"
+                    <input v-model="bindEmailForm.email" type="email" placeholder="QQ邮箱（例如 123456@qq.com）"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <div class="grid grid-cols-[1fr_auto] gap-2">
                         <input v-model="bindEmailForm.emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码"
@@ -2250,6 +2250,10 @@
 
                 const sendEmailCode = async ({ purpose, email, username, authed = false }) => {
                     if (!captchaState.verified) throw new Error('请先完成滑块验证');
+                    const normalizedEmail = String(email || '').trim().toLowerCase();
+                    if (!/^[^\s@]+@qq\.com$/.test(normalizedEmail)) {
+                        throw new Error('目前仅支持 QQ 邮箱（@qq.com）');
+                    }
                     const headers = { 'Content-Type': 'application/json' };
                     if (authed) headers.Authorization = 'Bearer ' + userToken.value;
                     const resp = await fetch(API_BASE + '/api/email/send-code', {

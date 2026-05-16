@@ -453,7 +453,6 @@
                         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
                             <div>
                                 <span class="text-sm text-gray-500">共 {{ userData.total || 0 }} 位注册用户</span>
-                                <p class="text-xs text-amber-600 mt-1">系统只保存哈希密码，无法查看原密码。可在这里重置为新密码或自动生成一次性临时密码。</p>
                             </div>
                             <input v-model="userSearch" @input="userPage = 1; loadAdminUsers()" placeholder="搜索用户名..." class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-64" />
                         </div>
@@ -486,14 +485,6 @@
                                         <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).saving ? '保存中...' : '保存次数' }}</button>
                                     </div>
                                 </div>
-                                <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
-                                    <p class="text-xs text-gray-500">留空则自动生成临时密码，返回后只展示一次。</p>
-                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="输入新密码，或留空自动生成" class="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="w-full px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).resetting ? '重置中...' : '重置密码' }}</button>
-                                    <div v-if="userDraft(user).generatedPassword" class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 break-all">
-                                        临时密码：{{ userDraft(user).generatedPassword }}
-                                    </div>
-                                </div>
                                 <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="w-full px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
                                     {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解除封禁' : '封禁用户') }}
                                 </button>
@@ -502,14 +493,13 @@
                         </div>
                         <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                             <div class="overflow-x-auto">
-                            <table class="w-full min-w-[1080px]">
+                            <table class="w-full min-w-[920px]">
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">邮箱</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">密码操作</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载积分</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">注册时间</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">最后登录</th>
@@ -532,18 +522,6 @@
                                                 <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
                                                     {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解封' : '封禁') }}
                                                 </button>
-                                            </div>
-                                        </td>
-                                        <td class="px-6 py-4 text-sm">
-                                            <div class="w-72 space-y-2">
-                                                <p class="text-xs text-gray-500">原密码不可见，可重置为指定密码或自动生成的临时密码。</p>
-                                                <div class="flex gap-2">
-                                                    <input v-model.trim="userDraft(user).newPassword" type="text" placeholder="留空则自动生成" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                                    <button @click="resetUserPassword(user)" :disabled="userDraft(user).resetting" class="px-3 py-2 rounded-xl bg-gray-900 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).resetting ? '重置中...' : '重置密码' }}</button>
-                                                </div>
-                                                <div v-if="userDraft(user).generatedPassword" class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 break-all">
-                                                    临时密码：{{ userDraft(user).generatedPassword }}
-                                                </div>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-900">
@@ -950,7 +928,7 @@
                                 <div class="flex items-start justify-between gap-4 mb-4">
                                     <div>
                                         <h3 class="text-lg font-bold text-gray-900">Zeabur 邮箱配置</h3>
-                                        <p class="text-sm text-gray-500 mt-1">用于注册验证码、忘记密码、审核结果和热度通知。</p>
+                                        <p class="text-sm text-gray-500 mt-1">用于注册验证码、忘记密码、审核结果、待审核提醒、评论提醒和热度通知。</p>
                                     </div>
                                     <span class="text-xs px-2 py-1 rounded-full" :class="emailSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
                                         {{ emailSettings.configured ? '已启用' : '未启用' }}
@@ -983,9 +961,9 @@
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">管理员通知邮箱</label>
-                                        <textarea v-model="emailSettings.admin_emails" rows="3" placeholder="可填写多个邮箱，用换行、逗号或分号分隔"
+                                        <textarea v-model="emailSettings.admin_emails" rows="3" placeholder="可填写多个 QQ 邮箱，用换行、逗号或分号分隔"
                                             class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"></textarea>
-                                        <p class="text-xs text-gray-400 mt-1">有角色卡进入待审核时，会提醒这里填写的邮箱。</p>
+                                        <p class="text-xs text-gray-400 mt-1">有角色卡或 UI 模板进入待审核时，会提醒这里填写的 QQ 邮箱。</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur Email API 地址</label>
@@ -995,28 +973,6 @@
                                     <button @click="saveEmailSettings" :disabled="emailSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
                                         {{ emailSettingsSaving ? '保存中...' : '保存邮箱配置' }}
                                     </button>
-                                </div>
-                            </div>
-
-                            <!-- Change Password -->
-                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                                <h3 class="text-lg font-bold text-gray-900 mb-4">修改密码</h3>
-                                <div class="space-y-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
-                                        <input v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">新密码</label>
-                                        <input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
-                                        <input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
-                                    </div>
-                                    <div v-if="passwordError" class="bg-red-50 text-red-600 text-sm p-3 rounded-xl">{{ passwordError }}</div>
-                                    <div v-if="passwordSuccess" class="bg-green-50 text-green-600 text-sm p-3 rounded-xl">{{ passwordSuccess }}</div>
-                                    <button @click="changePassword" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium">修改密码</button>
                                 </div>
                             </div>
 
@@ -1246,11 +1202,6 @@
                         || savedTagSnapshot.hiddenPopular !== hiddenTagState.popular.join('\n')
                         || savedTagSnapshot.hiddenLibrary !== hiddenTagState.library.join('\n');
                 });
-
-                // Password
-                const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                const passwordError = ref('');
-                const passwordSuccess = ref('');
 
                 function authHeaders() {
                     return { 'Authorization': 'Bearer ' + token.value, 'Content-Type': 'application/json' };
@@ -1544,13 +1495,10 @@
                 function userDraft(user) {
                     if (!userDrafts[user.id]) {
                         userDrafts[user.id] = {
-                        download_credits: user.download_credits,
-                        newPassword: '',
-                        generatedPassword: '',
-                        saving: false,
-                        resetting: false,
-                        banning: false
-                    };
+                    download_credits: user.download_credits,
+                    saving: false,
+                    banning: false
+                };
                     }
                     return userDrafts[user.id];
                 }
@@ -1730,30 +1678,6 @@
                     }
                 }
 
-                async function resetUserPassword(user) {
-                    const draft = userDraft(user);
-                    draft.resetting = true;
-                    draft.generatedPassword = '';
-                    try {
-                        const resp = await fetch(API_BASE + '/api/admin/users/' + user.id + '/reset-password', {
-                            method: 'POST',
-                            headers: authHeaders(),
-                            body: JSON.stringify({ newPassword: draft.newPassword })
-                        });
-                        const data = await resp.json();
-                        if (!resp.ok) {
-                            throw new Error(data.error || '重置失败');
-                        }
-                        draft.generatedPassword = data.temporary_password || '';
-                        draft.newPassword = '';
-                        showToast('密码已重置', 'success');
-                    } catch (err) {
-                        showToast(err.message || '重置失败', 'error');
-                    } finally {
-                        draft.resetting = false;
-                    }
-                }
-
                 async function toggleUserBan(user) {
                     const draft = userDraft(user);
                     const nextBanned = !user.is_banned;
@@ -1856,7 +1780,6 @@
                         admin_ban_user: '封禁用户',
                         admin_unban_user: '解除用户封禁',
                         admin_update_user_credits: '调整下载次数',
-                        admin_reset_user_password: '重置用户密码',
                         admin_update_tag_settings: '更新标签配置',
                         admin_update_email_settings: '更新邮件配置',
                         admin_adjust_heat: '调整角色卡热度',
@@ -1947,36 +1870,6 @@
                         showToast(err.message || '保存邮箱配置失败', 'error');
                     } finally {
                         emailSettingsSaving.value = false;
-                    }
-                }
-
-                async function changePassword() {
-                    passwordError.value = '';
-                    passwordSuccess.value = '';
-                    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-                        passwordError.value = '两次输入的新密码不一致';
-                        return;
-                    }
-                    if (passwordForm.newPassword.length < 6) {
-                        passwordError.value = '新密码长度至少6位';
-                        return;
-                    }
-                    try {
-                        const resp = await fetch(API_BASE + '/api/admin/password', {
-                            method: 'PUT', headers: authHeaders(),
-                            body: JSON.stringify({ currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword })
-                        });
-                        const data = await resp.json();
-                        if (!resp.ok) {
-                            passwordError.value = data.error || '修改失败';
-                            return;
-                        }
-                        passwordSuccess.value = '密码修改成功';
-                        passwordForm.currentPassword = '';
-                        passwordForm.newPassword = '';
-                        passwordForm.confirmPassword = '';
-                    } catch (err) {
-                        passwordError.value = '网络错误';
                     }
                 }
 
@@ -2073,7 +1966,7 @@
                     cardData, cardPage, cardSearch, cardStatusFilter, loadAdminCards, deleteAdminCard,
                     getReviewStatusLabel, reviewAdminCard,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
-                    userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, resetUserPassword, toggleUserBan,
+                    userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, toggleUserBan,
                     logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
                     siteSettings, emailSettings, emailSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
@@ -2082,7 +1975,6 @@
                     handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
                     toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
                     restoreSavedTagSnapshot, loadSettings, saveSettings, saveEmailSettings,
-                    passwordForm, passwordError, passwordSuccess, changePassword,
                     dataExporting, dataImporting, importResult, exportData, importData
                 };
             }

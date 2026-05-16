@@ -395,6 +395,18 @@ function normalizeEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : '';
 }
 
+function isQqEmail(email) {
+    const normalized = normalizeEmail(email);
+    return Boolean(normalized && normalized.endsWith('@qq.com'));
+}
+
+function validateQqEmail(email) {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return { ok: false, email: '', error: '请输入有效邮箱' };
+    if (!isQqEmail(normalized)) return { ok: false, email: normalized, error: '目前仅支持 QQ 邮箱（@qq.com）' };
+    return { ok: true, email: normalized };
+}
+
 function parseEmailList(value) {
     const seen = new Set();
     const emails = [];
@@ -417,6 +429,14 @@ function findInvalidEmails(value) {
         .map(item => item.trim())
         .filter(Boolean)
         .filter(item => !normalizeEmail(item));
+}
+
+function findNonQqEmails(value) {
+    return String(value || '')
+        .split(/[\s,;，；]+/)
+        .map(item => normalizeEmail(item))
+        .filter(Boolean)
+        .filter(item => !isQqEmail(item));
 }
 
 function maskEmail(email) {
@@ -484,6 +504,7 @@ function isEmailConfigured() {
 async function sendZeaburEmail({ to, subject, html, text }) {
     const normalizedTo = normalizeEmail(to);
     if (!normalizedTo) throw new Error('收件邮箱格式无效');
+    if (!isQqEmail(normalizedTo)) throw new Error('目前仅支持 QQ 邮箱（@qq.com）');
     const config = getEmailConfig();
     if (!config.apiKey || !config.from) {
         throw new Error('邮件服务未配置，请在后台或环境变量里设置 Zeabur API Key 和发件邮箱');
@@ -603,7 +624,7 @@ function buildUserResponse(user) {
         username: user.username,
         email: user.email || '',
         email_verified: Number(user.email_verified || 0),
-        requires_email_binding: !(user.email && Number(user.email_verified || 0) === 1),
+        requires_email_binding: !userEmailBound(user),
         download_credits: user.download_credits,
         created_at: user.created_at,
         is_banned: user.is_banned || 0,
@@ -612,7 +633,7 @@ function buildUserResponse(user) {
 }
 
 function userEmailBound(user) {
-    return Boolean(user && user.email && Number(user.email_verified || 0) === 1);
+    return Boolean(user && isQqEmail(user.email) && Number(user.email_verified || 0) === 1);
 }
 
 function rejectUnboundEmail(req, res) {
@@ -636,24 +657,24 @@ function sendVerificationCodeEmail({ email, code, purpose }) {
     });
 }
 
-function sendReviewResultEmail({ to, username, itemType, title, status, reason, url }) {
+function sendReviewResultEmail({ to, username, itemType, title, status, reason }) {
     const approved = status === 'approved';
     const resultText = approved ? '已通过' : '未通过';
     const reasonText = reason ? `\n原因：${reason}` : '';
     sendZeaburEmailQuietly({
         to,
         subject: `你的${itemType}审核${resultText}`,
-        html: `<p>${escapeHtml(username || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」审核${escapeHtml(resultText)}。</p>${reason ? `<p>原因：${escapeHtml(reason)}</p>` : ''}<p><a href="${escapeHtml(url)}">打开广场查看</a></p>`,
-        text: `${username || '你好'}，你的${itemType}「${title}」审核${resultText}。${reasonText}\n${url}`
+        html: `<p>${escapeHtml(username || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」审核${escapeHtml(resultText)}。</p>${reason ? `<p>原因：${escapeHtml(reason)}</p>` : ''}`,
+        text: `${username || '你好'}，你的${itemType}「${title}」审核${resultText}。${reasonText}`
     });
 }
 
-function sendAdminReviewPendingEmail({ itemType, title, uploader, ip, url }) {
+function sendAdminReviewPendingEmail({ itemType, title, uploader, ip }) {
     const recipients = getAdminNotificationEmails();
     if (recipients.length === 0) return;
     const uploaderText = uploader || '未知用户';
-    const html = `<p>有新的${escapeHtml(itemType)}进入待审核。</p><p>名称：${escapeHtml(title)}</p><p>上传者：${escapeHtml(uploaderText)}</p>${ip ? `<p>上传 IP：${escapeHtml(ip)}</p>` : ''}<p><a href="${escapeHtml(url)}">打开后台审核</a></p>`;
-    const text = `有新的${itemType}进入待审核。\n名称：${title}\n上传者：${uploaderText}${ip ? `\n上传 IP：${ip}` : ''}\n${url}`;
+    const html = `<p>有新的${escapeHtml(itemType)}进入待审核。</p><p>名称：${escapeHtml(title)}</p><p>上传者：${escapeHtml(uploaderText)}</p>${ip ? `<p>上传 IP：${escapeHtml(ip)}</p>` : ''}`;
+    const text = `有新的${itemType}进入待审核。\n名称：${title}\n上传者：${uploaderText}${ip ? `\n上传 IP：${ip}` : ''}`;
     recipients.forEach((to) => {
         sendZeaburEmailQuietly({
             to,
@@ -661,6 +682,18 @@ function sendAdminReviewPendingEmail({ itemType, title, uploader, ip, url }) {
             html,
             text
         });
+    });
+}
+
+function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, title, content }) {
+    const commentText = String(content || '').trim();
+    if (!commentText) return;
+    const htmlContent = escapeHtml(commentText).replace(/\n/g, '<br>');
+    sendZeaburEmailQuietly({
+        to,
+        subject: `你的${itemType}「${title}」有新评论`,
+        html: `<p>${escapeHtml(ownerName || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」收到了来自 ${escapeHtml(commenterName || '用户')} 的新评论。</p><p>评论内容：</p><blockquote style="margin:12px 0;padding:12px;border-left:4px solid #dbeafe;background:#f8fafc;">${htmlContent}</blockquote>`,
+        text: `${ownerName || '你好'}，你的${itemType}「${title}」收到了来自 ${commenterName || '用户'} 的新评论。\n评论内容：\n${commentText}`
     });
 }
 
@@ -690,12 +723,11 @@ function maybeSendCardHeatMilestoneEmail(cardId, req) {
         ).run(nextMilestone, cardId, nextMilestone);
         if (updated.changes === 0) return;
 
-        const url = buildSiteUrl(req, '/');
         sendZeaburEmailQuietly({
             to: row.email,
             subject: `你的角色卡热度达到 ${nextMilestone}`,
-            html: `<p>${escapeHtml(row.username)}，你的角色卡「${escapeHtml(row.name)}」热度已经达到 ${nextMilestone}。</p><p>当前热度：${heat}</p><p><a href="${escapeHtml(url)}">回到广场看看</a></p>`,
-            text: `${row.username}，你的角色卡「${row.name}」热度已经达到 ${nextMilestone}。\n当前热度：${heat}\n${url}`
+            html: `<p>${escapeHtml(row.username)}，你的角色卡「${escapeHtml(row.name)}」热度已经达到 ${nextMilestone}。</p><p>当前热度：${heat}</p>`,
+            text: `${row.username}，你的角色卡「${row.name}」热度已经达到 ${nextMilestone}。\n当前热度：${heat}`
         });
     } catch (err) {
         console.error('[Email] Heat milestone check failed:', err.message);
@@ -778,12 +810,13 @@ app.post('/api/email/send-code', async (req, res) => {
     try {
         cleanupEmailCodes();
         const purpose = String(req.body.purpose || '').trim();
-        const email = normalizeEmail(req.body.email);
+        const emailCheck = validateQqEmail(req.body.email);
+        const email = emailCheck.email;
         const captchaToken = String(req.body.captchaToken || '').trim();
         if (!['register', 'bind', 'reset_password'].includes(purpose)) {
             return res.status(400).json({ error: '验证码用途无效' });
         }
-        if (!email) return res.status(400).json({ error: '请输入有效邮箱' });
+        if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
 
         let userId = null;
         if (purpose === 'register') {
@@ -845,11 +878,13 @@ app.post('/api/email/send-code', async (req, res) => {
 app.post('/api/user/register', async (req, res) => {
     try {
         const { username, password, emailCode } = req.body;
-        const email = normalizeEmail(req.body.email);
+        const emailCheck = validateQqEmail(req.body.email);
+        const email = emailCheck.email;
 
         if (!username || !password || !email) {
             return res.status(400).json({ error: '请输入用户名、邮箱和密码' });
         }
+        if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
         const normalizedUsername = String(username || '').trim();
         if (normalizedUsername.length < 2 || normalizedUsername.length > 20) {
             return res.status(400).json({ error: '用户名长度需为2-20个字符' });
@@ -925,9 +960,10 @@ app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
 
 app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
     try {
-        const email = normalizeEmail(req.body.email);
+        const emailCheck = validateQqEmail(req.body.email);
+        const email = emailCheck.email;
         const emailCode = String(req.body.emailCode || '').trim();
-        if (!email) return res.status(400).json({ error: '请输入有效邮箱' });
+        if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
 
         const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id != ?').get(email, req.user.id);
         if (existingEmail) return res.status(409).json({ error: '这个邮箱已经被其他账号绑定' });
@@ -948,12 +984,14 @@ app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
 
 app.post('/api/user/forgot-password/reset', async (req, res) => {
     try {
-        const email = normalizeEmail(req.body.email);
+        const emailCheck = validateQqEmail(req.body.email);
+        const email = emailCheck.email;
         const emailCode = String(req.body.emailCode || '').trim();
         const newPassword = String(req.body.newPassword || '');
         if (!email || !emailCode || !newPassword) {
             return res.status(400).json({ error: '请输入邮箱、验证码和新密码' });
         }
+        if (!emailCheck.ok) return res.status(400).json({ error: emailCheck.error });
         if (newPassword.length < 6) {
             return res.status(400).json({ error: '新密码长度至少6位' });
         }
@@ -1392,6 +1430,14 @@ app.post('/api/ui-templates', requireUserOrAdmin, (req, res) => {
             ip: uploaderIp,
             details: { title: normalizedTitle, file_name: safeFileName, review_status: reviewStatus }
         });
+        if (reviewStatus === 'pending') {
+            sendAdminReviewPendingEmail({
+                itemType: 'UI模板',
+                title: normalizedTitle,
+                uploader: req.user?.username || '',
+                ip: uploaderIp
+            });
+        }
 
         template.comment_count = 0;
         res.json([sanitizeUiTemplateRow(template, { viewer: { admin: req.admin, user: req.user } }), { pending_review: reviewStatus === 'pending' }]);
@@ -1441,8 +1487,7 @@ app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
                 itemType: 'UI模板',
                 title: template.title,
                 status,
-                reason: status === 'rejected' ? reason : '',
-                url: buildSiteUrl(req, '/')
+                reason: status === 'rejected' ? reason : ''
             });
         }
         updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
@@ -2201,8 +2246,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 itemType: '角色卡',
                 title: name,
                 uploader: req.user?.username || '',
-                ip: uploaderIp,
-                url: buildSiteUrl(req, '/admin')
+                ip: uploaderIp
             });
         }
 
@@ -2729,7 +2773,13 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
-        const card = db.prepare("SELECT id FROM character_cards WHERE id = ? AND review_status = 'approved'").get(req.params.cardId);
+        const card = db.prepare(
+            `SELECT cc.id, cc.name, cc.uploader_user_id,
+                    u.username, u.email, u.email_verified
+             FROM character_cards cc
+             LEFT JOIN users u ON cc.uploader_user_id = u.id
+             WHERE cc.id = ? AND cc.review_status = 'approved'`
+        ).get(req.params.cardId);
         if (!card) return res.status(404).json({ error: '卡片不存在或尚未通过审核' });
 
         const id = generateId();
@@ -2770,6 +2820,16 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
         maybeSendCardHeatMilestoneEmail(req.params.cardId, req);
+        if (card.uploader_user_id && card.uploader_user_id !== userId && userEmailBound(card)) {
+            sendCommentNotificationEmail({
+                to: card.email,
+                ownerName: card.username,
+                commenterName: user.username,
+                itemType: '角色卡',
+                title: card.name,
+                content: content.trim()
+            });
+        }
         res.json({ comment, new_credits: updatedUser.download_credits, credits_earned: canEarnCredits });
     } catch (err) {
         console.error('Create comment error:', err);
@@ -2841,7 +2901,13 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
-        const template = db.prepare("SELECT id, uploader_user_id FROM ui_templates WHERE id = ? AND review_status = 'approved'").get(req.params.templateId);
+        const template = db.prepare(
+            `SELECT ut.id, ut.title, ut.uploader_user_id,
+                    u.username, u.email, u.email_verified
+             FROM ui_templates ut
+             LEFT JOIN users u ON ut.uploader_user_id = u.id
+             WHERE ut.id = ? AND ut.review_status = 'approved'`
+        ).get(req.params.templateId);
         if (!template) return res.status(404).json({ error: '模板不存在或尚未通过审核' });
 
         const id = generateId();
@@ -2879,6 +2945,16 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         comment.template_uploader_id = template.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
+        if (template.uploader_user_id && template.uploader_user_id !== userId && userEmailBound(template)) {
+            sendCommentNotificationEmail({
+                to: template.email,
+                ownerName: template.username,
+                commenterName: user.username,
+                itemType: 'UI模板',
+                title: template.title,
+                content: content.trim()
+            });
+        }
         res.json({
             comment,
             new_credits: updatedUser.download_credits,
@@ -3229,8 +3305,7 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
                 itemType: '角色卡',
                 title: card.name,
                 status,
-                reason: status === 'rejected' ? reason : '',
-                url: buildSiteUrl(req, '/')
+                reason: status === 'rejected' ? reason : ''
             });
         }
 
@@ -3350,6 +3425,7 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         const publicBaseUrl = String(req.body.public_base_url || '').trim().replace(/\/+$/, '');
         const adminEmailsRaw = String(req.body.admin_emails || '').trim();
         const invalidAdminEmails = findInvalidEmails(adminEmailsRaw);
+        const nonQqAdminEmails = findNonQqEmails(adminEmailsRaw);
 
         if (!from) return res.status(400).json({ error: '请输入有效的发件邮箱' });
         if (!/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: '邮件 API 地址必须以 http:// 或 https:// 开头' });
@@ -3359,6 +3435,9 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         if (apiKey && apiKey.length < 12) return res.status(400).json({ error: 'API Key 看起来太短了' });
         if (invalidAdminEmails.length > 0) {
             return res.status(400).json({ error: `管理员通知邮箱格式不正确：${invalidAdminEmails.slice(0, 3).join('、')}` });
+        }
+        if (nonQqAdminEmails.length > 0) {
+            return res.status(400).json({ error: `管理员通知邮箱仅支持 QQ 邮箱：${nonQqAdminEmails.slice(0, 3).join('、')}` });
         }
 
         if (clearApiKey) {
@@ -3510,27 +3589,6 @@ app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: '更新设置失败' });
-    }
-});
-
-app.put('/api/admin/password', authenticateAdmin, async (req, res) => {
-    try {
-        const { currentPassword, newPassword } = req.body;
-        if (!currentPassword || !newPassword) {
-            return res.status(400).json({ error: '请输入当前密码和新密码' });
-        }
-        if (newPassword.length < 6) {
-            return res.status(400).json({ error: '新密码长度至少6位' });
-        }
-        const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.admin.id);
-        if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
-            return res.status(401).json({ error: '当前密码错误' });
-        }
-        const hash = await bcrypt.hash(newPassword, 12);
-        db.prepare('UPDATE admin_users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hash, user.id);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: '修改密码失败' });
     }
 });
 
@@ -3797,49 +3855,6 @@ app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('Admin ban user error:', err);
         res.status(500).json({ error: '更新用户封禁状态失败' });
-    }
-});
-
-app.post('/api/admin/users/:id/reset-password', authenticateAdmin, async (req, res) => {
-    try {
-        const userId = Number(req.params.id);
-        if (!Number.isInteger(userId) || userId <= 0) {
-            return res.status(400).json({ error: '无效的用户 ID' });
-        }
-
-        const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(userId);
-        if (!user) {
-            return res.status(404).json({ error: '用户不存在' });
-        }
-
-        const providedPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword.trim() : '';
-        const temporaryPassword = providedPassword || crypto.randomBytes(6).toString('base64url');
-        if (temporaryPassword.length < 6) {
-            return res.status(400).json({ error: '新密码长度至少 6 位' });
-        }
-
-        const hash = await bcrypt.hash(temporaryPassword, 12);
-        db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hash, userId);
-        logOperation({
-            userType: 'admin',
-            userId: req.admin.id,
-            username: req.admin.username,
-            action: 'admin_reset_user_password',
-            targetType: 'user',
-            targetId: String(userId),
-            ip: getRequestIp(req),
-            details: { username: user.username }
-        });
-
-        res.json({
-            success: true,
-            username: user.username,
-            temporary_password: temporaryPassword,
-            message: '原密码无法从哈希中恢复，已重置为新的临时密码。'
-        });
-    } catch (err) {
-        console.error('Admin reset password error:', err);
-        res.status(500).json({ error: '重置密码失败' });
     }
 });
 
