@@ -933,25 +933,10 @@ function recordAccountViewHeat(req, contentType, contentId) {
     return { counted: true, limited: false };
 }
 
-function getUserNewApiRewardStats(userId) {
-    const user = db.prepare('SELECT newapi_user_id, newapi_redeemed_cookies FROM users WHERE id = ?').get(userId);
-    const cardRows = db.prepare(
-        `SELECT views_count, downloads_count,
-                COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
-         FROM character_cards
-         WHERE uploader_user_id = ? AND review_status = 'approved'`
-    ).all(userId);
-    const templateRows = db.prepare(
-        `SELECT views_count, downloads_count,
-                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
-         FROM ui_templates
-         WHERE uploader_user_id = ? AND review_status = 'approved'`
-    ).all(userId);
-    const cardHeat = cardRows.reduce((sum, row) => sum + computeCardHeatFromRow(row), 0);
-    const templateHeat = templateRows.reduce((sum, row) => sum + computeTemplateHeatFromRow(row), 0);
+function makeNewApiRewardStats(user, cardHeat = 0, templateHeat = 0) {
     const totalHeat = cardHeat + templateHeat;
     const totalCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
-    const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies || 0)));
+    const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies ?? user?.redeemed_cookies ?? 0)));
     const availableCookies = floorToTwoDecimals(totalCookies - redeemedCookies);
     return {
         newapi_user_id: user?.newapi_user_id || '',
@@ -967,6 +952,60 @@ function getUserNewApiRewardStats(userId) {
         min_redeem_cookies: 1,
         newapi_configured: isNewApiConfigured()
     };
+}
+
+function getUsersNewApiRewardStatsMap(userIds) {
+    const ids = [...new Set(
+        (userIds || [])
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+    )];
+    const statsByUser = new Map();
+    if (!ids.length) return statsByUser;
+
+    const placeholders = ids.map(() => '?').join(',');
+    const users = db.prepare(
+        `SELECT id, newapi_user_id, newapi_redeemed_cookies
+         FROM users
+         WHERE id IN (${placeholders})`
+    ).all(...ids);
+
+    for (const id of ids) {
+        statsByUser.set(id, makeNewApiRewardStats({ id }, 0, 0));
+    }
+    for (const user of users) {
+        statsByUser.set(Number(user.id), makeNewApiRewardStats(user, 0, 0));
+    }
+
+    const cardRows = db.prepare(
+        `SELECT uploader_user_id AS user_id, views_count, downloads_count,
+                COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+         FROM character_cards
+         WHERE uploader_user_id IN (${placeholders}) AND review_status = 'approved'`
+    ).all(...ids);
+    for (const row of cardRows) {
+        const id = Number(row.user_id);
+        const current = statsByUser.get(id) || makeNewApiRewardStats({ id }, 0, 0);
+        statsByUser.set(id, makeNewApiRewardStats(current, current.card_heat + computeCardHeatFromRow(row), current.template_heat));
+    }
+
+    const templateRows = db.prepare(
+        `SELECT uploader_user_id AS user_id, views_count, downloads_count,
+                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+         FROM ui_templates
+         WHERE uploader_user_id IN (${placeholders}) AND review_status = 'approved'`
+    ).all(...ids);
+    for (const row of templateRows) {
+        const id = Number(row.user_id);
+        const current = statsByUser.get(id) || makeNewApiRewardStats({ id }, 0, 0);
+        statsByUser.set(id, makeNewApiRewardStats(current, current.card_heat, current.template_heat + computeTemplateHeatFromRow(row)));
+    }
+
+    return statsByUser;
+}
+
+function getUserNewApiRewardStats(userId) {
+    return getUsersNewApiRewardStatsMap([userId]).get(Number(userId)) || makeNewApiRewardStats(null, 0, 0);
 }
 
 function maybeSendCardHeatMilestoneEmail(cardId, req) {
@@ -4086,7 +4125,7 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
              ${baseFrom}`
         ).get(...params);
 
-        const redemptions = db.prepare(
+        const redemptionRows = db.prepare(
             `SELECT
                 nr.id, nr.user_id, nr.newapi_user_id, nr.cookies, nr.heat_used,
                 nr.status, nr.error, nr.created_at, nr.completed_at,
@@ -4094,13 +4133,10 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
              ${baseFrom}
              ORDER BY nr.created_at DESC
              LIMIT ? OFFSET ?`
-        ).all(...params, limit, offset).map((row) => {
-            let reward = null;
-            try {
-                reward = getUserNewApiRewardStats(row.user_id);
-            } catch (err) {
-                reward = null;
-            }
+        ).all(...params, limit, offset);
+        const rewardStatsByUser = getUsersNewApiRewardStatsMap(redemptionRows.map((row) => row.user_id));
+        const redemptions = redemptionRows.map((row) => {
+            const reward = rewardStatsByUser.get(Number(row.user_id)) || null;
             return {
                 ...row,
                 cookies: floorToTwoDecimals(row.cookies),

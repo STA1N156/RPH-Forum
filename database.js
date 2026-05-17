@@ -247,6 +247,7 @@ function initDatabase() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_user ON comment_likes(user_id);
@@ -256,6 +257,7 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_card_likes_card ON card_likes(card_id);
         CREATE INDEX IF NOT EXISTS idx_card_likes_user ON card_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ui_templates_uploader_review ON ui_templates(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_time ON login_attempts(ip_address, attempt_time);
         CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at DESC);
@@ -309,10 +311,12 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN heat_email_milestone INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status)'); } catch (e) { /* index exists */ }
     try { db.exec("UPDATE ui_templates SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('ALTER TABLE ui_templates ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE ui_templates ADD COLUMN comment_count_override INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_uploader_review ON ui_templates(uploader_user_id, review_status)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_featured ON ui_templates(is_featured, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
