@@ -785,8 +785,7 @@
                                             }">{{ getActionLabel(log.action) }}</span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500">
-                                            <span>{{ formatLogTarget(log) }}</span>
-                                            <span v-else>-</span>
+                                            <span>{{ formatLogTarget(log) || '-' }}</span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500 font-mono">{{ log.ip_address || '-' }}</td>
                                         <td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" :title="log.details">{{ log.details || '-' }}</td>
