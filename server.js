@@ -541,8 +541,12 @@ function getAdminNotificationEmails() {
     return parseEmailList(getSettingValue('admin_notification_emails') || ADMIN_NOTIFICATION_EMAILS);
 }
 
+function normalizeCommentEmailBlockText(value) {
+    return String(value ?? '').normalize('NFKC').toLowerCase();
+}
+
 function parseCommentEmailBlockWords(value) {
-    return String(value || '')
+    return normalizeCommentEmailBlockText(value)
         .split(/[\n,;，；]+/)
         .map(item => item.trim())
         .filter(Boolean)
@@ -557,9 +561,9 @@ function getCommentEmailBlockWords() {
 }
 
 function isCommentEmailBlocked(content) {
-    const text = String(content || '').toLowerCase();
+    const text = normalizeCommentEmailBlockText(content);
     if (!text) return false;
-    return getCommentEmailBlockWords().some(word => text.includes(String(word).toLowerCase()));
+    return getCommentEmailBlockWords().some(word => text.includes(normalizeCommentEmailBlockText(word)));
 }
 
 function normalizeBaseUrl(value) {
