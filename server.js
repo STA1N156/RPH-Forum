@@ -65,7 +65,7 @@ const LOCKOUT_MINUTES = 1;
 const captchaTokens = new Map(); // token -> { createdAt, used }
 
 // ============== Upload Rate Limiting ==============
-const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_UPLOAD_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
 const MAX_UI_TEMPLATE_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB text template
 const UPLOAD_RATE_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_UPLOADS_PER_WINDOW = 2;
@@ -948,7 +948,7 @@ function getUserNewApiRewardStats(userId) {
     const totalHeat = cardHeat + templateHeat;
     const totalCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
     const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies || 0)));
-    const availableCookies = floorToTwoDecimals(Math.max(0, totalCookies - redeemedCookies));
+    const availableCookies = floorToTwoDecimals(totalCookies - redeemedCookies);
     return {
         newapi_user_id: user?.newapi_user_id || '',
         card_heat: cardHeat,
@@ -1460,6 +1460,16 @@ function parseStoredCardData(data) {
     } catch {
         return null;
     }
+}
+
+const NON_RPH_CARD_UPLOAD_MESSAGE = '非本站卡片，多次尝试将被封禁';
+
+function hasRpHubWatermark(data) {
+    const parsed = parseStoredCardData(data);
+    if (!parsed || typeof parsed !== 'object') return false;
+    const content = parsed.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+    const watermark = content.extensions?.rp_hub_watermark;
+    return typeof watermark === 'string' && watermark.trim().toLowerCase() === 'rp-hub';
 }
 
 function normalizeUiTemplateCollection(value) {
@@ -2600,12 +2610,16 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             return res.status(400).json({ error: '卡片名称不能为空' });
         }
 
+        if (!hasRpHubWatermark(data)) {
+            return res.status(400).json({ error: NON_RPH_CARD_UPLOAD_MESSAGE });
+        }
+
         // File size check: estimate original size from base64 avatar_url
         if (avatar_url && typeof avatar_url === 'string' && avatar_url.startsWith('data:')) {
             const base64Part = avatar_url.split(',')[1] || '';
             const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
             if (estimatedBytes > MAX_UPLOAD_SIZE_BYTES) {
-                return res.status(400).json({ error: `文件大小超过 10MB 限制 (${(estimatedBytes / 1024 / 1024).toFixed(1)}MB)` });
+                return res.status(400).json({ error: `文件大小超过 30MB 限制 (${(estimatedBytes / 1024 / 1024).toFixed(1)}MB)` });
             }
         }
 
@@ -3004,7 +3018,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     try {
         const { id } = req.params;
         const card = db.prepare(
-            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
+            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status, cc.downloads_count,
                     u.username, u.email, u.email_verified
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
@@ -3018,6 +3032,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         }
 
         let newCredits = null;
+        let downloadCounted = false;
         const recordDownload = db.transaction(() => {
             if (!req.admin && !isModerator) {
                 if (!isOwner) {
@@ -3031,14 +3046,22 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
                 newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
             }
 
-            // Author/admin/moderator downloads don't inflate download count
+            // One regular account can add download heat to the same card only once.
             if (!isOwner && !req.admin && !isModerator) {
-                db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+                const inserted = db.prepare(
+                    `INSERT OR IGNORE INTO card_downloads (card_id, user_id)
+                     VALUES (?, ?)`
+                ).run(id, req.user.id);
+                if (inserted.changes > 0) {
+                    db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
+                    downloadCounted = true;
+                }
             }
         });
 
         recordDownload();
-        maybeSendCardHeatMilestoneEmail(id, req);
+        const latestDownloads = db.prepare('SELECT downloads_count FROM character_cards WHERE id = ?').get(id)?.downloads_count ?? card.downloads_count ?? 0;
+        if (downloadCounted) maybeSendCardHeatMilestoneEmail(id, req);
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
         const fileName = sanitizeDownloadFilename(card.name);
@@ -3046,6 +3069,8 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         res.json({
             success: true,
             new_credits: newCredits,
+            download_counted: downloadCounted,
+            downloads_count: latestDownloads,
             download_url: `/api/cards/${id}/download/file?token=${encodeURIComponent(downloadToken)}`
         });
     } catch (err) {
@@ -4015,6 +4040,90 @@ app.put('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('New API settings save error:', err);
         res.status(500).json({ error: '保存 STA1N API 设置失败' });
+    }
+});
+
+app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const offset = (page - 1) * limit;
+        const status = String(req.query.status || '').trim();
+        const search = String(req.query.search || '').trim().slice(0, 120);
+
+        const whereParts = [];
+        const params = [];
+        if (status && ['pending', 'success', 'failed'].includes(status)) {
+            whereParts.push('nr.status = ?');
+            params.push(status);
+        }
+        if (search) {
+            const keyword = `%${search.toLowerCase()}%`;
+            whereParts.push(`(
+                LOWER(COALESCE(nr.id, '')) LIKE ?
+                OR LOWER(COALESCE(CAST(nr.user_id AS TEXT), '')) LIKE ?
+                OR LOWER(COALESCE(nr.newapi_user_id, '')) LIKE ?
+                OR LOWER(COALESCE(u.username, '')) LIKE ?
+                OR LOWER(COALESCE(u.email, '')) LIKE ?
+            )`);
+            params.push(keyword, keyword, keyword, keyword, keyword);
+        }
+        const where = whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : '';
+        const baseFrom = `FROM newapi_redemptions nr LEFT JOIN users u ON nr.user_id = u.id${where}`;
+
+        const total = db.prepare(`SELECT COUNT(*) as count ${baseFrom}`).get(...params).count;
+        const summary = db.prepare(
+            `SELECT
+                COALESCE(SUM(nr.cookies), 0) as cookies_total,
+                COALESCE(SUM(CASE WHEN nr.status = 'success' THEN nr.cookies ELSE 0 END), 0) as cookies_success,
+                SUM(CASE WHEN nr.status = 'success' THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN nr.status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN nr.status = 'failed' THEN 1 ELSE 0 END) as failed_count
+             ${baseFrom}`
+        ).get(...params);
+
+        const redemptions = db.prepare(
+            `SELECT
+                nr.id, nr.user_id, nr.newapi_user_id, nr.cookies, nr.heat_used,
+                nr.status, nr.error, nr.created_at, nr.completed_at,
+                u.username, u.email, u.newapi_redeemed_cookies
+             ${baseFrom}
+             ORDER BY nr.created_at DESC
+             LIMIT ? OFFSET ?`
+        ).all(...params, limit, offset).map((row) => {
+            let reward = null;
+            try {
+                reward = getUserNewApiRewardStats(row.user_id);
+            } catch (err) {
+                reward = null;
+            }
+            return {
+                ...row,
+                cookies: floorToTwoDecimals(row.cookies),
+                heat_used: floorToTwoDecimals(row.heat_used),
+                total_cookies: reward?.total_cookies ?? null,
+                redeemed_cookies: reward?.redeemed_cookies ?? floorToTwoDecimals(row.newapi_redeemed_cookies || 0),
+                available_cookies: reward?.available_cookies ?? null
+            };
+        });
+
+        res.json({
+            redemptions,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            summary: {
+                cookies_total: floorToTwoDecimals(summary.cookies_total || 0),
+                cookies_success: floorToTwoDecimals(summary.cookies_success || 0),
+                success_count: Number(summary.success_count || 0),
+                pending_count: Number(summary.pending_count || 0),
+                failed_count: Number(summary.failed_count || 0)
+            }
+        });
+    } catch (err) {
+        console.error('Admin New API redemptions error:', err);
+        res.status(500).json({ error: '获取提现记录失败' });
     }
 });
 

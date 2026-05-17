@@ -89,6 +89,10 @@
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                         用户管理
                     </button>
+                    <button @click="currentPage = 'redemptions'; showMobileMenu = false; loadRedemptions()" :class="currentPage === 'redemptions' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m8-6a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
+                        提现记录
+                    </button>
                     <button v-if="false" @click="currentPage = 'tags'; showMobileMenu = false; loadSettings()" :class="currentPage === 'tags' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
                         标签管理
@@ -124,7 +128,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
                         <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
-                            {{ {dashboard:'仪表盘',cards:'卡片管理',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
                     <a href="/" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
@@ -560,6 +564,124 @@
                             <button @click="userPage--; loadAdminUsers()" :disabled="userPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ userPage }} / {{ userData.totalPages }}</span>
                             <button @click="userPage++; loadAdminUsers()" :disabled="userPage >= userData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- New API Redemptions -->
+                    <div v-if="currentPage === 'redemptions'">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                            <div class="text-sm text-gray-500">
+                                共 {{ redemptionData.total || 0 }} 条提现记录
+                            </div>
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div class="relative">
+                                    <input v-model.trim="redemptionSearch" @keyup.enter="redemptionPage = 1; loadRedemptions()" type="search" placeholder="搜用户ID、用户名、STA1N API ID"
+                                        class="w-full sm:w-72 pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <select v-model="redemptionStatusFilter" @change="redemptionPage = 1; loadRedemptions()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">全部状态</option>
+                                    <option value="success">成功</option>
+                                    <option value="pending">处理中</option>
+                                    <option value="failed">失败</option>
+                                </select>
+                                <button @click="redemptionPage = 1; loadRedemptions()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">搜索</button>
+                                <button v-if="redemptionSearch || redemptionStatusFilter" @click="redemptionSearch = ''; redemptionStatusFilter = ''; redemptionPage = 1; loadRedemptions()" class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition">清空</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">成功提现</p>
+                                <p class="mt-1 text-2xl font-bold text-gray-900">{{ redemptionData.summary?.success_count || 0 }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">成功提现 🍪</p>
+                                <p class="mt-1 text-2xl font-bold text-amber-600">{{ formatCookieAmount(redemptionData.summary?.cookies_success || 0) }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">失败 / 处理中</p>
+                                <p class="mt-1 text-2xl font-bold text-gray-900">{{ redemptionData.summary?.failed_count || 0 }} / {{ redemptionData.summary?.pending_count || 0 }}</p>
+                            </div>
+                        </div>
+
+                        <div class="md:hidden space-y-4">
+                            <div v-for="item in redemptionData.redemptions" :key="'mobile-redemption-' + item.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-base font-semibold text-gray-900">用户 ID {{ item.user_id }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">{{ item.username || '未知用户' }}</p>
+                                        <p class="text-xs text-gray-500 mt-1 break-all">STA1N API ID：{{ item.newapi_user_id || '-' }}</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full font-medium" :class="getRedemptionStatusClass(item.status)">
+                                        {{ getRedemptionStatusLabel(item.status) }}
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">提现数量</p>
+                                        <p class="text-gray-800 mt-1 font-semibold">{{ formatCookieAmount(item.cookies) }}🍪</p>
+                                    </div>
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">当前剩余</p>
+                                        <p class="text-gray-800 mt-1 font-semibold">{{ item.available_cookies === null ? '-' : formatCookieAmount(item.available_cookies) + '🍪' }}</p>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 space-y-1">
+                                    <p>申请时间：{{ formatDate(item.created_at) }}</p>
+                                    <p>完成时间：{{ formatDate(item.completed_at) }}</p>
+                                    <p v-if="item.error" class="text-red-600 break-all">失败原因：{{ item.error }}</p>
+                                </div>
+                            </div>
+                            <div v-if="!redemptionData.redemptions?.length" class="text-center text-gray-400 py-12">暂无提现记录</div>
+                        </div>
+
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[940px]">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">STA1N API ID</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">提现</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">当前剩余</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="item in redemptionData.redemptions" :key="item.id" class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                                                <div>{{ formatDate(item.created_at) }}</div>
+                                                <div v-if="item.completed_at" class="text-gray-400 mt-1">完成：{{ formatDate(item.completed_at) }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-900">
+                                                <div class="font-medium">{{ item.username || '未知用户' }}</div>
+                                                <div class="text-xs text-gray-400 font-mono mt-1">ID {{ item.user_id }}</div>
+                                                <div class="text-xs text-gray-400 break-all mt-1">{{ item.email || '-' }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600 font-mono break-all">{{ item.newapi_user_id || '-' }}</td>
+                                            <td class="px-4 py-3 text-sm text-amber-700 font-semibold">{{ formatCookieAmount(item.cookies) }}🍪</td>
+                                            <td class="px-4 py-3 text-sm text-gray-700">
+                                                <div>{{ item.available_cookies === null ? '-' : formatCookieAmount(item.available_cookies) + '🍪' }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm">
+                                                <span class="text-xs px-2 py-1 rounded-full font-medium" :class="getRedemptionStatusClass(item.status)">
+                                                    {{ getRedemptionStatusLabel(item.status) }}
+                                                </span>
+                                                <p v-if="item.error" class="text-xs text-red-600 mt-2 max-w-[220px] break-words">{{ item.error }}</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="!redemptionData.redemptions?.length" class="text-center text-gray-400 py-12">暂无提现记录</div>
+                        </div>
+
+                        <div v-if="redemptionData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="redemptionPage--; loadRedemptions()" :disabled="redemptionPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ redemptionPage }} / {{ redemptionData.totalPages }}</span>
+                            <button @click="redemptionPage++; loadRedemptions()" :disabled="redemptionPage >= redemptionData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
@@ -1004,8 +1126,8 @@
                             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <div class="flex items-start justify-between gap-4 mb-4">
                                     <div>
-                                        <h3 class="text-lg font-bold text-gray-900">STA1N API 额度配置</h3>
-                                        <p class="text-sm text-gray-500 mt-1">用户绑定 STA1N API 用户 ID 后，可用广场热度兑换额度。</p>
+                                        <h3 class="text-lg font-bold text-gray-900">STA1N API 配置</h3>
+                                        <p class="text-sm text-gray-500 mt-1">用户绑定 STA1N API 用户 ID 后，可用广场热度提现 🍪。</p>
                                     </div>
                                     <span class="text-xs px-2 py-1 rounded-full" :class="newApiSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
                                         {{ newApiSettings.configured ? '已启用' : '未启用' }}
@@ -1013,7 +1135,7 @@
                                 </div>
                                 <div class="space-y-4">
                                     <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-                                        当前规则：{{ newApiSettings.heat_per_cookie || 8 }} 热度 = 1🍪 = {{ newApiSettings.quota_per_cookie || 50000 }} quota
+                                        当前规则：{{ newApiSettings.heat_per_cookie || 8 }} 热度 = 1🍪
                                         <div class="mt-1">
                                             当前 Token：{{ newApiSettings.admin_token_configured ? newApiSettings.admin_token_masked : '未配置' }}
                                             <span v-if="newApiSettings.admin_token_source === 'environment'">（来自环境变量）</span>
@@ -1129,6 +1251,12 @@
                 const userSearch = ref('');
                 const userDrafts = reactive({});
 
+                // New API redemptions
+                const redemptionData = ref({ redemptions: [], total: 0, totalPages: 0, summary: {} });
+                const redemptionPage = ref(1);
+                const redemptionSearch = ref('');
+                const redemptionStatusFilter = ref('');
+
                 // Logs
                 const logData = ref({ logs: [], total: 0, totalPages: 0 });
                 const logPage = ref(1);
@@ -1205,8 +1333,7 @@
                     admin_token_configured: false,
                     admin_token_masked: '',
                     admin_token_source: 'none',
-                    heat_per_cookie: 8,
-                    quota_per_cookie: 50000
+                    heat_per_cookie: 8
                 });
                 const newApiSettingsSaving = ref(false);
                 const tagPreviewCards = ref([]);
@@ -1299,6 +1426,12 @@
                 function formatDate(dateStr) {
                     if (!dateStr) return '-';
                     return new Date(dateStr).toLocaleString('zh-CN');
+                }
+
+                function formatCookieAmount(value) {
+                    const num = Number(value || 0);
+                    if (!Number.isFinite(num)) return '0';
+                    return num.toFixed(2).replace(/\.?0+$/, '');
                 }
 
                 function parseTagSettingInput(value) {
@@ -1834,6 +1967,35 @@
                     }
                 }
 
+                async function loadRedemptions() {
+                    try {
+                        let url = API_BASE + `/api/admin/newapi-redemptions?page=${redemptionPage.value}`;
+                        if (redemptionStatusFilter.value) url += `&status=${encodeURIComponent(redemptionStatusFilter.value)}`;
+                        if (redemptionSearch.value) url += `&search=${encodeURIComponent(redemptionSearch.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '加载提现记录失败');
+                        redemptionData.value = data;
+                    } catch (err) {
+                        showToast(err.message || '加载提现记录失败', 'error');
+                    }
+                }
+
+                function getRedemptionStatusLabel(status) {
+                    const labels = {
+                        success: '成功',
+                        pending: '处理中',
+                        failed: '失败'
+                    };
+                    return labels[status] || status || '-';
+                }
+
+                function getRedemptionStatusClass(status) {
+                    if (status === 'success') return 'bg-green-100 text-green-700';
+                    if (status === 'failed') return 'bg-red-100 text-red-700';
+                    return 'bg-amber-100 text-amber-700';
+                }
+
                 async function loadLogs() {
                     try {
                         let url = API_BASE + `/api/admin/logs?page=${logPage.value}`;
@@ -1922,7 +2084,7 @@
                         admin_update_newapi_settings: '更新 STA1N API 配置',
                         bind_newapi_user: '绑定 STA1N API 用户',
                         unbind_newapi_user: '解绑 STA1N API 用户',
-                        newapi_redeem: '提现 API 额度',
+                        newapi_redeem: '提现',
                         admin_adjust_heat: '调整角色卡热度',
                         admin_adjust_ui_template_heat: '调整模板热度'
                     };
@@ -2133,11 +2295,12 @@
                 return {
                     isAuthenticated, adminUser, currentPage, showMobileMenu, toasts,
                     loginForm, loginError, loginLoading, handleLogin, handleLogout,
-                    stats, formatDate, chartData, chartMax,
+                    stats, formatDate, formatCookieAmount, chartData, chartMax,
                     cardData, cardPage, cardSearch, cardStatusFilter, loadAdminCards, deleteAdminCard,
                     getReviewStatusLabel, reviewAdminCard, downloadAdminCard,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
                     userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, toggleUserBan, toggleUserModerator,
+                    redemptionData, redemptionPage, redemptionSearch, redemptionStatusFilter, loadRedemptions, getRedemptionStatusLabel, getRedemptionStatusClass,
                     logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
                     siteSettings, emailSettings, emailSettingsSaving, newApiSettings, newApiSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,

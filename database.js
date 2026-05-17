@@ -68,6 +68,16 @@ function initDatabase() {
             FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS card_downloads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(card_id, user_id),
+            FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS character_comments (
             id TEXT PRIMARY KEY,
             card_id TEXT NOT NULL,
@@ -256,6 +266,9 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
         CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
@@ -304,6 +317,20 @@ function initDatabase() {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec(`
+        CREATE TABLE IF NOT EXISTS card_downloads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(card_id, user_id),
+            FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `); } catch (e) { /* table exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';

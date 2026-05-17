@@ -3217,14 +3217,20 @@
                     }
                 };
 
+                const hasRpHubWatermark = (charData) => {
+                    const data = charData?.data || charData || {};
+                    const watermark = data.extensions?.rp_hub_watermark;
+                    return typeof watermark === 'string' && watermark.trim().toLowerCase() === 'rp-hub';
+                };
+
                 const handleFileSelect = (event) => {
                     const file = event.target.files[0];
                     if (!file) return;
 
-                    // File size check: 10 MB limit
-                    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+                    // File size check: 30 MB limit
+                    const MAX_FILE_SIZE = 30 * 1024 * 1024;
                     if (file.size > MAX_FILE_SIZE) {
-                        showToast(`文件大小 (${(file.size / 1024 / 1024).toFixed(1)}MB) 超过 10MB 限制，请压缩后重试`, 'error');
+                        showToast(`文件大小 (${(file.size / 1024 / 1024).toFixed(1)}MB) 超过 30MB 限制，请压缩后重试`, 'error');
                         event.target.value = '';
                         return;
                     }
@@ -3283,6 +3289,9 @@
                             }
 
                             if (!charData) throw new Error('无法解析角色卡数据');
+                            if (!hasRpHubWatermark(charData)) {
+                                throw new Error('非本站卡片，多次尝试将被封禁');
+                            }
 
                             // Normalize
                             const data = charData.data || charData;
@@ -5022,15 +5031,14 @@
                             throw new Error(data.error || '下载次数更新失败');
                         }
 
-                        // Only regular non-owner downloads inflate local count.
-                        if (!isCardOwnedByCurrentUser(card) && !canModerate.value) {
+                        // Only the first regular download from the same account adds heat.
+                        if (data.download_counted && !isCardOwnedByCurrentUser(card) && !canModerate.value) {
                             const listCard = cards.value.find(item => item.id === card.id);
-                            if (listCard) {
-                                listCard.downloads_count = (listCard.downloads_count || 0) + 1;
-                            }
-                            card.downloads_count = (card.downloads_count || 0) + 1;
+                            const nextDownloads = data.downloads_count ?? ((card.downloads_count || 0) + 1);
+                            if (listCard) listCard.downloads_count = nextDownloads;
+                            card.downloads_count = nextDownloads;
                             if (selectedCard.value && selectedCard.value.id === card.id) {
-                                selectedCard.value.downloads_count = card.downloads_count;
+                                selectedCard.value.downloads_count = nextDownloads;
                             }
                         }
                         if (data.new_credits !== undefined && currentUser.value) {
