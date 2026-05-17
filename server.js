@@ -44,6 +44,7 @@ const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PE
 const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_WINDOW_HOURS || '24', 10) || 24);
 const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
 const NEWAPI_USER_STATUS_ENABLED = 1;
+const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃'];
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -229,7 +230,7 @@ function validateAdminTokenPayload(decoded) {
 
 function validateUserTokenPayload(decoded) {
     if (!decoded || decoded.role !== 'user') return null;
-    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, is_moderator, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
     if (!user || user.username !== decoded.username || Number(user.token_version || 0) !== Number(decoded.token_version || 0)) {
         return null;
     }
@@ -243,9 +244,14 @@ function validateUserTokenPayload(decoded) {
         username: user.username,
         email: user.email || '',
         email_verified: Number(user.email_verified || 0),
+        is_moderator: Number(user.is_moderator || 0),
         role: 'user',
         token_version: user.token_version || 0
     };
+}
+
+function isModeratorUser(user) {
+    return Number(user?.is_moderator || 0) === 1;
 }
 
 function authenticateAdmin(req, res, next) {
@@ -345,6 +351,35 @@ function requireUserOrAdmin(req, res, next) {
             return res.status(403).json({ error: '权限不足' });
         }
         next();
+    } catch (err) {
+        if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
+        return res.status(401).json({ error: '令牌无效或已过期' });
+    }
+}
+
+function requireModeration(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: '请先登录' });
+    }
+    try {
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded.role === 'admin') {
+            const admin = validateAdminTokenPayload(decoded);
+            if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            req.admin = admin;
+            return next();
+        }
+        if (decoded.role === 'user') {
+            const user = validateUserTokenPayload(decoded);
+            if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
+            if (!isModeratorUser(user)) return res.status(403).json({ error: '权限不足' });
+            req.user = user;
+            return next();
+        }
+        return res.status(403).json({ error: '权限不足' });
     } catch (err) {
         if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
         return res.status(401).json({ error: '令牌无效或已过期' });
@@ -481,6 +516,15 @@ function getSettingValue(key) {
     }
 }
 
+function getSettingValueOrNull(key) {
+    try {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+        return row ? String(row.value || '') : null;
+    } catch {
+        return null;
+    }
+}
+
 function setSettingValue(key, value) {
     db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(key, String(value || ''), new Date().toISOString());
 }
@@ -497,6 +541,27 @@ function getAdminNotificationEmails() {
     return parseEmailList(getSettingValue('admin_notification_emails') || ADMIN_NOTIFICATION_EMAILS);
 }
 
+function parseCommentEmailBlockWords(value) {
+    return String(value || '')
+        .split(/[\n,;，；]+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .filter((item, index, array) => array.indexOf(item) === index)
+        .slice(0, 200);
+}
+
+function getCommentEmailBlockWords() {
+    const saved = getSettingValueOrNull('comment_email_block_words');
+    if (saved === null) return DEFAULT_COMMENT_EMAIL_BLOCK_WORDS;
+    return parseCommentEmailBlockWords(saved);
+}
+
+function isCommentEmailBlocked(content) {
+    const text = String(content || '').toLowerCase();
+    if (!text) return false;
+    return getCommentEmailBlockWords().some(word => text.includes(String(word).toLowerCase()));
+}
+
 function normalizeBaseUrl(value) {
     return String(value || '').trim().replace(/\/+$/, '');
 }
@@ -511,7 +576,7 @@ function getNewApiConfig() {
 
 function isNewApiConfigured() {
     const config = getNewApiConfig();
-    return Boolean(config.baseUrl && config.adminToken);
+    return Boolean(config.baseUrl && config.adminToken && config.adminUserId);
 }
 
 function getNewApiHeaders() {
@@ -530,6 +595,9 @@ async function requestNewApi(pathPart, options = {}) {
     const config = getNewApiConfig();
     if (!config.baseUrl || !config.adminToken) {
         throw new Error('STA1N API 未配置，请先在后台设置地址和管理员 Token');
+    }
+    if (!config.adminUserId) {
+        throw new Error('STA1N API 未配置管理用户 ID，请先在后台填写管理用户 ID');
     }
     const response = await fetch(`${config.baseUrl}${pathPart}`, {
         ...options,
@@ -724,6 +792,7 @@ function buildUserResponse(user) {
         requires_email_binding: !userEmailBound(user),
         download_credits: user.download_credits,
         created_at: user.created_at,
+        is_moderator: Number(user.is_moderator || 0),
         is_banned: user.is_banned || 0,
         ban_reason: user.ban_reason || null
     };
@@ -785,6 +854,7 @@ function sendAdminReviewPendingEmail({ itemType, title, uploader, ip }) {
 function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, title, content }) {
     const commentText = String(content || '').trim();
     if (!commentText) return;
+    if (isCommentEmailBlocked(commentText)) return;
     const htmlContent = escapeHtml(commentText).replace(/\n/g, '<br>');
     sendZeaburEmailQuietly({
         to,
@@ -1105,7 +1175,7 @@ app.post('/api/user/register', async (req, res) => {
             'INSERT INTO users (username, email, email_verified, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?, 1, ?)'
         ).run(normalizedUsername, email, hash, now);
 
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
         const token = generateUserToken(user);
         res.json({ token, user: buildUserResponse(user) });
@@ -1147,7 +1217,7 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
-    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user: buildUserResponse(user) });
 });
@@ -1166,7 +1236,7 @@ app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
         if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
 
         db.prepare('UPDATE users SET email = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(email, req.user.id);
-        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({ userType: 'user', userId: req.user.id, username: req.user.username, action: 'bind_email', targetType: 'user', targetId: String(req.user.id), ip: getRequestIp(req), details: { email: maskEmail(email) } });
         const token = generateUserToken(updated);
         res.json({ success: true, token, user: buildUserResponse(updated) });
@@ -1229,7 +1299,7 @@ app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
             return res.status(409).json({ error: '这个 STA1N API 用户 ID 已被其他账号绑定' });
         }
         db.prepare('UPDATE users SET newapi_user_id = ? WHERE id = ?').run(rawId, req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -1251,11 +1321,11 @@ app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
     try {
         const current = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
         if (!current?.newapi_user_id) {
-            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
             return res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
         }
         db.prepare("UPDATE users SET newapi_user_id = '' WHERE id = ?").run(req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -1635,8 +1705,8 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const params = [];
         let orderByClause = 'cc.created_at DESC';
 
-        if (req.admin) {
-            // Admin front-end mode can review every status.
+        if (req.admin || isModeratorUser(req.user)) {
+            // Admins and front-end moderators can review every status.
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
             params.push(req.user.id);
@@ -1680,8 +1750,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         const params = [];
         let orderByClause = 'created_at DESC';
 
-        if (req.admin) {
-            // Admin can review every status.
+        if (req.admin || isModeratorUser(req.user)) {
+            // Admins and front-end moderators can review every status.
         } else if (req.user) {
             whereParts.push("(review_status = 'approved' OR uploader_user_id = ?)");
             params.push(req.user.id);
@@ -1800,7 +1870,7 @@ app.post('/api/ui-templates', requireUserOrAdmin, (req, res) => {
     }
 });
 
-app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
+app.put('/api/admin/ui-templates/:id/review', requireModeration, (req, res) => {
     try {
         const status = String(req.body.status || '').trim();
         const reason = String(req.body.reason || '').trim().slice(0, 500);
@@ -1820,14 +1890,16 @@ app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
             `UPDATE ui_templates
              SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
              WHERE id = ?`
-        ).run(status, req.admin.id, now, status === 'rejected' ? reason : null, req.params.id);
+        ).run(status, req.admin?.id || null, now, status === 'rejected' ? reason : null, req.params.id);
 
         const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
         logOperation({
-            userType: 'admin',
-            userId: req.admin.id,
-            username: req.admin.username,
-            action: status === 'approved' ? 'admin_approve_ui_template' : 'admin_reject_ui_template',
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user.id,
+            username: req.admin?.username || req.user.username,
+            action: req.admin
+                ? (status === 'approved' ? 'admin_approve_ui_template' : 'admin_reject_ui_template')
+                : (status === 'approved' ? 'moderator_approve_ui_template' : 'moderator_reject_ui_template'),
             targetType: 'ui_template',
             targetId: req.params.id,
             ip: getRequestIp(req),
@@ -1844,7 +1916,7 @@ app.put('/api/admin/ui-templates/:id/review', authenticateAdmin, (req, res) => {
             });
         }
         updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
-        res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin } }) });
+        res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin, user: req.user } }) });
     } catch (err) {
         console.error('Review UI template error:', err);
         res.status(500).json({ error: '审核模板失败' });
@@ -1996,10 +2068,11 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
-        if (!req.admin && !(req.user && template.uploader_user_id === req.user.id)) {
+        if (!req.admin && !isModeratorUser(req.user) && !(req.user && template.uploader_user_id === req.user.id)) {
             const viewLimit = recordAccountViewHeat(req, 'ui_template', req.params.id);
             if (viewLimit.counted) {
                 db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
@@ -2021,11 +2094,12 @@ app.get('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
         const isOwner = req.user && template.uploader_user_id === req.user.id;
-        if (!req.admin && !isOwner) {
+        if (!req.admin && !isModeratorUser(req.user) && !isOwner) {
             db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
         }
         logOperation({
@@ -2054,11 +2128,12 @@ app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
         const isOwner = req.user && template.uploader_user_id === req.user.id;
-        if (!req.admin && !isOwner) {
+        if (!req.admin && !isModeratorUser(req.user) && !isOwner) {
             db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
         }
         logOperation({
@@ -2506,6 +2581,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const canView = card.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
@@ -2621,6 +2697,7 @@ app.delete('/api/cards/:id', (req, res) => {
     try {
         const token = authHeader.split(' ')[1];
         let isAdmin = false;
+        let isModerator = false;
         let userId = null;
         let username = '';
         try {
@@ -2637,6 +2714,7 @@ app.delete('/api/cards/:id', (req, res) => {
                 if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
                 userId = user.id;
                 username = user.username || '';
+                isModerator = isModeratorUser(user);
             }
         } catch {
             return res.status(401).json({ error: '认证失败' });
@@ -2648,9 +2726,9 @@ app.delete('/api/cards/:id', (req, res) => {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
-        // Only admin or card owner can delete
+        // Only admin, front-end moderator, or card owner can delete.
         const ownerUserId = card.uploader_user_id == null ? null : Number(card.uploader_user_id);
-        if (!isAdmin && (!userId || ownerUserId !== Number(userId))) {
+        if (!isAdmin && !isModerator && (!userId || ownerUserId !== Number(userId))) {
             return res.status(403).json({ error: '无权删除此卡片' });
         }
 
@@ -2664,7 +2742,16 @@ app.delete('/api/cards/:id', (req, res) => {
         deleteAndReclaim();
         thumbnailCache.delete(id);
 
-        logOperation({ userType: isAdmin ? 'admin' : 'user', userId, username, action: 'delete', targetType: 'card', targetId: id, ip: getRequestIp(req), details: { name: card?.name } });
+        logOperation({
+            userType: isAdmin ? 'admin' : 'user',
+            userId,
+            username,
+            action: isAdmin ? 'admin_delete_card' : (isModerator ? 'moderator_delete_card' : 'delete'),
+            targetType: 'card',
+            targetId: id,
+            ip: getRequestIp(req),
+            details: { name: card?.name }
+        });
         res.json([{ id }]);
     } catch (err) {
         console.error('Delete card error:', err);
@@ -2925,13 +3012,14 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const isOwner = req.user && card.uploader_user_id === req.user.id;
-        if (card.review_status !== 'approved' && !req.admin && !isOwner) {
+        const isModerator = isModeratorUser(req.user);
+        if (card.review_status !== 'approved' && !req.admin && !isModerator && !isOwner) {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
         let newCredits = null;
         const recordDownload = db.transaction(() => {
-            if (!req.admin) {
+            if (!req.admin && !isModerator) {
                 if (!isOwner) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                     if (result.changes === 0) {
@@ -2943,8 +3031,8 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
                 newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
             }
 
-            // Author/admin downloads don't inflate download count
-            if (!isOwner && !req.admin) {
+            // Author/admin/moderator downloads don't inflate download count
+            if (!isOwner && !req.admin && !isModerator) {
                 db.prepare('UPDATE character_cards SET downloads_count = downloads_count + 1 WHERE id = ?').run(id);
             }
         });
@@ -3066,6 +3154,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const canView = card.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
 
@@ -3201,6 +3290,7 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
@@ -3603,7 +3693,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
     }
 });
 
-app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
+app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
     try {
         const { id } = req.params;
         const status = String(req.body.status || '').trim();
@@ -3627,7 +3717,7 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
                 `UPDATE character_cards
                  SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
                  WHERE id = ?`
-            ).run(status, req.admin.id, now, status === 'rejected' ? reason : null, id);
+            ).run(status, req.admin?.id || null, now, status === 'rejected' ? reason : null, id);
 
             if (status === 'approved' && card.review_status !== 'approved' && card.uploader_user_id) {
                 db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(card.uploader_user_id);
@@ -3645,10 +3735,12 @@ app.put('/api/admin/cards/:id/review', authenticateAdmin, (req, res) => {
         attachUiTemplateSummary(updated);
 
         logOperation({
-            userType: 'admin',
-            userId: req.admin.id,
-            username: req.admin.username,
-            action: status === 'approved' ? 'admin_approve_card' : 'admin_reject_card',
+            userType: req.admin ? 'admin' : 'user',
+            userId: req.admin?.id || req.user.id,
+            username: req.admin?.username || req.user.username,
+            action: req.admin
+                ? (status === 'approved' ? 'admin_approve_card' : 'admin_reject_card')
+                : (status === 'approved' ? 'moderator_approve_card' : 'moderator_reject_card'),
             targetType: 'card',
             targetId: id,
             ip: getRequestIp(req),
@@ -3764,7 +3856,8 @@ app.get('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
             public_base_url: getSettingValue('public_base_url') || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || '',
             admin_emails: getAdminNotificationEmails().join('\n'),
-            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none')
+            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none'),
+            comment_block_words: getCommentEmailBlockWords().join('\n')
         });
     } catch (err) {
         console.error('Email settings load error:', err);
@@ -3780,6 +3873,7 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         const endpoint = String(req.body.endpoint || ZEABUR_EMAIL_ENDPOINT).trim();
         const publicBaseUrl = String(req.body.public_base_url || '').trim().replace(/\/+$/, '');
         const adminEmailsRaw = String(req.body.admin_emails || '').trim();
+        const commentBlockWordsRaw = String(req.body.comment_block_words ?? '').trim();
         const invalidAdminEmails = findInvalidEmails(adminEmailsRaw);
         const nonQqAdminEmails = findNonQqEmails(adminEmailsRaw);
 
@@ -3795,6 +3889,9 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         if (nonQqAdminEmails.length > 0) {
             return res.status(400).json({ error: `管理员通知邮箱仅支持 QQ 邮箱：${nonQqAdminEmails.slice(0, 3).join('、')}` });
         }
+        if (commentBlockWordsRaw.length > 5000) {
+            return res.status(400).json({ error: '评论邮件屏蔽词太多了，请删减后再保存' });
+        }
 
         if (clearApiKey) {
             db.prepare('DELETE FROM settings WHERE key = ?').run('zeabur_email_api_key');
@@ -3806,6 +3903,7 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         setSettingValue('zeabur_email_endpoint', endpoint);
         setSettingValue('public_base_url', publicBaseUrl);
         setSettingValue('admin_notification_emails', adminEmails.join('\n'));
+        setSettingValue('comment_email_block_words', parseCommentEmailBlockWords(commentBlockWordsRaw).join('\n'));
 
         logOperation({
             userType: 'admin',
@@ -3815,7 +3913,13 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             targetType: 'settings',
             targetId: 'email',
             ip: getRequestIp(req),
-            details: { from, api_key_updated: Boolean(apiKey), api_key_cleared: clearApiKey, admin_email_count: adminEmails.length }
+            details: {
+                from,
+                api_key_updated: Boolean(apiKey),
+                api_key_cleared: clearApiKey,
+                admin_email_count: adminEmails.length,
+                comment_block_word_count: parseCommentEmailBlockWords(commentBlockWordsRaw).length
+            }
         });
 
         const dbApiKey = getSettingValue('zeabur_email_api_key');
@@ -3830,7 +3934,8 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
             public_base_url: publicBaseUrl,
             admin_emails: getAdminNotificationEmails().join('\n'),
-            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none')
+            admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none'),
+            comment_block_words: getCommentEmailBlockWords().join('\n')
         });
     } catch (err) {
         console.error('Email settings save error:', err);
@@ -3843,7 +3948,7 @@ app.get('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
         const dbToken = getSettingValue('newapi_admin_token');
         const config = getNewApiConfig();
         res.json({
-            configured: Boolean(config.baseUrl && config.adminToken),
+            configured: isNewApiConfigured(),
             base_url: config.baseUrl || '',
             admin_user_id: config.adminUserId || '',
             admin_token_configured: Boolean(config.adminToken),
@@ -3898,7 +4003,7 @@ app.put('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
         const config = getNewApiConfig();
         res.json({
             success: true,
-            configured: Boolean(config.baseUrl && config.adminToken),
+            configured: isNewApiConfigured(),
             base_url: config.baseUrl || '',
             admin_user_id: config.adminUserId || '',
             admin_token_configured: Boolean(config.adminToken),
@@ -4194,12 +4299,12 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
         let where = '';
         const params = [];
         if (search) {
-            where = ' WHERE username LIKE ?';
-            params.push(`%${search}%`);
+            where = ' WHERE username LIKE ? OR email LIKE ? OR newapi_user_id LIKE ?';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
         const total = db.prepare(`SELECT COUNT(*) as count FROM users${where}`).get(...params).count;
         const users = db.prepare(
-            `SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+            `SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
 
         res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -4225,7 +4330,7 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
             return res.status(404).json({ error: '用户不存在' });
         }
 
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?').get(userId);
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
@@ -4241,6 +4346,39 @@ app.put('/api/admin/users/:id/credits', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('Admin update credits error:', err);
         res.status(500).json({ error: '更新下载次数失败' });
+    }
+});
+
+app.put('/api/admin/users/:id/moderator', authenticateAdmin, (req, res) => {
+    try {
+        const userId = Number(req.params.id);
+        if (!Number.isInteger(userId) || userId <= 0) {
+            return res.status(400).json({ error: '无效的用户 ID' });
+        }
+        const isModerator = req.body.is_moderator === true || req.body.is_moderator === 1 || req.body.is_moderator === 'true';
+        const user = db.prepare('SELECT id, username, is_moderator FROM users WHERE id = ?').get(userId);
+        if (!user) return res.status(404).json({ error: '用户不存在' });
+
+        db.prepare('UPDATE users SET is_moderator = ? WHERE id = ?').run(isModerator ? 1 : 0, userId);
+        const updated = db.prepare(
+            'SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
+        ).get(userId);
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: isModerator ? 'admin_grant_moderator' : 'admin_revoke_moderator',
+            targetType: 'user',
+            targetId: String(userId),
+            ip: getRequestIp(req),
+            details: { username: user.username }
+        });
+
+        res.json({ success: true, user: updated });
+    } catch (err) {
+        console.error('Admin update moderator error:', err);
+        res.status(500).json({ error: '更新前台审核员状态失败' });
     }
 });
 
@@ -4270,7 +4408,7 @@ app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
         }
 
         const updated = db.prepare(
-            'SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
+            'SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
         ).get(userId);
         logOperation({
             userType: 'admin',
@@ -4308,13 +4446,13 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
         const { id } = req.params;
         const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        if (card.review_status !== 'approved' && !req.admin && !(req.user && card.uploader_user_id === req.user.id)) {
+        if (card.review_status !== 'approved' && !req.admin && !isModeratorUser(req.user) && !(req.user && card.uploader_user_id === req.user.id)) {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
         // Skip view count increment for admins and card owners.
         const isOwner = req.user && card.uploader_user_id === req.user.id;
-        if (req.admin || isOwner) {
+        if (req.admin || isModeratorUser(req.user) || isOwner) {
             const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
             return res.json({ success: true, views_count: current.views_count, counted: false });
         }

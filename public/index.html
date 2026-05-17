@@ -322,7 +322,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         {{ uploadButtonLabel }}
                     </button>
-                    <button v-if="isAdmin" @click="currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
+                    <button v-if="canModerate" @click="currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                         审核
                     </button>
@@ -342,7 +342,7 @@
                         <div v-if="showUserMenu" class="absolute right-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 animate-scale-in">
                             <button @click="currentTab = 'mine'; showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                                我的卡片
+                                {{ canModerate ? '审核队列' : '我的卡片' }}
                             </button>
                             <button @click="openNewApiModal" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m-7-6a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
@@ -514,7 +514,7 @@
                 </div>
                 <h3 class="text-xl font-bold text-gray-800 mb-2">{{ emptyStateTitle }}</h3>
                 <p class="text-gray-500 max-w-xs mx-auto mb-8">{{ emptyStateDescription }}</p>
-                <button v-if="showEmptyStateAction" @click="searchQuery ? (searchQuery = '') : (contentSection === 'uitemplates' && currentTab === 'mine' && isAdmin ? currentTab = 'all' : handleUploadClick())" class="px-6 py-2 bg-primary-50 text-primary-600 rounded-xl font-bold hover:bg-primary-100 transition-colors">
+                <button v-if="showEmptyStateAction" @click="searchQuery ? (searchQuery = '') : (contentSection === 'uitemplates' && currentTab === 'mine' && canModerate ? currentTab = 'all' : handleUploadClick())" class="px-6 py-2 bg-primary-50 text-primary-600 rounded-xl font-bold hover:bg-primary-100 transition-colors">
                     {{ emptyStateActionLabel }}
                 </button>
             </div>
@@ -562,14 +562,14 @@
                                             <span class="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">{{ formatTemplateVariableBadge(template) }}</span>
                                         </div>
                                     </div>
-                                    <div v-if="isAdmin || isTemplateOwnedByCurrentUser(template)" class="flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
-                                        <button v-if="isAdmin && template.review_status === 'pending'"
+                                    <div v-if="canModerate || isTemplateOwnedByCurrentUser(template)" class="flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
+                                        <button v-if="canModerate && template.review_status === 'pending'"
                                                 @click.stop="reviewTemplate(template, 'approved')"
                                                 class="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all"
                                                 title="通过审核">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                                         </button>
-                                        <button v-if="isAdmin && template.review_status === 'pending'"
+                                        <button v-if="canModerate && template.review_status === 'pending'"
                                                 @click.stop="reviewTemplate(template, 'rejected')"
                                                 class="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
                                                 title="拒绝审核">
@@ -582,12 +582,14 @@
                                                 :title="template.is_featured ? '取消精选' : '设为精选'">
                                             <svg class="w-5 h-5" viewBox="0 0 24 24" :fill="template.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                                         </button>
-                                        <button @click.stop="startEditTemplate(template)"
+                                        <button v-if="isAdmin || isTemplateOwnedByCurrentUser(template)"
+                                                @click.stop="startEditTemplate(template)"
                                                 class="p-1.5 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
                                                 title="编辑">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                         </button>
-                                        <button @click.stop="deleteTemplate(template)"
+                                        <button v-if="isAdmin || isTemplateOwnedByCurrentUser(template)"
+                                                @click.stop="deleteTemplate(template)"
                                                 class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                                                 title="删除">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -656,13 +658,13 @@
                                 <div class="flex items-center gap-1 flex-shrink-0 ml-1">
 
                                     <!-- Feature Toggle Button (Admin Only) -->
-                                    <button v-if="isAdmin && card.review_status === 'pending'"
+                                    <button v-if="canModerate && card.review_status === 'pending'"
                                             @click.stop="reviewCard(card, 'approved')"
                                             class="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all flex-shrink-0"
                                             title="通过审核">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                                     </button>
-                                    <button v-if="isAdmin && card.review_status === 'pending'"
+                                    <button v-if="canModerate && card.review_status === 'pending'"
                                             @click.stop="reviewCard(card, 'rejected')"
                                             class="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"
                                             title="拒绝审核">
@@ -687,7 +689,7 @@
                                     </button>
 
                                     <!-- Delete Button (Only for my uploads or Admin) -->
-                                        <button v-if="(isLoggedIn && currentUser && card.uploader_user_id === currentUser.id) || isAdmin"
+                                        <button v-if="(isLoggedIn && currentUser && card.uploader_user_id === currentUser.id) || canModerate"
                                             @click.stop="deleteCard(card)"
                                             class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0 -mt-1 -mr-1"
                                             title="删除">
@@ -1414,7 +1416,7 @@
                     <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                         <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                     </button>
-                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -1617,7 +1619,7 @@
                         <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="startEditCard(selectedCard)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         </button>
-                        <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
+                        <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
@@ -1912,7 +1914,7 @@
                                 </button>
                             </div>
                             <p class="text-xs text-gray-400">最少提现 1🍪。收益会发到绑定的 STA1N API 用户 ID 上。</p>
-                            <p v-if="!newApiReward.newapi_configured" class="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">管理员还没配置 STA1N API，暂时不能提现。</p>
+                            <p v-if="!newApiReward.newapi_configured" class="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">管理员还没完整配置 STA1N API，暂时不能提现。</p>
                         </div>
                     </template>
                 </div>
@@ -2113,6 +2115,7 @@
                 const userToken = ref(safeStorage.getItem('user_token') || '');
                 const currentUser = ref(null);
                 const isLoggedIn = computed(() => !!currentUser.value);
+                const canModerate = computed(() => isAdmin.value || Boolean(currentUser.value?.is_moderator));
                 const requiresEmailBinding = computed(() => Boolean(currentUser.value?.requires_email_binding));
                 const showUserAuthModal = ref(false);
                 const userAuthMode = ref('login'); // 'login', 'register', or 'forgot'
@@ -2352,6 +2355,8 @@
                     'Authorization': 'Bearer ' + userToken.value,
                     'Content-Type': 'application/json'
                 });
+
+                const moderationAuthHeaders = () => isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
 
                 const startEmailCooldown = (targetRef, seconds = 30) => {
                     targetRef.value = Math.max(1, parseInt(seconds || 30));
@@ -2802,7 +2807,7 @@
 
                 const emptyStateTitle = computed(() => {
                     if (contentSection.value === 'uitemplates') {
-                        if (currentTab.value === 'mine' && isAdmin.value) return '没有待审核的 UI 模板';
+                        if (currentTab.value === 'mine' && canModerate.value) return '没有待审核的 UI 模板';
                         if (currentTab.value === 'mine') return '你还没有上传 UI 模板';
                         return searchQuery.value ? '没有找到匹配的 UI 模板' : 'UI模板还没有作品';
                     }
@@ -2811,7 +2816,7 @@
 
                 const emptyStateDescription = computed(() => {
                     if (contentSection.value === 'uitemplates') {
-                        if (currentTab.value === 'mine' && isAdmin.value) return '新的模板投稿会出现在这里。';
+                        if (currentTab.value === 'mine' && canModerate.value) return '新的模板投稿会出现在这里。';
                         if (currentTab.value === 'mine') return '上传一个独立模板文件，就能在这里管理它。';
                         return searchQuery.value
                             ? '换个关键词试试，或清空搜索看看全部模板。'
@@ -2822,13 +2827,13 @@
 
                 const emptyStateActionLabel = computed(() => {
                     if (searchQuery.value) return '清除搜索条件';
-                    if (contentSection.value === 'uitemplates') return isAdmin.value && currentTab.value === 'mine' ? '返回广场' : '上传';
+                    if (contentSection.value === 'uitemplates') return canModerate.value && currentTab.value === 'mine' ? '返回广场' : '上传';
                     return '上传角色卡';
                 });
 
                 const showEmptyStateAction = computed(() => {
                     if (searchQuery.value) return true;
-                    return contentSection.value === 'uitemplates' && currentTab.value === 'mine' && isAdmin.value;
+                    return contentSection.value === 'uitemplates' && currentTab.value === 'mine' && canModerate.value;
                 });
 
                 const uploadButtonLabel = computed(() => {
@@ -2859,7 +2864,7 @@
 
                     // Tab filter
                     if (currentTab.value === 'mine') {
-                        if (isAdmin.value) {
+                        if (canModerate.value) {
                             result = result.filter(c => c.review_status === 'pending');
                         } else {
                             result = result.filter(c => isCardOwnedByCurrentUser(c));
@@ -2905,7 +2910,7 @@
                     let result = [...uiTemplates.value];
 
                     if (currentTab.value === 'mine') {
-                        if (isAdmin.value) {
+                        if (canModerate.value) {
                             result = result.filter(item => item.review_status === 'pending');
                         } else {
                             result = result.filter(item => isTemplateOwnedByCurrentUser(item));
@@ -3789,7 +3794,7 @@
                 };
 
                 const reviewTemplate = async (template, status) => {
-                    if (!isAdmin.value || !template) return;
+                    if (!canModerate.value || !template) return;
                     let reason = '';
                     if (status === 'rejected') {
                         reason = prompt('请输入拒绝原因（可留空）：') || '';
@@ -3797,7 +3802,7 @@
                     try {
                         const resp = await fetch(API_BASE + '/api/admin/ui-templates/' + template.id + '/review', {
                             method: 'PUT',
-                            headers: adminAuthHeaders(),
+                            headers: moderationAuthHeaders(),
                             body: JSON.stringify({ status, reason })
                         });
                         const data = await resp.json().catch(() => ({}));
@@ -3932,7 +3937,7 @@
                 };
 
                 const reviewCard = async (card, status) => {
-                    if (!isAdmin.value || !card) return;
+                    if (!canModerate.value || !card) return;
                     let reason = '';
                     if (status === 'rejected') {
                         reason = prompt('请输入拒绝原因（可留空）：') || '';
@@ -3940,7 +3945,7 @@
                     try {
                         const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id + '/review', {
                             method: 'PUT',
-                            headers: adminAuthHeaders(),
+                            headers: moderationAuthHeaders(),
                             body: JSON.stringify({ status, reason })
                         });
                         const data = await resp.json().catch(() => ({}));
@@ -4438,8 +4443,8 @@
                 const downloadButtonLabel = computed(() => {
                     if (selectedCard.value) {
                         const isOwner = isCardOwnedByCurrentUser(selectedCard.value);
-                        if (!isAdmin.value && !isOwner && !isLoggedIn.value) return '登录后下载';
-                        if (!isAdmin.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
+                        if (!canModerate.value && !isOwner && !isLoggedIn.value) return '登录后下载';
+                        if (!canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
                     }
                     if (isDownloadingCard.value) return '正在生成下载文件...';
                     if (previewAsset.loading) return '原图加载中...';
@@ -4985,7 +4990,7 @@
                 const downloadCard = async (card) => {
                     // Require login to download
                     const isOwner = isCardOwnedByCurrentUser(card);
-                    if (!isAdmin.value && !isOwner && !isLoggedIn.value) {
+                    if (!canModerate.value && !isOwner && !isLoggedIn.value) {
                         showUserAuthModal.value = true;
                         userAuthMode.value = 'login';
                         showToast('请先登录后再下载', 'warning', 4000);
@@ -4993,7 +4998,7 @@
                     }
 
                     // Credit Check
-                    if (!isAdmin.value && !isOwner) {
+                    if (!canModerate.value && !isOwner) {
                         if (downloadCredits.value <= 0) {
                             if (!isLoggedIn.value) {
                                 showUserAuthModal.value = true;
@@ -5007,7 +5012,7 @@
 
                     isDownloadingCard.value = true;
                     try {
-                        const headers = isLoggedIn.value ? userAuthHeaders() : (isAdmin.value ? adminAuthHeaders() : { 'Content-Type': 'application/json' });
+                        const headers = isAdmin.value ? adminAuthHeaders() : (isLoggedIn.value ? userAuthHeaders() : { 'Content-Type': 'application/json' });
                         const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/download', {
                             method: 'POST',
                             headers
@@ -5017,8 +5022,8 @@
                             throw new Error(data.error || '下载次数更新失败');
                         }
 
-                        // Only increment local download count for non-owners (owners don't inflate count)
-                        if (!isCardOwnedByCurrentUser(card)) {
+                        // Only regular non-owner downloads inflate local count.
+                        if (!isCardOwnedByCurrentUser(card) && !canModerate.value) {
                             const listCard = cards.value.find(item => item.id === card.id);
                             if (listCard) {
                                 listCard.downloads_count = (listCard.downloads_count || 0) + 1;
@@ -5333,7 +5338,7 @@
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
                     formatTemplateVariableBadge, formatCardUiVariableBadge,
                     handleMobileScroll,
-                    isAdmin, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview, renderUiTemplatePreview,
+                    isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
                     comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
