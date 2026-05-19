@@ -58,7 +58,7 @@ function initDatabase() {
             downloads_count INTEGER DEFAULT 0,
             comment_count_override INTEGER,
             uploader_user_id INTEGER,
-            review_status TEXT DEFAULT 'approved',
+            review_status TEXT DEFAULT 'pending',
             reviewed_by_admin_id INTEGER,
             reviewed_at DATETIME,
             rejection_reason TEXT,
@@ -148,7 +148,7 @@ function initDatabase() {
             comment_count_override INTEGER,
             is_featured INTEGER DEFAULT 0,
             uploader_user_id INTEGER,
-            review_status TEXT DEFAULT 'approved',
+            review_status TEXT DEFAULT 'pending',
             reviewed_by_admin_id INTEGER,
             reviewed_at DATETIME,
             rejection_reason TEXT,
@@ -339,6 +339,128 @@ function initDatabase() {
         )
     `); } catch (e) { /* table exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
+
+    try {
+        db.exec(`
+            CREATE TRIGGER IF NOT EXISTS trg_character_cards_review_guard_insert
+            AFTER INSERT ON character_cards
+            WHEN NEW.review_status IS NULL
+                OR NEW.review_status = ''
+                OR (NEW.review_status = 'approved' AND NEW.reviewed_at IS NULL)
+            BEGIN
+                UPDATE character_cards
+                   SET review_status = 'pending',
+                       reviewed_by_admin_id = NULL,
+                       reviewed_at = NULL,
+                       rejection_reason = NULL
+                 WHERE id = NEW.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_character_cards_review_guard_update
+            AFTER UPDATE OF review_status ON character_cards
+            WHEN NEW.review_status IS NULL
+                OR NEW.review_status = ''
+                OR (NEW.review_status = 'approved' AND NEW.reviewed_at IS NULL)
+            BEGIN
+                UPDATE character_cards
+                   SET review_status = 'pending',
+                       reviewed_by_admin_id = NULL,
+                       reviewed_at = NULL,
+                       rejection_reason = NULL
+                 WHERE id = NEW.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_ui_templates_review_guard_insert
+            AFTER INSERT ON ui_templates
+            WHEN NEW.review_status IS NULL
+                OR NEW.review_status = ''
+                OR (NEW.review_status = 'approved' AND NEW.reviewed_at IS NULL)
+            BEGIN
+                UPDATE ui_templates
+                   SET review_status = 'pending',
+                       reviewed_by_admin_id = NULL,
+                       reviewed_at = NULL,
+                       rejection_reason = NULL
+                 WHERE id = NEW.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_ui_templates_review_guard_update
+            AFTER UPDATE OF review_status ON ui_templates
+            WHEN NEW.review_status IS NULL
+                OR NEW.review_status = ''
+                OR (NEW.review_status = 'approved' AND NEW.reviewed_at IS NULL)
+            BEGIN
+                UPDATE ui_templates
+                   SET review_status = 'pending',
+                       reviewed_by_admin_id = NULL,
+                       reviewed_at = NULL,
+                       rejection_reason = NULL
+                 WHERE id = NEW.id;
+            END;
+        `);
+    } catch (e) {
+        console.warn('[DB] Failed to install review guard triggers:', e.message);
+    }
+
+    try {
+        const repairedCards = db.prepare(`
+            UPDATE character_cards
+               SET review_status = 'pending',
+                   reviewed_by_admin_id = NULL,
+                   reviewed_at = NULL,
+                   rejection_reason = NULL
+             WHERE review_status = 'approved'
+               AND EXISTS (
+                   SELECT 1
+                     FROM operation_logs
+                    WHERE target_type = 'card'
+                      AND target_id = character_cards.id
+                      AND action = 'upload_pending'
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM operation_logs
+                    WHERE target_type = 'card'
+                      AND target_id = character_cards.id
+                      AND action IN ('admin_approve_card', 'moderator_approve_card')
+               )
+        `).run();
+        if (repairedCards.changes > 0) {
+            console.warn(`[DB] Reverted ${repairedCards.changes} unreviewed approved card(s) back to pending.`);
+        }
+    } catch (e) {
+        console.warn('[DB] Failed to repair unreviewed approved cards:', e.message);
+    }
+
+    try {
+        const repairedTemplates = db.prepare(`
+            UPDATE ui_templates
+               SET review_status = 'pending',
+                   reviewed_by_admin_id = NULL,
+                   reviewed_at = NULL,
+                   rejection_reason = NULL
+             WHERE review_status = 'approved'
+               AND EXISTS (
+                   SELECT 1
+                     FROM operation_logs
+                    WHERE target_type = 'ui_template'
+                      AND target_id = ui_templates.id
+                      AND action = 'upload_ui_template_pending'
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM operation_logs
+                    WHERE target_type = 'ui_template'
+                      AND target_id = ui_templates.id
+                      AND action IN ('admin_approve_ui_template', 'moderator_approve_ui_template')
+               )
+        `).run();
+        if (repairedTemplates.changes > 0) {
+            console.warn(`[DB] Reverted ${repairedTemplates.changes} unreviewed approved UI template(s) back to pending.`);
+        }
+    } catch (e) {
+        console.warn('[DB] Failed to repair unreviewed approved UI templates:', e.message);
+    }
 
     // Seed admin user from environment variables
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';

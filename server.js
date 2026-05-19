@@ -893,7 +893,7 @@ function sendNewApiRedemptionSuccessEmail({ to, username, cookies, newApiUserId 
 }
 
 function cardCommentCountExpr(cardAlias = 'character_cards') {
-    return `COALESCE(${cardAlias}.comment_count_override, (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = ${cardAlias}.id))`;
+    return `(SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = ${cardAlias}.id)`;
 }
 
 function cardCommentHeatCountExpr(cardAlias = 'character_cards') {
@@ -901,7 +901,7 @@ function cardCommentHeatCountExpr(cardAlias = 'character_cards') {
 }
 
 function templateCommentCountExpr(templateAlias = 'ui_templates') {
-    return `COALESCE(${templateAlias}.comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id))`;
+    return `(SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id)`;
 }
 
 function templateCommentHeatCountExpr(templateAlias = 'ui_templates') {
@@ -2969,6 +2969,9 @@ app.put('/api/cards/:id', (req, res) => {
             } catch (parseError) {
                 return res.status(400).json({ error: '卡片数据格式无效' });
             }
+            if (decoded.role === 'user' && !hasRpHubWatermark(serializedData)) {
+                return res.status(400).json({ error: NON_RPH_CARD_UPLOAD_MESSAGE });
+            }
             fields.push('data = ?');
             values.push(serializedData);
         }
@@ -2978,10 +2981,9 @@ app.put('/api/cards/:id', (req, res) => {
             fields.push('created_at = ?'); values.push(created_at);
         }
         if (decoded.role === 'user') {
-            fields.push("review_status = 'approved'");
+            fields.push("review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
-            fields.push('reviewed_at = ?');
-            values.push(new Date().toISOString());
+            fields.push('reviewed_at = NULL');
             fields.push('rejection_reason = NULL');
         }
 
@@ -2989,9 +2991,6 @@ app.put('/api/cards/:id', (req, res) => {
         values.push(req.params.id);
         const updateCard = db.transaction(() => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
-            if (decoded.role === 'user' && card.review_status !== 'approved' && card.uploader_user_id) {
-                db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(card.uploader_user_id);
-            }
         });
         updateCard();
         thumbnailCache.delete(req.params.id);
@@ -3047,7 +3046,8 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
-        const { views_count, downloads_count, comment_count } = req.body;
+        const { views_count, downloads_count } = req.body;
+        const commentHeatCount = req.body.comment_heat_count ?? req.body.comment_count;
         const fields = [];
         const values = [];
 
@@ -3063,9 +3063,9 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
             fields.push('downloads_count = ?');
             values.push(d);
         }
-        if (comment_count !== undefined) {
-            const c = parseInt(comment_count);
-            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论数必须是非负整数' });
+        if (commentHeatCount !== undefined) {
+            const c = parseInt(commentHeatCount);
+            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论用户数必须是非负整数' });
             fields.push('comment_count_override = ?');
             values.push(c);
         }
@@ -3078,7 +3078,7 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
             action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
-            details: { name: card.name, views_count, downloads_count, comment_count }
+            details: { name: card.name, views_count, downloads_count, comment_heat_count: commentHeatCount }
         });
 
         const updated = db.prepare(
@@ -3113,7 +3113,8 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
         ).get(id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
 
-        const { views_count, downloads_count, comment_count } = req.body;
+        const { views_count, downloads_count } = req.body;
+        const commentHeatCount = req.body.comment_heat_count ?? req.body.comment_count;
         const fields = [];
         const values = [];
         if (views_count !== undefined) {
@@ -3128,9 +3129,9 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
             fields.push('downloads_count = ?');
             values.push(d);
         }
-        if (comment_count !== undefined) {
-            const c = parseInt(comment_count);
-            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论数必须是非负整数' });
+        if (commentHeatCount !== undefined) {
+            const c = parseInt(commentHeatCount);
+            if (!Number.isInteger(c) || c < 0) return res.status(400).json({ error: '评论用户数必须是非负整数' });
             fields.push('comment_count_override = ?');
             values.push(c);
         }
@@ -3146,7 +3147,7 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
             targetType: 'ui_template',
             targetId: id,
             ip: getRequestIp(req),
-            details: { title: template.title, views_count, downloads_count, comment_count }
+            details: { title: template.title, views_count, downloads_count, comment_heat_count: commentHeatCount }
         });
 
         const updated = db.prepare(

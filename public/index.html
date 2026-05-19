@@ -1643,7 +1643,7 @@
                     <div class="text-sm font-bold text-gray-600 truncate">{{ editingHeatType === 'template' ? '模板' : '卡片' }}：{{ editingHeatCard.name || editingHeatCard.title }}</div>
                     <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-2">
                         <svg class="w-4 h-4 text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
-                        <span>当前热度：<b class="text-orange-500">{{ editingHeatType === 'template' ? computeTemplateHeat(editingHeatCard) : computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×2 + 下载×2.5）</span>
+                        <span>当前热度：<b class="text-orange-500">{{ editingHeatType === 'template' ? computeTemplateHeat(editingHeatCard) : computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论用户×2 + 下载×2.5）</span>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
@@ -1658,10 +1658,10 @@
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
                             <span class="flex items-center gap-1">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
-                                评论数
+                                评论用户数
                             </span>
                         </label>
-                        <input v-model.number="heatEditForm.comment_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
+                        <input v-model.number="heatEditForm.comment_heat_count" type="number" min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-sm font-mono">
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
@@ -4766,14 +4766,14 @@
                 const showHeatEditModal = ref(false);
                 const editingHeatCard = ref(null);
                 const editingHeatType = ref('card');
-                const heatEditForm = reactive({ views_count: 0, comment_count: 0, downloads_count: 0 });
+                const heatEditForm = reactive({ views_count: 0, comment_heat_count: 0, downloads_count: 0 });
 
                 const openHeatEdit = (card, type = 'card') => {
                     if (!isAdmin.value) return;
                     editingHeatCard.value = card;
                     editingHeatType.value = type;
                     heatEditForm.views_count = card.views_count || 0;
-                    heatEditForm.comment_count = card.comment_count || 0;
+                    heatEditForm.comment_heat_count = getCommentHeatCount(card);
                     heatEditForm.downloads_count = card.downloads_count || 0;
                     showHeatEditModal.value = true;
                 };
@@ -4787,7 +4787,7 @@
                             headers: adminAuthHeaders(),
                             body: JSON.stringify({
                                 views_count: parseInt(heatEditForm.views_count) || 0,
-                                comment_count: parseInt(heatEditForm.comment_count) || 0,
+                                comment_heat_count: parseInt(heatEditForm.comment_heat_count) || 0,
                                 downloads_count: parseInt(heatEditForm.downloads_count) || 0
                             })
                         });
@@ -4816,6 +4816,7 @@
                             selectedCard.value.comment_count = data.comment_count;
                             if (data.comment_heat_count !== undefined) selectedCard.value.comment_heat_count = data.comment_heat_count;
                             selectedCard.value.downloads_count = data.downloads_count;
+                            if (data.heat_score !== undefined) selectedCard.value.heat_score = data.heat_score;
                         }
                         showHeatEditModal.value = false;
                         showToast('热度调整成功', 'success');
