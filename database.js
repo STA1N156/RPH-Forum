@@ -249,9 +249,11 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
+        CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_user ON comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_id ON ui_template_comments(template_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_comment ON ui_template_comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_user ON ui_template_comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_card_likes_card ON card_likes(card_id);
@@ -291,6 +293,7 @@ function initDatabase() {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_users_is_banned ON users(is_banned)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN data_hash TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
@@ -301,6 +304,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("ALTER TABLE character_cards ADD COLUMN review_status TEXT DEFAULT 'approved'"); } catch (e) { /* column exists */ }
@@ -365,12 +369,16 @@ function initDatabase() {
         tag_library: '',
         hidden_popular_tags: '',
         hidden_tag_library: '',
-        comment_email_block_words: '已严肃\n严肃'
+        comment_email_block_words: '已严肃\n严肃\n12345'
     };
     const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [key, value] of Object.entries(defaultSettings)) {
         upsertSetting.run(key, value);
     }
+    try {
+        db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ?')
+            .run('已严肃\n严肃\n12345', 'comment_email_block_words', '已严肃\n严肃');
+    } catch (e) { /* best effort default migration */ }
 
     console.log(`[DB] Database initialized at ${DB_PATH}`);
 }

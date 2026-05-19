@@ -1643,7 +1643,7 @@
                     <div class="text-sm font-bold text-gray-600 truncate">{{ editingHeatType === 'template' ? '模板' : '卡片' }}：{{ editingHeatCard.name || editingHeatCard.title }}</div>
                     <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 flex items-center gap-2">
                         <svg class="w-4 h-4 text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
-                        <span>当前热度：<b class="text-orange-500">{{ editingHeatType === 'template' ? computeTemplateHeat(editingHeatCard) : computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×1.5 + 下载×2.5）</span>
+                        <span>当前热度：<b class="text-orange-500">{{ editingHeatType === 'template' ? computeTemplateHeat(editingHeatCard) : computeHeat(editingHeatCard) }}</b>（浏览×1.0 + 评论×2 + 下载×2.5）</span>
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1.5">
@@ -2848,9 +2848,11 @@
                     return `${Number(card?.ui_template_variable_count || 0)}个变量`;
                 };
 
+                const getCommentHeatCount = (item) => Number(item?.comment_heat_count ?? item?.comment_count ?? 0);
+
                 const calculateTemplateHeatFromCounts = (template) => {
                     if (!template) return 0;
-                    return Math.round((template.views_count || 0) * 1.0 + (template.comment_count || 0) * 1.5 + (template.downloads_count || 0) * 2.5);
+                    return Math.round((template.views_count || 0) * 1.0 + getCommentHeatCount(template) * 2 + (template.downloads_count || 0) * 2.5);
                 };
 
                 const computeTemplateHeat = (template) => {
@@ -2883,7 +2885,7 @@
                     }
 
                     // Sorting & filtering by time range
-                    const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + (c.comment_count || 0) * 1.5 + (c.downloads_count || 0) * 2.5;
+                    const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + getCommentHeatCount(c) * 2 + (c.downloads_count || 0) * 2.5;
                     const sortMode = cardSort.value;
 
                     if (sortMode === 'featured') {
@@ -3024,6 +3026,7 @@
                     const apply = (template) => {
                         if (!template) return;
                         if (metrics.comment_count !== undefined) template.comment_count = Number(metrics.comment_count || 0);
+                        if (metrics.comment_heat_count !== undefined) template.comment_heat_count = Number(metrics.comment_heat_count || 0);
                         if (metrics.views_count !== undefined) template.views_count = Number(metrics.views_count || 0);
                         if (metrics.heat_score !== undefined) template.heat_score = Number(metrics.heat_score || 0);
                         if (metrics.downloads_count !== undefined) template.downloads_count = Number(metrics.downloads_count || 0);
@@ -3031,6 +3034,22 @@
                     apply(uiTemplates.value.find(item => item.id === templateId));
                     if (selectedTemplate.value && selectedTemplate.value.id === templateId) {
                         apply(selectedTemplate.value);
+                    }
+                };
+
+                const applyCardMetrics = (cardId, metrics) => {
+                    if (!cardId || !metrics) return;
+                    const apply = (card) => {
+                        if (!card) return;
+                        if (metrics.comment_count !== undefined) card.comment_count = Number(metrics.comment_count || 0);
+                        if (metrics.comment_heat_count !== undefined) card.comment_heat_count = Number(metrics.comment_heat_count || 0);
+                        if (metrics.views_count !== undefined) card.views_count = Number(metrics.views_count || 0);
+                        if (metrics.downloads_count !== undefined) card.downloads_count = Number(metrics.downloads_count || 0);
+                        if (metrics.heat_score !== undefined) card.heat_score = Number(metrics.heat_score || 0);
+                    };
+                    apply(cards.value.find(item => item.id === cardId));
+                    if (selectedCard.value && selectedCard.value.id === cardId) {
+                        apply(selectedCard.value);
                     }
                 };
 
@@ -4700,9 +4719,14 @@
                                 selectedTemplate.value.heat_score = calculateTemplateHeatFromCounts(selectedTemplate.value);
                             }
                         } else if (selectedCard.value) {
-                            const listCard = cards.value.find(c => c.id === selectedCard.value.id);
-                            if (listCard) {
-                                listCard.comment_count = (listCard.comment_count || 0) + 1;
+                            if (data.card_metrics) {
+                                applyCardMetrics(selectedCard.value.id, data.card_metrics);
+                            } else {
+                                const listCard = cards.value.find(c => c.id === selectedCard.value.id);
+                                if (listCard) {
+                                    listCard.comment_count = (listCard.comment_count || 0) + 1;
+                                }
+                                selectedCard.value.comment_count = (selectedCard.value.comment_count || 0) + 1;
                             }
                         }
 
@@ -4735,7 +4759,7 @@
                 };
 
                 const computeHeat = (card) => {
-                    return Math.round((card.views_count || 0) * 1.0 + (card.comment_count || 0) * 1.5 + (card.downloads_count || 0) * 2.5);
+                    return Math.round((card.views_count || 0) * 1.0 + getCommentHeatCount(card) * 2 + (card.downloads_count || 0) * 2.5);
                 };
 
                 // ============== Admin Heat Adjustment ==============
@@ -4777,17 +4801,20 @@
                         if (listItem) {
                             listItem.views_count = data.views_count;
                             listItem.comment_count = data.comment_count;
+                            if (data.comment_heat_count !== undefined) listItem.comment_heat_count = data.comment_heat_count;
                             listItem.downloads_count = data.downloads_count;
                             if (data.heat_score !== undefined) listItem.heat_score = data.heat_score;
                         }
                         if (isTemplateHeat && selectedTemplate.value && selectedTemplate.value.id === editingHeatCard.value.id) {
                             selectedTemplate.value.views_count = data.views_count;
                             selectedTemplate.value.comment_count = data.comment_count;
+                            if (data.comment_heat_count !== undefined) selectedTemplate.value.comment_heat_count = data.comment_heat_count;
                             selectedTemplate.value.downloads_count = data.downloads_count;
                             if (data.heat_score !== undefined) selectedTemplate.value.heat_score = data.heat_score;
                         } else if (!isTemplateHeat && selectedCard.value && selectedCard.value.id === editingHeatCard.value.id) {
                             selectedCard.value.views_count = data.views_count;
                             selectedCard.value.comment_count = data.comment_count;
+                            if (data.comment_heat_count !== undefined) selectedCard.value.comment_heat_count = data.comment_heat_count;
                             selectedCard.value.downloads_count = data.downloads_count;
                         }
                         showHeatEditModal.value = false;
@@ -4873,9 +4900,14 @@
                                 selectedTemplate.value.heat_score = calculateTemplateHeatFromCounts(selectedTemplate.value);
                             }
                         } else if (selectedCard.value) {
-                            const listCard = cards.value.find(c => c.id === selectedCard.value.id);
-                            if (listCard) {
-                                listCard.comment_count = Math.max(0, (listCard.comment_count || 0) - removedCount);
+                            if (data.card_metrics) {
+                                applyCardMetrics(selectedCard.value.id, data.card_metrics);
+                            } else {
+                                const listCard = cards.value.find(c => c.id === selectedCard.value.id);
+                                if (listCard) {
+                                    listCard.comment_count = Math.max(0, (listCard.comment_count || 0) - removedCount);
+                                }
+                                selectedCard.value.comment_count = Math.max(0, (selectedCard.value.comment_count || 0) - removedCount);
                             }
                         }
                         showToast('评论已删除', 'success');

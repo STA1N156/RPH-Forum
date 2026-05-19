@@ -41,10 +41,13 @@ const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_
 const HEAT_EMAIL_STEP = 500;
 const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '8', 10));
 const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
+const VIEW_HEAT_WEIGHT = 1.0;
+const COMMENT_HEAT_WEIGHT = 2;
+const DOWNLOAD_HEAT_WEIGHT = 2.5;
 const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_WINDOW_HOURS || '24', 10) || 24);
 const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
 const NEWAPI_USER_STATUS_ENABLED = 1;
-const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃'];
+const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃', '12345'];
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -545,6 +548,17 @@ function normalizeCommentEmailBlockText(value) {
     return String(value ?? '').normalize('NFKC').toLowerCase();
 }
 
+function normalizeDuplicateCommentText(value) {
+    return String(value ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ');
+}
+
+function hasDuplicateCommentContent({ table, itemColumn, itemId, userId, content }) {
+    const normalizedContent = normalizeDuplicateCommentText(content);
+    if (!normalizedContent) return false;
+    const rows = db.prepare(`SELECT content FROM ${table} WHERE ${itemColumn} = ? AND user_id = ?`).all(itemId, userId);
+    return rows.some(row => normalizeDuplicateCommentText(row.content) === normalizedContent);
+}
+
 function parseCommentEmailBlockWords(value) {
     return normalizeCommentEmailBlockText(value)
         .split(/[\n,;，；]+/)
@@ -868,12 +882,50 @@ function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, 
     });
 }
 
+function sendNewApiRedemptionSuccessEmail({ to, username, cookies, newApiUserId }) {
+    const cookiesText = floorToTwoDecimals(cookies).toFixed(2).replace(/\.?0+$/, '');
+    sendZeaburEmailQuietly({
+        to,
+        subject: `提现成功：${cookiesText}🍪`,
+        html: `<p>${escapeHtml(username || '你好')}，你的提现已经成功到账。</p><p>提现数量：${escapeHtml(cookiesText)}🍪</p><p>STA1N API ID：${escapeHtml(newApiUserId || '-')}</p>`,
+        text: `${username || '你好'}，你的提现已经成功到账。\n提现数量：${cookiesText}🍪\nSTA1N API ID：${newApiUserId || '-'}`
+    });
+}
+
+function cardCommentCountExpr(cardAlias = 'character_cards') {
+    return `COALESCE(${cardAlias}.comment_count_override, (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = ${cardAlias}.id))`;
+}
+
+function cardCommentHeatCountExpr(cardAlias = 'character_cards') {
+    return `COALESCE(${cardAlias}.comment_count_override, (SELECT COUNT(DISTINCT COALESCE(CAST(cmt.user_id AS TEXT), cmt.id)) FROM character_comments cmt WHERE cmt.card_id = ${cardAlias}.id))`;
+}
+
+function templateCommentCountExpr(templateAlias = 'ui_templates') {
+    return `COALESCE(${templateAlias}.comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id))`;
+}
+
+function templateCommentHeatCountExpr(templateAlias = 'ui_templates') {
+    return `COALESCE(${templateAlias}.comment_count_override, (SELECT COUNT(DISTINCT COALESCE(CAST(utc.user_id AS TEXT), utc.id)) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id))`;
+}
+
+function getCommentHeatCount(row) {
+    return Number(row?.comment_heat_count ?? row?.comment_count ?? 0);
+}
+
+function computeContentHeatFromRow(row) {
+    return Math.round(
+        (row.views_count || 0) * VIEW_HEAT_WEIGHT
+        + getCommentHeatCount(row) * COMMENT_HEAT_WEIGHT
+        + (row.downloads_count || 0) * DOWNLOAD_HEAT_WEIGHT
+    );
+}
+
 function computeCardHeatFromRow(row) {
-    return Math.round((row.views_count || 0) * 1.0 + (row.comment_count || 0) * 1.5 + (row.downloads_count || 0) * 2.5);
+    return computeContentHeatFromRow(row);
 }
 
 function computeTemplateHeatFromRow(row) {
-    return Math.round((row.views_count || 0) * 1.0 + (row.comment_count || 0) * 1.5 + (row.downloads_count || 0) * 2.5);
+    return computeContentHeatFromRow(row);
 }
 
 function floorToTwoDecimals(value) {
@@ -979,7 +1031,7 @@ function getUsersNewApiRewardStatsMap(userIds) {
 
     const cardRows = db.prepare(
         `SELECT uploader_user_id AS user_id, views_count, downloads_count,
-                COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+                ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
          FROM character_cards
          WHERE uploader_user_id IN (${placeholders}) AND review_status = 'approved'`
     ).all(...ids);
@@ -991,7 +1043,7 @@ function getUsersNewApiRewardStatsMap(userIds) {
 
     const templateRows = db.prepare(
         `SELECT uploader_user_id AS user_id, views_count, downloads_count,
-                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+                ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
          FROM ui_templates
          WHERE uploader_user_id IN (${placeholders}) AND review_status = 'approved'`
     ).all(...ids);
@@ -1013,7 +1065,7 @@ function maybeSendCardHeatMilestoneEmail(cardId, req) {
         const row = db.prepare(
             `SELECT cc.id, cc.name, cc.views_count, cc.downloads_count, cc.heat_email_milestone,
                     u.username, u.email, u.email_verified,
-                    COALESCE(cc.comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = cc.id)) AS comment_count
+                    ${cardCommentHeatCountExpr('cc')} AS comment_heat_count
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
              WHERE cc.id = ?`
@@ -1447,6 +1499,14 @@ app.post('/api/user/newapi/redeem', authenticateUser, async (req, res) => {
                 quota_after: newApiResult.quotaAfter
             }
         });
+        if (userEmailBound(req.user)) {
+            sendNewApiRedemptionSuccessEmail({
+                to: req.user.email,
+                username: req.user.username,
+                cookies: reservation.cookies,
+                newApiUserId: reservation.newapiUserId
+            });
+        }
         res.json({
             success: true,
             cookies: reservation.cookies,
@@ -1709,17 +1769,29 @@ function isValidJsonContent(content) {
     }
 }
 
+function getUiTemplateCommentCounts(templateId) {
+    return db.prepare(
+        `SELECT
+            ${templateCommentCountExpr('ui_templates')} AS comment_count,
+            ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
+         FROM ui_templates
+         WHERE id = ?`
+    ).get(templateId) || { comment_count: 0, comment_heat_count: 0 };
+}
+
 function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}) {
     if (!row) return row;
     const result = { ...row };
     const commentCount = Number(row.comment_count || 0);
+    const commentHeatCount = getCommentHeatCount(row);
     const downloadsCount = Number(row.downloads_count || 0);
     const viewsCount = Number(row.views_count || 0);
     const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
     result.content_preview = String(row.content || '').slice(0, 600);
     result.variable_count = getUiTemplateVariableCount(row.content);
     result.comment_count = commentCount;
-    result.heat_score = Math.round(viewsCount * 1.0 + commentCount * 1.5 + downloadsCount * 2.5);
+    result.comment_heat_count = commentHeatCount;
+    result.heat_score = computeTemplateHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount });
     result.can_view_downloads = canViewDownloads;
     if (!canViewDownloads) result.downloads_count = null;
     if (!includeContent) delete result.content;
@@ -1729,19 +1801,48 @@ function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}
 function getUiTemplateMetrics(templateId, { viewer = {} } = {}) {
     const row = db.prepare(
         `SELECT id, uploader_user_id, views_count, downloads_count,
-                COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id)) AS comment_count
+                ${templateCommentCountExpr('ui_templates')} AS comment_count,
+                ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
          FROM ui_templates
          WHERE id = ?`
     ).get(templateId);
     if (!row) return null;
     const commentCount = Number(row.comment_count || 0);
+    const commentHeatCount = getCommentHeatCount(row);
     const downloadsCount = Number(row.downloads_count || 0);
     const viewsCount = Number(row.views_count || 0);
     const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
     const metrics = {
         comment_count: commentCount,
+        comment_heat_count: commentHeatCount,
         views_count: viewsCount,
-        heat_score: Math.round(viewsCount * 1.0 + commentCount * 1.5 + downloadsCount * 2.5)
+        heat_score: computeTemplateHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount })
+    };
+    if (canViewDownloads) {
+        metrics.downloads_count = downloadsCount;
+    }
+    return metrics;
+}
+
+function getCardMetrics(cardId, { viewer = {} } = {}) {
+    const row = db.prepare(
+        `SELECT id, uploader_user_id, views_count, downloads_count,
+                ${cardCommentCountExpr('character_cards')} AS comment_count,
+                ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
+         FROM character_cards
+         WHERE id = ?`
+    ).get(cardId);
+    if (!row) return null;
+    const commentCount = Number(row.comment_count || 0);
+    const commentHeatCount = getCommentHeatCount(row);
+    const downloadsCount = Number(row.downloads_count || 0);
+    const viewsCount = Number(row.views_count || 0);
+    const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
+    const metrics = {
+        comment_count: commentCount,
+        comment_heat_count: commentHeatCount,
+        views_count: viewsCount,
+        heat_score: computeCardHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount })
     };
     if (canViewDownloads) {
         metrics.downloads_count = downloadsCount;
@@ -1752,8 +1853,9 @@ function getUiTemplateMetrics(templateId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        const commentCountExpr = 'COALESCE(cc.comment_count_override, (SELECT COUNT(*) FROM character_comments cmt WHERE cmt.card_id = cc.id))';
-        const heatExpr = `((IFNULL(cc.views_count, 0) * 1.0) + (IFNULL(${commentCountExpr}, 0) * 1.5) + (IFNULL(cc.downloads_count, 0) * 2.5))`;
+        const commentCountSql = cardCommentCountExpr('cc');
+        const commentHeatCountSql = cardCommentHeatCountExpr('cc');
+        const heatExpr = `((IFNULL(cc.views_count, 0) * ${VIEW_HEAT_WEIGHT}) + (IFNULL(${commentHeatCountSql}, 0) * ${COMMENT_HEAT_WEIGHT}) + (IFNULL(cc.downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
         const whereParts = [];
         const params = [];
         let orderByClause = 'cc.created_at DESC';
@@ -1783,7 +1885,8 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
-                    ${commentCountExpr} AS comment_count
+                    ${commentCountSql} AS comment_count,
+                    ${commentHeatCountSql} AS comment_heat_count
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
@@ -1812,10 +1915,11 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
             whereParts.push("review_status = 'approved'");
         }
 
-        const templateCommentCountExpr = `COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments utc WHERE utc.template_id = ui_templates.id))`;
-        const heatExpr = `((IFNULL(views_count, 0) * 1.0)
-            + (${templateCommentCountExpr} * 1.5)
-            + (IFNULL(downloads_count, 0) * 2.5))`;
+        const templateCommentCountSql = templateCommentCountExpr('ui_templates');
+        const templateCommentHeatCountSql = templateCommentHeatCountExpr('ui_templates');
+        const heatExpr = `((IFNULL(views_count, 0) * ${VIEW_HEAT_WEIGHT})
+            + (${templateCommentHeatCountSql} * ${COMMENT_HEAT_WEIGHT})
+            + (IFNULL(downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
         if (sortMode === 'featured') {
             whereParts.push('is_featured = 1');
             orderByClause = 'created_at DESC';
@@ -1834,7 +1938,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
             `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at,
-                    ${templateCommentCountExpr} AS comment_count
+                    ${templateCommentCountSql} AS comment_count,
+                    ${templateCommentHeatCountSql} AS comment_heat_count
              FROM ui_templates
              ${whereClause}
              ORDER BY ${orderByClause}`
@@ -1968,7 +2073,7 @@ app.put('/api/admin/ui-templates/:id/review', requireModeration, (req, res) => {
                 reason: status === 'rejected' ? reason : ''
             });
         }
-        updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
+        Object.assign(updated, getUiTemplateCommentCounts(req.params.id));
         res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin, user: req.user } }) });
     } catch (err) {
         console.error('Review UI template error:', err);
@@ -2072,7 +2177,7 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
         db.prepare(`UPDATE ui_templates SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
         const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
-        updated.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
+        Object.assign(updated, getUiTemplateCommentCounts(req.params.id));
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
@@ -2132,7 +2237,7 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
                 template.views_count = (template.views_count || 0) + 1;
             }
         }
-        template.comment_count = db.prepare('SELECT COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ?)) as count FROM ui_templates WHERE id = ?').get(req.params.id, req.params.id).count;
+        Object.assign(template, getUiTemplateCommentCounts(req.params.id));
 
         res.json(sanitizeUiTemplateRow(template, { includeContent: true, viewer: { admin: req.admin, user: req.user } }));
     } catch (err) {
@@ -2638,6 +2743,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
+        Object.assign(card, getCardMetrics(req.params.id, { viewer: { admin: req.admin, user: req.user } }));
         attachUiTemplateSummary(card, { keepData: true });
         res.json(card);
     } catch (err) {
@@ -2935,7 +3041,8 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
         const { id } = req.params;
         const card = db.prepare(
             `SELECT id, name, views_count, downloads_count,
-                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+                    ${cardCommentCountExpr('character_cards')} AS comment_count,
+                    ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
              FROM character_cards WHERE id = ?`
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
@@ -2976,7 +3083,8 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
 
         const updated = db.prepare(
             `SELECT views_count, downloads_count,
-                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM character_comments WHERE card_id = character_cards.id)) AS comment_count
+                    ${cardCommentCountExpr('character_cards')} AS comment_count,
+                    ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
              FROM character_cards WHERE id = ?`
         ).get(id);
         maybeSendCardHeatMilestoneEmail(id, req);
@@ -2985,7 +3093,8 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
             views_count: updated.views_count,
             downloads_count: updated.downloads_count,
             comment_count: updated.comment_count,
-            heat_score: Math.round((updated.views_count || 0) * 1.0 + (updated.comment_count || 0) * 1.5 + (updated.downloads_count || 0) * 2.5)
+            comment_heat_count: updated.comment_heat_count,
+            heat_score: computeCardHeatFromRow(updated)
         });
     } catch (err) {
         console.error('Admin adjust heat error:', err);
@@ -2998,7 +3107,8 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
         const { id } = req.params;
         const template = db.prepare(
             `SELECT id, title, views_count, downloads_count,
-                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+                    ${templateCommentCountExpr('ui_templates')} AS comment_count,
+                    ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
              FROM ui_templates WHERE id = ?`
         ).get(id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
@@ -3041,7 +3151,8 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
 
         const updated = db.prepare(
             `SELECT views_count, downloads_count,
-                    COALESCE(comment_count_override, (SELECT COUNT(*) FROM ui_template_comments WHERE template_id = ui_templates.id)) AS comment_count
+                    ${templateCommentCountExpr('ui_templates')} AS comment_count,
+                    ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
              FROM ui_templates WHERE id = ?`
         ).get(id);
         res.json({
@@ -3049,7 +3160,8 @@ app.put('/api/ui-templates/:id/heat', authenticateAdmin, (req, res) => {
             views_count: updated.views_count,
             downloads_count: updated.downloads_count,
             comment_count: updated.comment_count,
-            heat_score: Math.round((updated.views_count || 0) * 1.0 + (updated.comment_count || 0) * 1.5 + (updated.downloads_count || 0) * 2.5)
+            comment_heat_count: updated.comment_heat_count,
+            heat_score: computeTemplateHeatFromRow(updated)
         });
     } catch (err) {
         console.error('Admin adjust UI template heat error:', err);
@@ -3294,6 +3406,15 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
              WHERE cc.id = ? AND cc.review_status = 'approved'`
         ).get(req.params.cardId);
         if (!card) return res.status(404).json({ error: '卡片不存在或尚未通过审核' });
+        if (hasDuplicateCommentContent({
+            table: 'character_comments',
+            itemColumn: 'card_id',
+            itemId: req.params.cardId,
+            userId,
+            content
+        })) {
+            return res.status(409).json({ error: '你已经在这张卡下发布过相同内容的评论' });
+        }
 
         const id = generateId();
         const now = new Date().toISOString();
@@ -3309,15 +3430,20 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         const todayStr = now.slice(0, 10); // YYYY-MM-DD
         const todayCommentCount = countTodayCreditComments(userId, todayStr);
         const canEarnCredits = todayCommentCount < 2;
+        const hadHeatComment = Boolean(db.prepare(
+            'SELECT 1 FROM character_comments WHERE card_id = ? AND user_id = ? LIMIT 1'
+        ).get(req.params.cardId, userId));
 
         // Insert comment and optionally add credits
         const insertComment = db.transaction(() => {
             db.prepare(
                 'INSERT INTO character_comments (id, card_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.cardId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
-            db.prepare(
-                'UPDATE character_cards SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
-            ).run(req.params.cardId);
+            if (!hadHeatComment) {
+                db.prepare(
+                    'UPDATE character_cards SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
+                ).run(req.params.cardId);
+            }
 
             if (canEarnCredits) {
                 db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
@@ -3343,7 +3469,12 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
                 content: content.trim()
             });
         }
-        res.json({ comment, new_credits: updatedUser.download_credits, credits_earned: canEarnCredits });
+        res.json({
+            comment,
+            new_credits: updatedUser.download_credits,
+            credits_earned: canEarnCredits,
+            card_metrics: getCardMetrics(req.params.cardId, { viewer: { user: req.user } })
+        });
     } catch (err) {
         console.error('Create comment error:', err);
         res.status(500).json({ error: '发布评论失败' });
@@ -3423,6 +3554,15 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
              WHERE ut.id = ? AND ut.review_status = 'approved'`
         ).get(req.params.templateId);
         if (!template) return res.status(404).json({ error: '模板不存在或尚未通过审核' });
+        if (hasDuplicateCommentContent({
+            table: 'ui_template_comments',
+            itemColumn: 'template_id',
+            itemId: req.params.templateId,
+            userId,
+            content
+        })) {
+            return res.status(409).json({ error: '你已经在这个模板下发布过相同内容的评论' });
+        }
 
         const id = generateId();
         const now = new Date().toISOString();
@@ -3437,14 +3577,19 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
 
         const todayStr = now.slice(0, 10);
         const canEarnCredits = countTodayCreditComments(userId, todayStr) < 2;
+        const hadHeatComment = Boolean(db.prepare(
+            'SELECT 1 FROM ui_template_comments WHERE template_id = ? AND user_id = ? LIMIT 1'
+        ).get(req.params.templateId, userId));
 
         const insertComment = db.transaction(() => {
             db.prepare(
                 'INSERT INTO ui_template_comments (id, template_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             ).run(id, req.params.templateId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
-            db.prepare(
-                'UPDATE ui_templates SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
-            ).run(req.params.templateId);
+            if (!hadHeatComment) {
+                db.prepare(
+                    'UPDATE ui_templates SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
+                ).run(req.params.templateId);
+            }
 
             if (canEarnCredits) {
                 db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
@@ -3524,14 +3669,19 @@ app.delete('/api/ui-template-comments/:id', requireUserOrAdmin, (req, res) => {
         const deleteComment = db.transaction(() => {
             const result = db.prepare('DELETE FROM ui_template_comments WHERE id = ?').run(req.params.id);
             if (result.changes > 0) {
-                db.prepare(
-                    `UPDATE ui_templates
-                     SET comment_count_override = CASE
-                        WHEN comment_count_override > 0 THEN comment_count_override - 1
-                        ELSE 0
-                     END
-                     WHERE id = ? AND comment_count_override IS NOT NULL`
-                ).run(comment.template_id);
+                const stillHasHeatComment = comment.user_id
+                    ? db.prepare('SELECT 1 FROM ui_template_comments WHERE template_id = ? AND user_id = ? LIMIT 1').get(comment.template_id, comment.user_id)
+                    : null;
+                if (!stillHasHeatComment) {
+                    db.prepare(
+                        `UPDATE ui_templates
+                         SET comment_count_override = CASE
+                            WHEN comment_count_override > 0 THEN comment_count_override - 1
+                            ELSE 0
+                         END
+                         WHERE id = ? AND comment_count_override IS NOT NULL`
+                    ).run(comment.template_id);
+                }
             }
             return result;
         });
@@ -3612,14 +3762,19 @@ app.delete('/api/comments/:id', requireUserOrAdmin, (req, res) => {
         const deleteComment = db.transaction(() => {
             const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
             if (result.changes > 0) {
-                db.prepare(
-                    `UPDATE character_cards
-                     SET comment_count_override = CASE
-                        WHEN comment_count_override > 0 THEN comment_count_override - 1
-                        ELSE 0
-                     END
-                     WHERE id = ? AND comment_count_override IS NOT NULL`
-                ).run(comment.card_id);
+                const stillHasHeatComment = comment.user_id
+                    ? db.prepare('SELECT 1 FROM character_comments WHERE card_id = ? AND user_id = ? LIMIT 1').get(comment.card_id, comment.user_id)
+                    : null;
+                if (!stillHasHeatComment) {
+                    db.prepare(
+                        `UPDATE character_cards
+                         SET comment_count_override = CASE
+                            WHEN comment_count_override > 0 THEN comment_count_override - 1
+                            ELSE 0
+                         END
+                         WHERE id = ? AND comment_count_override IS NOT NULL`
+                    ).run(comment.card_id);
+                }
             }
             return result;
         });
@@ -3637,7 +3792,10 @@ app.delete('/api/comments/:id', requireUserOrAdmin, (req, res) => {
             ip: getRequestIp(req),
             details: { content: comment.content?.substring(0, 50) }
         });
-        res.json({ success: true });
+        res.json({
+            success: true,
+            card_metrics: getCardMetrics(comment.card_id, { viewer: { admin: req.admin, user: req.user } })
+        });
     } catch (err) {
         console.error('Delete comment error:', err);
         res.status(500).json({ error: '删除评论失败' });
@@ -3875,18 +4033,23 @@ app.get('/api/admin/comments', authenticateAdmin, (req, res) => {
 
 app.delete('/api/admin/comments/:id', authenticateAdmin, (req, res) => {
     try {
-        const comment = db.prepare('SELECT card_id, content FROM character_comments WHERE id = ?').get(req.params.id);
+        const comment = db.prepare('SELECT card_id, user_id, content FROM character_comments WHERE id = ?').get(req.params.id);
         const deleteComment = db.transaction(() => {
             const result = db.prepare('DELETE FROM character_comments WHERE id = ?').run(req.params.id);
             if (result.changes > 0 && comment?.card_id) {
-                db.prepare(
-                    `UPDATE character_cards
-                     SET comment_count_override = CASE
-                        WHEN comment_count_override > 0 THEN comment_count_override - 1
-                        ELSE 0
-                     END
-                     WHERE id = ? AND comment_count_override IS NOT NULL`
-                ).run(comment.card_id);
+                const stillHasHeatComment = comment.user_id
+                    ? db.prepare('SELECT 1 FROM character_comments WHERE card_id = ? AND user_id = ? LIMIT 1').get(comment.card_id, comment.user_id)
+                    : null;
+                if (!stillHasHeatComment) {
+                    db.prepare(
+                        `UPDATE character_cards
+                         SET comment_count_override = CASE
+                            WHEN comment_count_override > 0 THEN comment_count_override - 1
+                            ELSE 0
+                         END
+                         WHERE id = ? AND comment_count_override IS NOT NULL`
+                    ).run(comment.card_id);
+                }
             }
             return result;
         });

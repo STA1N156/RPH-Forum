@@ -1108,7 +1108,7 @@
                                         <label class="block text-sm font-medium text-gray-700 mb-1">评论邮件提醒屏蔽词</label>
                                         <textarea v-model="emailSettings.comment_block_words" rows="3" placeholder="每行一个词；数字也可以；评论包含任意词时不发作者邮件"
                                             class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"></textarea>
-                                        <p class="text-xs text-gray-400 mt-1">默认包含“已严肃”和“严肃”。例如填 12345 后，评论里出现 12345 或全角 １２３４５ 都不会触发作者邮件提醒。</p>
+                                        <p class="text-xs text-gray-400 mt-1">默认包含“已严肃”、“严肃”和“12345”。评论里出现 12345 或全角 １２３４５ 都不会触发作者邮件提醒。</p>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur Email API 地址</label>
@@ -1320,7 +1320,7 @@
                     public_base_url: '',
                     admin_emails: '',
                     admin_emails_source: 'none',
-                    comment_block_words: '已严肃\n严肃'
+                    comment_block_words: '已严肃\n严肃\n12345'
                 });
                 const emailSettingsSaving = ref(false);
                 const newApiSettings = reactive({
