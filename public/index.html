@@ -642,7 +642,7 @@
                         <div class="absolute inset-0 flex items-center justify-center">
                             <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
                         </div>
-                        <img :src="card.thumbnail_url || card.avatar_url || defaultAvatar" loading="lazy" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="$event.target.style.opacity = 1" @error="if ($event.target.dataset.fullAvatarTried !== '1' && card.avatar_url && $event.target.src !== card.avatar_url) { $event.target.dataset.fullAvatarTried = '1'; $event.target.src = card.avatar_url; return; } if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar; $event.target.style.opacity = 1" style="opacity: 0">
+                        <img :src="card.thumbnail_url || defaultAvatar" loading="lazy" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
                         
                         <!-- Download Count - Admin or card owner in Mine tab -->
                         <div v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
@@ -1204,7 +1204,7 @@
             </div>
             <p class="text-xl font-bold text-white mb-3 tracking-wide">正在准备详情界面</p>
             <p class="text-sm text-gray-400 max-w-[280px] text-center leading-relaxed">{{ previewAsset.loading ? '资源正在加载，请稍等...' : '正在请求数据，请稍候...' }}</p>
-            <button v-if="selectedCard || previewOpening.active" @click="selectedCard = null; selectedTemplate = null; selectedTemplateLoading = false; stopPreviewOpening()" class="mt-10 px-8 py-3 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all text-sm font-medium border border-white/5 hover:border-white/20 active:scale-95">
+            <button v-if="selectedCard || previewOpening.active" @click="closeSelectedCard(); selectedTemplate = null; selectedTemplateLoading = false" class="mt-10 px-8 py-3 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all text-sm font-medium border border-white/5 hover:border-white/20 active:scale-95">
                 取消进入
             </button>
         </div>
@@ -1217,16 +1217,17 @@
                  @scroll="handleMobileScroll">
                 
                 <!-- Close Button -->
-                <button @click="selectedCard = null; stopPreviewOpening()" class="fixed top-4 right-4 z-50 bg-black/30 text-white p-2.5 rounded-full backdrop-blur-md border border-white/20 active:scale-95 transition-transform">
+                <button @click="closeSelectedCard()" class="fixed top-4 right-4 z-50 bg-black/30 text-white p-2.5 rounded-full backdrop-blur-md border border-white/20 active:scale-95 transition-transform">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
 
                 <!-- Fixed Background Image -->
                 <div class="fixed top-0 left-0 w-full h-[80vh] z-0 overflow-hidden bg-gray-900">
-                    <img :src="previewAsset.imageUrl || selectedCard.preview_image_url || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar"
-                         id="mobile-bg-img"
-                         class="w-full h-full object-cover object-top mobile-bg-img"
-                         style="opacity: 1">
+                    <img :src="previewAsset.imageUrl || selectedCard.thumbnail_url || selectedCard.preview_image_url || defaultAvatar"
+                          id="mobile-bg-img"
+                          class="w-full h-full object-cover object-top mobile-bg-img"
+                          @error="if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar"
+                          style="opacity: 1">
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
                 </div>
 
@@ -1279,6 +1280,20 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
+                            </section>
+
+                            <section v-if="selectedCardDetailLoading" class="rounded-3xl border border-primary-100 bg-primary-50/70 p-5">
+                                <div class="flex items-center gap-3 text-primary-700">
+                                    <div class="h-5 w-5 rounded-full border-2 border-primary-500 border-t-transparent animate-spin flex-shrink-0"></div>
+                                    <div>
+                                        <div class="text-sm font-black">正在加载完整角色卡</div>
+                                        <div class="text-xs text-primary-500 mt-1">设定、开场白和模板内容马上出来</div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section v-else-if="selectedCardDetailError" class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-700">
+                                {{ selectedCardDetailError }}
                             </section>
 
                             <section v-if="selectedCard._display.personality">
@@ -1420,7 +1435,7 @@
                     <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                         <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                     </button>
-                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -1431,14 +1446,14 @@
                 
                 <!-- Left: Image Section -->
                 <div class="relative w-2/5 h-auto flex-shrink-0 bg-gray-100">
-                    <img :src="previewAsset.imageUrl || selectedCard.preview_image_url || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar" class="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-300" style="opacity: 1">
+                    <img :src="previewAsset.imageUrl || selectedCard.thumbnail_url || selectedCard.preview_image_url || defaultAvatar" class="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-300" @error="if ($event.target.dataset.fallback === '1') return; $event.target.dataset.fallback = '1'; $event.target.src = defaultAvatar" style="opacity: 1">
                 </div>
 
                 <!-- Right: Content Section -->
                 <div class="flex-1 flex flex-col min-h-0 bg-white p-10 pb-6 lg:p-12 lg:pb-7">
                     
                     <!-- Close Button -->
-                    <button @click="selectedCard = null; stopPreviewOpening()" class="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all z-20">
+                    <button @click="closeSelectedCard()" class="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all z-20">
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
 
@@ -1481,6 +1496,20 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
+                            </section>
+
+                            <section v-if="selectedCardDetailLoading" class="rounded-3xl border border-primary-100 bg-primary-50/70 p-5">
+                                <div class="flex items-center gap-3 text-primary-700">
+                                    <div class="h-5 w-5 rounded-full border-2 border-primary-500 border-t-transparent animate-spin flex-shrink-0"></div>
+                                    <div>
+                                        <div class="text-sm font-black">正在加载完整角色卡</div>
+                                        <div class="text-xs text-primary-500 mt-1">设定、开场白和模板内容马上出来</div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section v-else-if="selectedCardDetailError" class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-700">
+                                {{ selectedCardDetailError }}
                             </section>
 
                             <section v-if="selectedCard._display.personality">
@@ -1623,7 +1652,7 @@
                         <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="startEditCard(selectedCard)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         </button>
-                        <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); selectedCard = null" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
+                        <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
@@ -2010,6 +2039,9 @@
                 const showTemplateEditModal = ref(false);
                 const isTemplateEditSaving = ref(false);
                 const selectedCard = ref(null);
+                const selectedCardDetailLoading = ref(false);
+                const selectedCardDetailError = ref('');
+                const selectedCardDetailCardId = ref('');
                 const previewOpening = reactive({
                     active: false,
                     name: '',
@@ -2021,7 +2053,7 @@
                     ready: false,
                     error: '',
                     imageUrl: '',
-                    source: 'original',
+                    source: 'preview',
                     shouldRevoke: false
                 });
                 const isDownloadingCard = ref(false);
@@ -3135,6 +3167,41 @@
                     }
                 };
 
+                const setCardThumbnailState = (cardOrId, ready, failed = false) => {
+                    const cardId = typeof cardOrId === 'object' ? cardOrId?.id : cardOrId;
+                    if (!cardId) return;
+                    const apply = (card) => {
+                        if (!card || card.id !== cardId) return;
+                        card._thumbnailReady = Boolean(ready);
+                        card._thumbnailFailed = Boolean(failed);
+                    };
+                    if (typeof cardOrId === 'object') apply(cardOrId);
+                    apply(cards.value.find(item => item.id === cardId));
+                    if (selectedCard.value) apply(selectedCard.value);
+                };
+
+                const isCardThumbnailReady = (card) => {
+                    if (!card) return false;
+                    if (card._thumbnailReady) return true;
+                    const listCard = cards.value.find(item => item.id === card.id);
+                    return Boolean(listCard?._thumbnailReady);
+                };
+
+                const markCardThumbnailLoaded = (card, event) => {
+                    if (event?.target) event.target.style.opacity = 1;
+                    setCardThumbnailState(card, true, false);
+                };
+
+                const markCardThumbnailError = (card, event) => {
+                    setCardThumbnailState(card, false, true);
+                    const target = event?.target;
+                    if (!target) return;
+                    if (target.dataset.fallback === '1') return;
+                    target.dataset.fallback = '1';
+                    target.src = defaultAvatar;
+                    target.style.opacity = 1;
+                };
+
                 const clearPreviewAsset = () => {
                     if (previewAsset.shouldRevoke && previewAsset.imageUrl && previewAsset.imageUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(previewAsset.imageUrl);
@@ -3144,11 +3211,11 @@
                     previewAsset.ready = false;
                     previewAsset.error = '';
                     previewAsset.imageUrl = '';
-                    previewAsset.source = 'original';
+                    previewAsset.source = 'preview';
                     previewAsset.shouldRevoke = false;
                 };
 
-                const setPreviewAssetUrl = (url, shouldRevoke = false, source = 'original') => {
+                const setPreviewAssetUrl = (url, shouldRevoke = false, source = 'preview') => {
                     if (previewAsset.shouldRevoke && previewAsset.imageUrl && previewAsset.imageUrl !== url && previewAsset.imageUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(previewAsset.imageUrl);
                     }
@@ -3165,45 +3232,40 @@
                     image.src = src;
                 });
 
-                const fetchImageObjectUrl = async (url) => {
-                    const resp = await fetch(url);
-                    if (!resp.ok) {
-                        throw new Error('原图请求失败');
-                    }
-                    const blob = await resp.blob();
-                    return URL.createObjectURL(blob);
-                };
-
-                const preparePreviewAsset = async (card) => {
+                const preparePreviewAsset = async (card, { waitForLoad = false } = {}) => {
                     clearPreviewAsset();
                     previewAsset.cardId = card.id;
-                    previewAsset.loading = true;
                     const candidates = [
-                        { url: card.preview_image_url, source: 'preview' },
                         { url: card.thumbnail_url, source: 'thumbnail' },
-                        { url: card.avatar_url, source: 'original' },
+                        { url: card.preview_image_url, source: 'preview' },
                         { url: defaultAvatar, source: 'fallback' }
                     ].filter((item, index, list) => item.url && list.findIndex(entry => entry.url === item.url) === index);
 
+                    const instantCandidate = candidates[0];
+                    if (!waitForLoad && instantCandidate) {
+                        setPreviewAssetUrl(instantCandidate.url, false, instantCandidate.source);
+                        previewAsset.ready = true;
+                        previewAsset.error = instantCandidate.source === 'fallback' ? '图片加载失败，已使用默认占位图。' : '';
+                        previewAsset.loading = false;
+                        return;
+                    }
+
+                    previewAsset.loading = true;
+
                     let lastError = '';
                     for (const candidate of candidates) {
-                        let objectUrl = '';
                         try {
-                            const finalUrl = candidate.url.startsWith('data:')
-                                ? candidate.url
-                                : (objectUrl = await fetchImageObjectUrl(candidate.url));
-                            await loadImageElement(finalUrl);
+                            await loadImageElement(candidate.url);
                             if (previewAsset.cardId !== card.id) {
-                                if (objectUrl) URL.revokeObjectURL(objectUrl);
                                 return;
                             }
-                            setPreviewAssetUrl(finalUrl, Boolean(objectUrl), candidate.source);
+                            setPreviewAssetUrl(candidate.url, false, candidate.source);
+                            if (candidate.source === 'thumbnail') setCardThumbnailState(card.id, true, false);
                             previewAsset.ready = true;
                             previewAsset.error = candidate.source === 'fallback' ? '图片加载失败，已使用默认占位图。' : '';
                             previewAsset.loading = false;
                             return;
                         } catch (error) {
-                            if (objectUrl) URL.revokeObjectURL(objectUrl);
                             lastError = error.message;
                         }
                     }
@@ -3218,7 +3280,7 @@
                     const requestId = ++previewOpenRequestId;
                     previewOpening.active = true;
                     previewOpening.name = card?.name || card?.title || '角色卡';
-                    previewOpening.imageUrl = card?.thumbnail_url || card?.preview_image_url || card?.avatar_url || card?.avatar || defaultAvatar;
+                    previewOpening.imageUrl = card?.thumbnail_url || card?.preview_image_url || defaultAvatar;
                     return requestId;
                 };
 
@@ -3229,6 +3291,18 @@
                     previewOpening.active = false;
                     previewOpening.name = '';
                     previewOpening.imageUrl = '';
+                };
+
+                const resetSelectedCardDetailState = () => {
+                    selectedCardDetailLoading.value = false;
+                    selectedCardDetailError.value = '';
+                    selectedCardDetailCardId.value = '';
+                };
+
+                const closeSelectedCard = () => {
+                    selectedCard.value = null;
+                    resetSelectedCardDetailState();
+                    stopPreviewOpening();
                 };
 
                 // --- Parsing Logic from Reference (Robust Version) ---
@@ -4467,7 +4541,9 @@
                 };
 
                 const previewCard = async (card) => {
-                    const requestId = startPreviewOpening(card);
+                    const thumbnailReady = isCardThumbnailReady(card);
+                    const requestId = thumbnailReady ? ++previewOpenRequestId : startPreviewOpening(card);
+                    if (thumbnailReady) stopPreviewOpening({ cancelPending: false });
                     const bgImage = document.getElementById('mobile-bg-img');
                     if (bgImage) {
                         bgImage.style.opacity = '0';
@@ -4478,14 +4554,19 @@
 
                     const lightweightPreview = buildPreviewCardModel(card);
                     selectedCard.value = lightweightPreview;
-                    stopPreviewOpening({ cancelPending: false });
+                    selectedCardDetailError.value = '';
+                    selectedCardDetailCardId.value = card.id;
+                    selectedCardDetailLoading.value = !card.data;
 
-                    preparePreviewAsset(lightweightPreview).catch((error) => {
+                    preparePreviewAsset(lightweightPreview, { waitForLoad: !thumbnailReady }).then(() => {
+                        if (requestId === previewOpenRequestId) stopPreviewOpening({ cancelPending: false });
+                    }).catch((error) => {
                         console.error('Prepare preview asset error:', error);
                         previewAsset.loading = false;
                         previewAsset.ready = true;
-                        previewAsset.error = '原图加载失败，已使用默认占位图。';
+                        previewAsset.error = '预览图加载失败，已使用默认占位图。';
                         setPreviewAssetUrl(defaultAvatar, false, 'fallback');
+                        if (requestId === previewOpenRequestId) stopPreviewOpening({ cancelPending: false });
                     });
 
                     fetchComments(card.id);
@@ -4513,7 +4594,8 @@
                             if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                             else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
                             const resp = await fetch(API_BASE + '/api/cards/' + card.id, { headers });
-                            if (!resp.ok || requestId !== previewOpenRequestId) return;
+                            if (requestId !== previewOpenRequestId) return;
+                            if (!resp.ok) throw new Error('完整内容请求失败');
                             const fullCard = await resp.json();
                             const listCard = cards.value.find(c => c.id === card.id);
                             const merged = {
@@ -4531,7 +4613,16 @@
                             }
                         } catch (e) {
                             console.error('Load card data error:', e);
+                            if (requestId === previewOpenRequestId && selectedCard.value && selectedCard.value.id === card.id) {
+                                selectedCardDetailError.value = '完整内容加载失败，刷新或稍后再试一下。';
+                            }
+                        } finally {
+                            if (requestId === previewOpenRequestId && selectedCard.value && selectedCard.value.id === card.id) {
+                                selectedCardDetailLoading.value = false;
+                            }
                         }
+                    } else {
+                        selectedCardDetailLoading.value = false;
                     }
                 };
 
@@ -4561,7 +4652,6 @@
                     }
                     if (isDownloadingCard.value) return '正在生成下载文件...';
                     if (previewAsset.loading) return '图片加载中...';
-                    if (previewAsset.source === 'fallback') return '使用占位图下载';
                     return '下载角色卡';
                 });
 
@@ -5459,8 +5549,8 @@
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
                     handleFileSelect, handleTemplateFileSelect, confirmUpload, confirmTemplateUpload, handleUploadClick,
                     downloadTemplate, reviewTemplate, deleteTemplate, toggleTemplateFeatured, formatFileSize, isTemplateOwnedByCurrentUser, canViewTemplateDownloads, computeTemplateHeat,
-                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard,
-                    previewOpening, stopPreviewOpening,
+                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
+                    previewOpening, stopPreviewOpening, closeSelectedCard,
                     toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
                     formatTemplateVariableBadge, formatCardUiVariableBadge,
@@ -5471,7 +5561,7 @@
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
                     showHeatEditModal, editingHeatCard, editingHeatType, heatEditForm, openHeatEdit, submitHeatEdit,
-                    previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
+                    previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi, selectedCardDetailLoading, selectedCardDetailError,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
                     authTitle, authSubtitle, emailCodeSending, emailCodeCooldown, emailCodeMessage,

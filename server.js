@@ -2866,80 +2866,83 @@ function cacheThumbnail(cardId, body, contentType, cacheControl, cacheKey = '') 
 function clearCardImageCaches(cardId) {
     thumbnailCache.delete(cardId);
     previewImageCache.delete(cardId);
+    clearCardCacheFiles(THUMBNAIL_CACHE_DIR, cardId, 'thumbnail');
+    clearCardCacheFiles(PREVIEW_IMAGE_CACHE_DIR, cardId, 'preview-image');
 }
 
 app.get('/api/cards/:id/avatar', async (req, res) => {
-    try {
-        markPerf(req, 'avatar-start', { cardId: req.params.id });
-        const row = db.prepare('SELECT avatar_url, name FROM character_cards WHERE id = ?').get(req.params.id);
-        markPerf(req, 'avatar-db-read', { found: Boolean(row), avatarBytes: row ? Buffer.byteLength(row.avatar_url || '', 'utf8') : 0 });
-        if (!row) return res.status(404).end();
-
-        const safeAvatarUrl = sanitizeAvatarUrl(row.avatar_url, req.params.id);
-
-        // No avatar data — generate placeholder
-        if (!safeAvatarUrl) {
-            markPerf(req, 'avatar-placeholder-start');
-            const svg = buildPlaceholderSvg(row.name, req.params.id, 800, 1067, 320);
-            if (!sharp) {
-                res.set('Content-Type', 'image/svg+xml');
-                res.set('Cache-Control', 'public, max-age=86400');
-                return res.send(svg);
-            }
-            const placeholder = await sharp(Buffer.from(svg)).png().toBuffer();
-            markPerf(req, 'avatar-placeholder-generated', { bytes: placeholder.length });
-            res.set('Content-Type', 'image/png');
-            res.set('Cache-Control', 'public, max-age=86400');
-            return res.send(placeholder);
-        }
-
-        markPerf(req, 'avatar-resolve-asset-start');
-        const asset = await resolveAvatarAsset(safeAvatarUrl);
-        markPerf(req, 'avatar-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
-        res.set('Content-Type', asset.contentType);
-        res.set('Cache-Control', asset.cacheControl);
-        res.send(asset.buffer);
-        markPerf(req, 'avatar-response', { bytes: asset.buffer.length });
-    } catch (err) {
-        console.error('Avatar fetch error:', err);
-        try {
-            const row = db.prepare('SELECT name FROM character_cards WHERE id = ?').get(req.params.id);
-            if (!row) {
-                return res.status(404).end();
-            }
-            const svg = buildPlaceholderSvg(row.name, req.params.id, 800, 1067, 320);
-            if (!sharp) {
-                res.set('Content-Type', 'image/svg+xml');
-                res.set('Cache-Control', 'public, max-age=86400');
-                return res.send(svg);
-            }
-            const placeholder = await sharp(Buffer.from(svg)).png().toBuffer();
-            res.set('Content-Type', 'image/png');
-            res.set('Cache-Control', 'public, max-age=86400');
-            return res.send(placeholder);
-        } catch (fallbackError) {
-            console.error('Avatar placeholder fallback error:', fallbackError);
-            res.status(500).end();
-        }
-    }
+    markPerf(req, 'avatar-redirect-start', { cardId: req.params.id });
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    const target = `/api/cards/${encodeURIComponent(req.params.id)}/thumbnail${query}`;
+    markPerf(req, 'avatar-redirect', { target });
+    res.redirect(302, target);
 });
 
-// Thumbnail endpoint - compressed preview for card listing
+// Thumbnail endpoint - compressed preview for card listing and detail cover.
 const thumbnailCache = new Map();
 const THUMBNAIL_MAX_CACHE = 500;
 const thumbnailBuildPromises = new Map();
 const THUMBNAIL_CACHE_DIR = path.join(SERVER_DATA_DIR, 'thumbnail-cache');
+const THUMBNAIL_CACHE_VERSION = 'thumbnail-v3-w800-q84';
 const previewImageCache = new Map();
 const PREVIEW_IMAGE_MAX_CACHE = 300;
 const previewImageBuildPromises = new Map();
 const PREVIEW_IMAGE_CACHE_DIR = path.join(SERVER_DATA_DIR, 'preview-image-cache');
+const PREVIEW_IMAGE_CACHE_VERSION = 'preview-image-v2-w800-q84';
 const REMOTE_FETCH_TIMEOUT_MS = 5000;
 const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_REMOTE_FETCH_RETRIES = 2;
 
+function getCardCacheFilePrefix(cardId) {
+    return String(cardId || 'card').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'card';
+}
+
+function clearCardCacheFiles(cacheDir, cardId, label) {
+    try {
+        if (!fs.existsSync(cacheDir)) return;
+        const prefix = `${getCardCacheFilePrefix(cardId)}-`;
+        let removed = 0;
+        for (const entry of fs.readdirSync(cacheDir, { withFileTypes: true })) {
+            if (!entry.isFile() || !entry.name.startsWith(prefix)) continue;
+            fs.rmSync(path.join(cacheDir, entry.name), { force: true });
+            removed += 1;
+        }
+        if (removed > 0) console.info(`[ImageCache] cleared ${removed} ${label} file(s) for card=${cardId}`);
+    } catch (err) {
+        console.warn(`[ImageCache] failed to clear ${label} files for card=${cardId}:`, err.message);
+    }
+}
+
+function ensureImageCacheVersion(cacheDir, version, label) {
+    try {
+        fs.mkdirSync(cacheDir, { recursive: true });
+        const markerPath = path.join(cacheDir, '.cache-version');
+        const currentVersion = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf8').trim() : '';
+        if (currentVersion === version) return;
+
+        let removed = 0;
+        for (const entry of fs.readdirSync(cacheDir, { withFileTypes: true })) {
+            if (entry.name === '.cache-version') continue;
+            fs.rmSync(path.join(cacheDir, entry.name), { recursive: true, force: true });
+            removed += 1;
+        }
+        fs.writeFileSync(markerPath, version);
+        console.info(`[ImageCache] ${label} cache version ${currentVersion || 'none'} -> ${version}, removed=${removed}`);
+    } catch (err) {
+        console.warn(`[ImageCache] failed to prepare ${label} cache:`, err.message);
+    }
+}
+
+function cleanupOutdatedImageCaches() {
+    ensureImageCacheVersion(THUMBNAIL_CACHE_DIR, THUMBNAIL_CACHE_VERSION, 'thumbnail');
+    ensureImageCacheVersion(PREVIEW_IMAGE_CACHE_DIR, PREVIEW_IMAGE_CACHE_VERSION, 'preview-image');
+}
+
 function makeThumbnailCacheKey(cardId, row) {
     const signature = crypto
         .createHash('sha1')
+        .update(THUMBNAIL_CACHE_VERSION)
+        .update('\0')
         .update(String(cardId || ''))
         .update('\0')
         .update(String(row?.name || ''))
@@ -2947,7 +2950,7 @@ function makeThumbnailCacheKey(cardId, row) {
         .update(String(row?.avatar_url || ''))
         .digest('hex')
         .slice(0, 24);
-    const safeId = String(cardId || 'card').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'card';
+    const safeId = getCardCacheFilePrefix(cardId);
     return `${safeId}-${signature}.webp`;
 }
 
@@ -2991,7 +2994,7 @@ function cachePreviewImage(cardId, body, contentType, cacheControl, cacheKey = '
 function makePreviewImageCacheKey(cardId, row) {
     const signature = crypto
         .createHash('sha1')
-        .update('preview-image-v1-w800-q84')
+        .update(PREVIEW_IMAGE_CACHE_VERSION)
         .update('\0')
         .update(String(cardId || ''))
         .update('\0')
@@ -3000,7 +3003,7 @@ function makePreviewImageCacheKey(cardId, row) {
         .update(String(row?.avatar_url || ''))
         .digest('hex')
         .slice(0, 24);
-    const safeId = String(cardId || 'card').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'card';
+    const safeId = getCardCacheFilePrefix(cardId);
     return `${safeId}-${signature}.webp`;
 }
 
@@ -3087,7 +3090,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         const buildThumbnail = async () => {
             // No avatar data — generate placeholder thumbnail with first character
             if (!safeAvatarUrl) {
-                const svg = buildPlaceholderSvg(row.name, cardId, 400, 533, 160);
+                const svg = buildPlaceholderSvg(row.name, cardId, 800, 1067, 320);
                 if (!sharp) {
                     return {
                         body: Buffer.from(svg),
@@ -3095,7 +3098,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
                         cacheControl: 'public, max-age=86400'
                     };
                 }
-                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 75 }).toBuffer();
+                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 84 }).toBuffer();
                 return {
                     body: placeholder,
                     contentType: 'image/webp',
@@ -3118,8 +3121,8 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
             markPerf(req, 'thumbnail-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
 
             const thumbnail = await sharp(asset.buffer)
-                .resize(400, null, { withoutEnlargement: true })
-                .webp({ quality: 75 })
+                .resize(800, null)
+                .webp({ quality: 84 })
                 .toBuffer();
 
             markPerf(req, 'thumbnail-sharp-generate', { bytes: thumbnail.length });
@@ -3153,24 +3156,16 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
             }
         }
         console.error('Thumbnail generation error:', err);
-        // Fallback to full avatar bytes
         try {
             const row = db.prepare('SELECT avatar_url, name FROM character_cards WHERE id = ?').get(req.params.id);
-            const safeAvatarUrl = row ? sanitizeAvatarUrl(row.avatar_url, req.params.id) : '';
-            if (safeAvatarUrl) {
-                const asset = await resolveAvatarAsset(safeAvatarUrl);
-                res.set('Content-Type', asset.contentType);
-                res.set('Cache-Control', asset.cacheControl);
-                return res.send(asset.buffer);
-            }
             if (row) {
-                const svg = buildPlaceholderSvg(row.name, req.params.id, 400, 533, 160);
+                const svg = buildPlaceholderSvg(row.name, req.params.id, 800, 1067, 320);
                 if (!sharp) {
                     res.set('Content-Type', 'image/svg+xml');
                     res.set('Cache-Control', 'public, max-age=86400');
                     return res.send(svg);
                 }
-                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 75 }).toBuffer();
+                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 84 }).toBuffer();
                 res.set('Content-Type', 'image/webp');
                 res.set('Cache-Control', 'public, max-age=86400');
                 return res.send(placeholder);
@@ -3250,7 +3245,7 @@ app.get('/api/cards/:id/preview-image', async (req, res) => {
             markPerf(req, 'preview-image-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
 
             const preview = await sharp(asset.buffer)
-                .resize(800, null, { withoutEnlargement: true })
+                .resize(800, null)
                 .webp({ quality: 84 })
                 .toBuffer();
 
@@ -5633,6 +5628,7 @@ function logDatabaseHealth() {
 // ============== Initialize & Start ==============
 initDatabase();
 logDatabaseHealth();
+cleanupOutdatedImageCaches();
 scheduleCardUiSummaryBackfill();
 
 // Cleanup old login attempts every hour
