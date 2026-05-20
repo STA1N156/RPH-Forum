@@ -35,6 +35,8 @@ function initDatabase() {
             email_verified INTEGER DEFAULT 0,
             newapi_user_id TEXT,
             newapi_redeemed_cookies REAL DEFAULT 0,
+            newapi_penalty_cookies REAL DEFAULT 0,
+            comment_email_notifications INTEGER DEFAULT 0,
             password_hash TEXT NOT NULL,
             download_credits INTEGER DEFAULT 1,
             token_version INTEGER DEFAULT 0,
@@ -281,6 +283,8 @@ function initDatabase() {
     try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_user_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_redeemed_cookies REAL DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN newapi_penalty_cookies REAL DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN comment_email_notifications INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_newapi_user_unique ON users(newapi_user_id) WHERE newapi_user_id IS NOT NULL AND newapi_user_id != ''"); } catch (e) { /* index exists */ }
     try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL AND email != ''"); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }

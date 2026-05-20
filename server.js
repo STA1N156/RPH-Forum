@@ -233,7 +233,7 @@ function validateAdminTokenPayload(decoded) {
 
 function validateUserTokenPayload(decoded) {
     if (!decoded || decoded.role !== 'user') return null;
-    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, is_moderator, is_banned, ban_reason FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, download_credits, token_version, is_moderator, is_banned, ban_reason, comment_email_notifications FROM users WHERE id = ?').get(decoded.id);
     if (!user || user.username !== decoded.username || Number(user.token_version || 0) !== Number(decoded.token_version || 0)) {
         return null;
     }
@@ -248,6 +248,7 @@ function validateUserTokenPayload(decoded) {
         email: user.email || '',
         email_verified: Number(user.email_verified || 0),
         is_moderator: Number(user.is_moderator || 0),
+        comment_email_notifications: Number(user.comment_email_notifications || 0),
         role: 'user',
         token_version: user.token_version || 0
     };
@@ -570,8 +571,8 @@ function parseCommentEmailBlockWords(value) {
 
 function getCommentEmailBlockWords() {
     const saved = getSettingValueOrNull('comment_email_block_words');
-    if (saved === null) return DEFAULT_COMMENT_EMAIL_BLOCK_WORDS;
-    return parseCommentEmailBlockWords(saved);
+    const savedWords = saved === null ? [] : parseCommentEmailBlockWords(saved);
+    return parseCommentEmailBlockWords([...DEFAULT_COMMENT_EMAIL_BLOCK_WORDS, ...savedWords].join('\n'));
 }
 
 function isCommentEmailBlocked(content) {
@@ -807,6 +808,8 @@ function buildUserResponse(user) {
         email_verified: Number(user.email_verified || 0),
         newapi_user_id: user.newapi_user_id || '',
         newapi_redeemed_cookies: floorToTwoDecimals(Math.max(0, Number(user.newapi_redeemed_cookies || 0))),
+        newapi_penalty_cookies: floorToTwoDecimals(Math.max(0, Number(user.newapi_penalty_cookies || 0))),
+        comment_email_notifications: Number(user.comment_email_notifications || 0) === 1 ? 1 : 0,
         requires_email_binding: !userEmailBound(user),
         download_credits: user.download_credits,
         created_at: user.created_at,
@@ -818,6 +821,10 @@ function buildUserResponse(user) {
 
 function userEmailBound(user) {
     return Boolean(user && isQqEmail(user.email) && Number(user.email_verified || 0) === 1);
+}
+
+function userCommentEmailNotificationsEnabled(user) {
+    return Number(user?.comment_email_notifications || 0) === 1;
 }
 
 function rejectUnboundEmail(req, res) {
@@ -989,7 +996,8 @@ function makeNewApiRewardStats(user, cardHeat = 0, templateHeat = 0) {
     const totalHeat = cardHeat + templateHeat;
     const totalCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
     const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies ?? user?.redeemed_cookies ?? 0)));
-    const availableCookies = floorToTwoDecimals(totalCookies - redeemedCookies);
+    const penaltyCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_penalty_cookies ?? user?.penalty_cookies ?? 0)));
+    const availableCookies = floorToTwoDecimals(totalCookies - redeemedCookies - penaltyCookies);
     return {
         newapi_user_id: user?.newapi_user_id || '',
         card_heat: cardHeat,
@@ -997,6 +1005,7 @@ function makeNewApiRewardStats(user, cardHeat = 0, templateHeat = 0) {
         total_heat: totalHeat,
         total_cookies: totalCookies,
         redeemed_cookies: redeemedCookies,
+        penalty_cookies: penaltyCookies,
         available_cookies: availableCookies,
         available_quota: Math.round(availableCookies * NEWAPI_QUOTA_PER_COOKIE),
         heat_per_cookie: NEWAPI_HEAT_PER_COOKIE,
@@ -1017,7 +1026,7 @@ function getUsersNewApiRewardStatsMap(userIds) {
 
     const placeholders = ids.map(() => '?').join(',');
     const users = db.prepare(
-        `SELECT id, newapi_user_id, newapi_redeemed_cookies
+        `SELECT id, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies
          FROM users
          WHERE id IN (${placeholders})`
     ).all(...ids);
@@ -1058,6 +1067,22 @@ function getUsersNewApiRewardStatsMap(userIds) {
 
 function getUserNewApiRewardStats(userId) {
     return getUsersNewApiRewardStatsMap([userId]).get(Number(userId)) || makeNewApiRewardStats(null, 0, 0);
+}
+
+function getContentCookieValueFromHeatRow(row) {
+    if (!row || row.review_status !== 'approved') return 0;
+    return floorToTwoDecimals(computeContentHeatFromRow(row) / NEWAPI_HEAT_PER_COOKIE);
+}
+
+function addNewApiCookiePenalty(userId, cookies) {
+    const id = Number(userId);
+    const amount = floorToTwoDecimals(cookies);
+    if (!Number.isInteger(id) || id <= 0 || amount <= 0) return;
+    db.prepare(
+        `UPDATE users
+         SET newapi_penalty_cookies = IFNULL(newapi_penalty_cookies, 0) + ?
+         WHERE id = ?`
+    ).run(amount, id);
 }
 
 function maybeSendCardHeatMilestoneEmail(cardId, req) {
@@ -1270,7 +1295,7 @@ app.post('/api/user/register', async (req, res) => {
             'INSERT INTO users (username, email, email_verified, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?, 1, ?)'
         ).run(normalizedUsername, email, hash, now);
 
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
         const token = generateUserToken(user);
         res.json({ token, user: buildUserResponse(user) });
@@ -1312,9 +1337,35 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
-    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user: buildUserResponse(user) });
+});
+
+app.put('/api/user/preferences', authenticateUser, (req, res) => {
+    try {
+        const commentEmailNotifications = req.body.comment_email_notifications === true
+            || req.body.comment_email_notifications === 1
+            || req.body.comment_email_notifications === '1'
+            || req.body.comment_email_notifications === 'true';
+        db.prepare('UPDATE users SET comment_email_notifications = ? WHERE id = ?')
+            .run(commentEmailNotifications ? 1 : 0, req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'update_user_preferences',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: { comment_email_notifications: commentEmailNotifications }
+        });
+        res.json({ success: true, user: buildUserResponse(user) });
+    } catch (err) {
+        console.error('Update user preferences error:', err);
+        res.status(500).json({ error: '保存个人设置失败' });
+    }
 });
 
 app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
@@ -1331,7 +1382,7 @@ app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
         if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
 
         db.prepare('UPDATE users SET email = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(email, req.user.id);
-        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({ userType: 'user', userId: req.user.id, username: req.user.username, action: 'bind_email', targetType: 'user', targetId: String(req.user.id), ip: getRequestIp(req), details: { email: maskEmail(email) } });
         const token = generateUserToken(updated);
         res.json({ success: true, token, user: buildUserResponse(updated) });
@@ -1394,7 +1445,7 @@ app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
             return res.status(409).json({ error: '这个 STA1N API 用户 ID 已被其他账号绑定' });
         }
         db.prepare('UPDATE users SET newapi_user_id = ? WHERE id = ?').run(rawId, req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -1416,11 +1467,11 @@ app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
     try {
         const current = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
         if (!current?.newapi_user_id) {
-            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
             return res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
         }
         db.prepare("UPDATE users SET newapi_user_id = '' WHERE id = ?").run(req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -2884,7 +2935,11 @@ app.delete('/api/cards/:id', (req, res) => {
         }
 
         const { id } = req.params;
-        const card = db.prepare('SELECT name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare(
+            `SELECT name, uploader_user_id, review_status, views_count, downloads_count,
+                    ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
+             FROM character_cards WHERE id = ?`
+        ).get(id);
         if (!card) {
             return res.status(404).json({ error: '卡片不存在' });
         }
@@ -2894,12 +2949,18 @@ app.delete('/api/cards/:id', (req, res) => {
         if (!isAdmin && !isModerator && (!userId || ownerUserId !== Number(userId))) {
             return res.status(403).json({ error: '无权删除此卡片' });
         }
+        const isOwnerDelete = Boolean(!isAdmin && ownerUserId && userId && ownerUserId === Number(userId));
+        const shouldPenaltyCookies = Boolean(card.uploader_user_id && card.review_status === 'approved' && !isOwnerDelete && (isAdmin || isModerator));
+        const cookiePenalty = shouldPenaltyCookies ? getContentCookieValueFromHeatRow(card) : 0;
 
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(id);
             // Reclaim upload credits (3) from uploader, minimum 0
             if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
+            }
+            if (cookiePenalty > 0) {
+                addNewApiCookiePenalty(card.uploader_user_id, cookiePenalty);
             }
         });
         deleteAndReclaim();
@@ -2913,7 +2974,7 @@ app.delete('/api/cards/:id', (req, res) => {
             targetType: 'card',
             targetId: id,
             ip: getRequestIp(req),
-            details: { name: card?.name }
+            details: { name: card?.name, cookie_penalty: cookiePenalty }
         });
         res.json([{ id }]);
     } catch (err) {
@@ -3401,7 +3462,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         if (!user) return res.status(401).json({ error: '用户不存在' });
         const card = db.prepare(
             `SELECT cc.id, cc.name, cc.uploader_user_id,
-                    u.username, u.email, u.email_verified
+                    u.username, u.email, u.email_verified, u.comment_email_notifications
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
              WHERE cc.id = ? AND cc.review_status = 'approved'`
@@ -3460,7 +3521,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
         maybeSendCardHeatMilestoneEmail(req.params.cardId, req);
-        if (card.uploader_user_id && card.uploader_user_id !== userId && userEmailBound(card)) {
+        if (card.uploader_user_id && card.uploader_user_id !== userId && userEmailBound(card) && userCommentEmailNotificationsEnabled(card)) {
             sendCommentNotificationEmail({
                 to: card.email,
                 ownerName: card.username,
@@ -3549,7 +3610,7 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         if (!user) return res.status(401).json({ error: '用户不存在' });
         const template = db.prepare(
             `SELECT ut.id, ut.title, ut.uploader_user_id,
-                    u.username, u.email, u.email_verified
+                    u.username, u.email, u.email_verified, u.comment_email_notifications
              FROM ui_templates ut
              LEFT JOIN users u ON ut.uploader_user_id = u.id
              WHERE ut.id = ? AND ut.review_status = 'approved'`
@@ -3605,7 +3666,7 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         comment.template_uploader_id = template.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
-        if (template.uploader_user_id && template.uploader_user_id !== userId && userEmailBound(template)) {
+        if (template.uploader_user_id && template.uploader_user_id !== userId && userEmailBound(template) && userCommentEmailNotificationsEnabled(template)) {
             sendCommentNotificationEmail({
                 to: template.email,
                 ownerName: template.username,
@@ -3993,17 +4054,27 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
 
 app.delete('/api/admin/cards/:id', authenticateAdmin, (req, res) => {
     try {
-        const card = db.prepare('SELECT name, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(req.params.id);
+        const card = db.prepare(
+            `SELECT name, uploader_user_id, review_status, views_count, downloads_count,
+                    ${cardCommentHeatCountExpr('character_cards')} AS comment_heat_count
+             FROM character_cards WHERE id = ?`
+        ).get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        const cookiePenalty = card.uploader_user_id && card.review_status === 'approved'
+            ? getContentCookieValueFromHeatRow(card)
+            : 0;
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(req.params.id);
             if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
+            if (cookiePenalty > 0) {
+                addNewApiCookiePenalty(card.uploader_user_id, cookiePenalty);
+            }
         });
         deleteAndReclaim();
         thumbnailCache.delete(req.params.id);
-        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name } });
+        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name, cookie_penalty: cookiePenalty } });
         res.json({ success: true });
     } catch (err) {
         console.error('Admin delete card error:', err);
