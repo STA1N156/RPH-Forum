@@ -253,8 +253,10 @@ app.use((req, res, next) => {
 });
 
 
-// Serve static files (no cache for HTML, allow cache for assets)
-app.use(express.static(path.join(__dirname, 'public'), {
+// Serve static files (no cache for HTML, allow cache for assets).
+// Skip this middleware for API requests so they do not wait on filesystem stats
+// when image generation/cache writes are busy.
+const publicStaticMiddleware = express.static(path.join(__dirname, 'public'), {
     etag: false,
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
@@ -263,7 +265,11 @@ app.use(express.static(path.join(__dirname, 'public'), {
             res.set('Cache-Control', 'public, max-age=86400');
         }
     }
-}));
+});
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path === '/health') return next();
+    return publicStaticMiddleware(req, res, next);
+});
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -2983,6 +2989,12 @@ async function writeThumbnailToDisk(cacheKey, body) {
     }
 }
 
+function writeThumbnailToDiskLater(cacheKey, body) {
+    writeThumbnailToDisk(cacheKey, body)
+        .then(() => console.info(`[Thumbnail] disk cache written key=${cacheKey} bytes=${body.length}`))
+        .catch((err) => console.warn('[Thumbnail] background disk cache write failed:', err.message));
+}
+
 function cachePreviewImage(cardId, body, contentType, cacheControl, cacheKey = '') {
     if (previewImageCache.size >= PREVIEW_IMAGE_MAX_CACHE) {
         const firstKey = previewImageCache.keys().next().value;
@@ -3034,6 +3046,12 @@ async function writePreviewImageToDisk(cacheKey, body) {
     } catch (err) {
         console.warn('[PreviewImage] disk cache write failed:', err.message);
     }
+}
+
+function writePreviewImageToDiskLater(cacheKey, body) {
+    writePreviewImageToDisk(cacheKey, body)
+        .then(() => console.info(`[PreviewImage] disk cache written key=${cacheKey} bytes=${body.length}`))
+        .catch((err) => console.warn('[PreviewImage] background disk cache write failed:', err.message));
 }
 
 app.get('/api/cards/:id/thumbnail', async (req, res) => {
@@ -3138,16 +3156,16 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         thumbnailBuildPromises.set(cacheKey, buildPromise);
         const generated = await buildPromise;
         thumbnailBuildPromises.delete(cacheKey);
-        if (generated.persist) {
-            await writeThumbnailToDisk(cacheKey, generated.body);
-            markPerf(req, 'thumbnail-disk-write', { bytes: generated.body.length });
-        }
         cacheThumbnail(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
 
         res.set('Content-Type', generated.contentType);
         res.set('Cache-Control', generated.cacheControl);
         res.send(generated.body);
         markPerf(req, 'thumbnail-response', { bytes: generated.body.length });
+        if (generated.persist) {
+            markPerf(req, 'thumbnail-disk-write-queued', { bytes: generated.body.length });
+            writeThumbnailToDiskLater(cacheKey, generated.body);
+        }
     } catch (err) {
         if (req.params?.id) {
             const cacheKeyPrefix = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
@@ -3262,16 +3280,16 @@ app.get('/api/cards/:id/preview-image', async (req, res) => {
         previewImageBuildPromises.set(cacheKey, buildPromise);
         const generated = await buildPromise;
         previewImageBuildPromises.delete(cacheKey);
-        if (generated.persist) {
-            await writePreviewImageToDisk(cacheKey, generated.body);
-            markPerf(req, 'preview-image-disk-write', { bytes: generated.body.length });
-        }
         cachePreviewImage(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
 
         res.set('Content-Type', generated.contentType);
         res.set('Cache-Control', generated.cacheControl);
         res.send(generated.body);
         markPerf(req, 'preview-image-response', { bytes: generated.body.length });
+        if (generated.persist) {
+            markPerf(req, 'preview-image-disk-write-queued', { bytes: generated.body.length });
+            writePreviewImageToDiskLater(cacheKey, generated.body);
+        }
     } catch (err) {
         if (req.params?.id) {
             const cacheKeyPrefix = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
