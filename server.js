@@ -951,7 +951,7 @@ function parseCookieAmount(value) {
 
 function recordAccountViewHeat(req, contentType, contentId) {
     const userId = req.user?.id;
-    if (!userId) return { counted: true, limited: false };
+    if (!userId) return { counted: false, limited: false, reason: 'login_required' };
 
     const now = new Date().toISOString();
     const windowModifier = `-${VIEW_HEAT_ACCOUNT_WINDOW_HOURS} hours`;
