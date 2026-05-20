@@ -2784,12 +2784,12 @@ async function buildCardDownloadFile(card) {
     return injectCardMetadataIntoPng(pngBuffer, card.data);
 }
 
-function cacheThumbnail(cardId, body, contentType, cacheControl) {
+function cacheThumbnail(cardId, body, contentType, cacheControl, cacheKey = '') {
     if (thumbnailCache.size >= THUMBNAIL_MAX_CACHE) {
         const firstKey = thumbnailCache.keys().next().value;
         thumbnailCache.delete(firstKey);
     }
-    thumbnailCache.set(cardId, { body, contentType, cacheControl });
+    thumbnailCache.set(cardId, { body, contentType, cacheControl, cacheKey });
 }
 
 app.get('/api/cards/:id/avatar', async (req, res) => {
@@ -2844,60 +2844,174 @@ app.get('/api/cards/:id/avatar', async (req, res) => {
 // Thumbnail endpoint - compressed preview for card listing
 const thumbnailCache = new Map();
 const THUMBNAIL_MAX_CACHE = 500;
+const thumbnailBuildPromises = new Map();
+const THUMBNAIL_CACHE_DIR = path.join(SERVER_DATA_DIR, 'thumbnail-cache');
 const REMOTE_FETCH_TIMEOUT_MS = 5000;
 const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_REMOTE_FETCH_RETRIES = 2;
 
+function makeThumbnailCacheKey(cardId, row) {
+    const signature = crypto
+        .createHash('sha1')
+        .update(String(cardId || ''))
+        .update('\0')
+        .update(String(row?.name || ''))
+        .update('\0')
+        .update(String(row?.avatar_url || ''))
+        .digest('hex')
+        .slice(0, 24);
+    const safeId = String(cardId || 'card').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'card';
+    return `${safeId}-${signature}.webp`;
+}
+
+function getThumbnailCachePath(cacheKey) {
+    return path.join(THUMBNAIL_CACHE_DIR, cacheKey);
+}
+
+async function readThumbnailFromDisk(cacheKey) {
+    try {
+        const body = await fs.promises.readFile(getThumbnailCachePath(cacheKey));
+        return {
+            body,
+            contentType: 'image/webp',
+            cacheControl: 'public, max-age=2592000, immutable'
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function writeThumbnailToDisk(cacheKey, body) {
+    try {
+        await fs.promises.mkdir(THUMBNAIL_CACHE_DIR, { recursive: true });
+        const finalPath = getThumbnailCachePath(cacheKey);
+        const tempPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
+        await fs.promises.writeFile(tempPath, body);
+        await fs.promises.rename(tempPath, finalPath);
+    } catch (err) {
+        console.warn('[Thumbnail] disk cache write failed:', err.message);
+    }
+}
+
 app.get('/api/cards/:id/thumbnail', async (req, res) => {
     try {
         const cardId = req.params.id;
-        
-        // Check memory cache
+        markPerf(req, 'thumbnail-start', { cardId });
+
+        // Hot path: edits/deletes clear this memory cache, so repeated list renders
+        // should not touch SQLite or sharp at all.
         if (thumbnailCache.has(cardId)) {
             const cached = thumbnailCache.get(cardId);
+            markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
             res.set('Content-Type', cached.contentType);
             res.set('Cache-Control', cached.cacheControl);
             return res.send(cached.body);
         }
 
         const row = db.prepare('SELECT avatar_url, name FROM character_cards WHERE id = ?').get(cardId);
+        markPerf(req, 'thumbnail-db-read', { found: Boolean(row) });
         if (!row) return res.status(404).end();
         const safeAvatarUrl = sanitizeAvatarUrl(row.avatar_url, cardId);
+        const cacheKey = makeThumbnailCacheKey(cardId, row);
 
-        // No avatar data — generate placeholder thumbnail with first character
-        if (!safeAvatarUrl) {
-            const svg = buildPlaceholderSvg(row.name, cardId, 400, 533, 160);
-            if (!sharp) {
-                res.set('Content-Type', 'image/svg+xml');
-                res.set('Cache-Control', 'public, max-age=86400');
-                return res.send(svg);
+        // Check memory cache
+        if (thumbnailCache.has(cardId)) {
+            const cached = thumbnailCache.get(cardId);
+            if (cached.cacheKey === cacheKey) {
+                markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
+                res.set('Content-Type', cached.contentType);
+                res.set('Cache-Control', cached.cacheControl);
+                return res.send(cached.body);
             }
-            const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 75 }).toBuffer();
-            cacheThumbnail(cardId, placeholder, 'image/webp', 'public, max-age=86400');
-            res.set('Content-Type', 'image/webp');
-            res.set('Cache-Control', 'public, max-age=86400');
-            return res.send(placeholder);
+            thumbnailCache.delete(cardId);
         }
 
-        const asset = await resolveAvatarAsset(safeAvatarUrl);
-
-        if (!sharp) {
-            res.set('Content-Type', asset.contentType);
-            res.set('Cache-Control', asset.cacheControl);
-            return res.send(asset.buffer);
+        const diskCached = await readThumbnailFromDisk(cacheKey);
+        if (diskCached) {
+            markPerf(req, 'thumbnail-disk-hit', { bytes: diskCached.body.length });
+            cacheThumbnail(cardId, diskCached.body, diskCached.contentType, diskCached.cacheControl, cacheKey);
+            res.set('Content-Type', diskCached.contentType);
+            res.set('Cache-Control', diskCached.cacheControl);
+            return res.send(diskCached.body);
         }
 
-        const thumbnail = await sharp(asset.buffer)
-            .resize(400, null, { withoutEnlargement: true })
-            .webp({ quality: 75 })
-            .toBuffer();
+        if (thumbnailBuildPromises.has(cacheKey)) {
+            markPerf(req, 'thumbnail-wait-existing-build');
+            const generated = await thumbnailBuildPromises.get(cacheKey);
+            cacheThumbnail(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+            res.set('Content-Type', generated.contentType);
+            res.set('Cache-Control', generated.cacheControl);
+            return res.send(generated.body);
+        }
 
-        cacheThumbnail(cardId, thumbnail, 'image/webp', 'public, max-age=2592000, immutable');
+        const buildThumbnail = async () => {
+            // No avatar data — generate placeholder thumbnail with first character
+            if (!safeAvatarUrl) {
+                const svg = buildPlaceholderSvg(row.name, cardId, 400, 533, 160);
+                if (!sharp) {
+                    return {
+                        body: Buffer.from(svg),
+                        contentType: 'image/svg+xml',
+                        cacheControl: 'public, max-age=86400'
+                    };
+                }
+                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 75 }).toBuffer();
+                return {
+                    body: placeholder,
+                    contentType: 'image/webp',
+                    cacheControl: 'public, max-age=2592000, immutable',
+                    persist: true
+                };
+            }
 
-        res.set('Content-Type', 'image/webp');
-        res.set('Cache-Control', 'public, max-age=2592000, immutable');
-        res.send(thumbnail);
+            if (!sharp) {
+                const asset = await resolveAvatarAsset(safeAvatarUrl);
+                return {
+                    body: asset.buffer,
+                    contentType: asset.contentType,
+                    cacheControl: asset.cacheControl
+                };
+            }
+
+            markPerf(req, 'thumbnail-resolve-asset-start');
+            const asset = await resolveAvatarAsset(safeAvatarUrl);
+            markPerf(req, 'thumbnail-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
+
+            const thumbnail = await sharp(asset.buffer)
+                .resize(400, null, { withoutEnlargement: true })
+                .webp({ quality: 75 })
+                .toBuffer();
+
+            markPerf(req, 'thumbnail-sharp-generate', { bytes: thumbnail.length });
+            return {
+                body: thumbnail,
+                contentType: 'image/webp',
+                cacheControl: 'public, max-age=2592000, immutable',
+                persist: true
+            };
+        };
+
+        const buildPromise = buildThumbnail();
+        thumbnailBuildPromises.set(cacheKey, buildPromise);
+        const generated = await buildPromise;
+        thumbnailBuildPromises.delete(cacheKey);
+        if (generated.persist) {
+            await writeThumbnailToDisk(cacheKey, generated.body);
+            markPerf(req, 'thumbnail-disk-write', { bytes: generated.body.length });
+        }
+        cacheThumbnail(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+
+        res.set('Content-Type', generated.contentType);
+        res.set('Cache-Control', generated.cacheControl);
+        res.send(generated.body);
+        markPerf(req, 'thumbnail-response', { bytes: generated.body.length });
     } catch (err) {
+        if (req.params?.id) {
+            const cacheKeyPrefix = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+            for (const key of thumbnailBuildPromises.keys()) {
+                if (key.startsWith(cacheKeyPrefix)) thumbnailBuildPromises.delete(key);
+            }
+        }
         console.error('Thumbnail generation error:', err);
         // Fallback to full avatar bytes
         try {
@@ -3538,7 +3652,9 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
     try {
         const cardId = req.params.cardId;
         const userId = req.user ? req.user.id : null;
+        markPerf(req, 'comments-start', { cardId, userId: userId || null });
         const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(cardId);
+        markPerf(req, 'comments-card-read', { found: Boolean(card), reviewStatus: card?.review_status || null });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const canView = card.review_status === 'approved'
             || (req.admin && req.admin.id)
@@ -3554,6 +3670,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
              WHERE c.card_id = ? 
              ORDER BY c.created_at ASC`
         ).all(cardId);
+        markPerf(req, 'comments-db-read', { rows: comments.length });
 
         // Find the hot comment (highest likes >= 5)
         const hotComment = db.prepare(
@@ -3561,6 +3678,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
              WHERE card_id = ? AND likes_count >= 5 
              ORDER BY likes_count DESC LIMIT 1`
         ).get(cardId);
+        markPerf(req, 'comments-hot-read', { found: Boolean(hotComment) });
 
         // Check which comments the current user has liked
         let likedCommentIds = new Set();
@@ -3569,6 +3687,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
                 'SELECT comment_id FROM comment_likes WHERE user_id = ? AND comment_id IN (SELECT id FROM character_comments WHERE card_id = ?)'
             ).all(userId, cardId);
             likedCommentIds = new Set(liked.map(l => l.comment_id));
+            markPerf(req, 'comments-liked-read', { rows: liked.length });
         }
 
         const result = comments.map(c => ({
@@ -3576,8 +3695,10 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
             user_liked: likedCommentIds.has(c.id),
             is_hot: hotComment && hotComment.id === c.id
         }));
+        markPerf(req, 'comments-map', { rows: result.length });
 
         res.json(result);
+        markPerf(req, 'comments-response-json', { rows: result.length });
     } catch (err) {
         console.error('Fetch comments error:', err);
         res.status(500).json({ error: '获取评论失败' });
@@ -3693,7 +3814,9 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
     try {
         const templateId = req.params.templateId;
         const userId = req.user ? req.user.id : null;
+        markPerf(req, 'ui-comments-start', { templateId, userId: userId || null });
         const template = db.prepare('SELECT id, uploader_user_id, review_status FROM ui_templates WHERE id = ?').get(templateId);
+        markPerf(req, 'ui-comments-template-read', { found: Boolean(template), reviewStatus: template?.review_status || null });
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
@@ -3709,12 +3832,14 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
              WHERE c.template_id = ?
              ORDER BY c.created_at ASC`
         ).all(templateId);
+        markPerf(req, 'ui-comments-db-read', { rows: comments.length });
 
         const hotComment = db.prepare(
             `SELECT id FROM ui_template_comments
              WHERE template_id = ? AND likes_count >= 5
              ORDER BY likes_count DESC LIMIT 1`
         ).get(templateId);
+        markPerf(req, 'ui-comments-hot-read', { found: Boolean(hotComment) });
 
         let likedCommentIds = new Set();
         if (userId) {
@@ -3722,13 +3847,17 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
                 'SELECT comment_id FROM ui_template_comment_likes WHERE user_id = ? AND comment_id IN (SELECT id FROM ui_template_comments WHERE template_id = ?)'
             ).all(userId, templateId);
             likedCommentIds = new Set(liked.map(l => l.comment_id));
+            markPerf(req, 'ui-comments-liked-read', { rows: liked.length });
         }
 
-        res.json(comments.map(c => ({
+        const result = comments.map(c => ({
             ...c,
             user_liked: likedCommentIds.has(c.id),
             is_hot: hotComment && hotComment.id === c.id
-        })));
+        }));
+        markPerf(req, 'ui-comments-map', { rows: result.length });
+        res.json(result);
+        markPerf(req, 'ui-comments-response-json', { rows: result.length });
     } catch (err) {
         console.error('Fetch UI template comments error:', err);
         res.status(500).json({ error: '获取评论失败' });
