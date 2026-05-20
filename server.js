@@ -1292,7 +1292,7 @@ app.post('/api/user/register', async (req, res) => {
         const hash = await bcrypt.hash(password, 12);
         const now = new Date().toISOString();
         const result = db.prepare(
-            'INSERT INTO users (username, email, email_verified, password_hash, download_credits, last_login) VALUES (?, ?, 1, ?, 1, ?)'
+            'INSERT INTO users (username, email, email_verified, password_hash, download_credits, comment_email_notifications, last_login) VALUES (?, ?, 1, ?, 1, 1, ?)'
         ).run(normalizedUsername, email, hash, now);
 
         const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);

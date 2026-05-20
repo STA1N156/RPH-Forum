@@ -36,7 +36,7 @@ function initDatabase() {
             newapi_user_id TEXT,
             newapi_redeemed_cookies REAL DEFAULT 0,
             newapi_penalty_cookies REAL DEFAULT 0,
-            comment_email_notifications INTEGER DEFAULT 0,
+            comment_email_notifications INTEGER DEFAULT 1,
             password_hash TEXT NOT NULL,
             download_credits INTEGER DEFAULT 1,
             token_version INTEGER DEFAULT 0,
@@ -284,7 +284,15 @@ function initDatabase() {
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_user_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_redeemed_cookies REAL DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_penalty_cookies REAL DEFAULT 0'); } catch (e) { /* column exists */ }
-    try { db.exec('ALTER TABLE users ADD COLUMN comment_email_notifications INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN comment_email_notifications INTEGER DEFAULT 1'); } catch (e) { /* column exists */ }
+    try {
+        const migrated = db.prepare("SELECT value FROM settings WHERE key = 'comment_email_notifications_default_on_migrated'").get();
+        if (!migrated) {
+            db.prepare('UPDATE users SET comment_email_notifications = 1 WHERE comment_email_notifications IS NULL OR comment_email_notifications = 0').run();
+            db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+                .run('comment_email_notifications_default_on_migrated', '1', new Date().toISOString());
+        }
+    } catch (e) { /* best effort default migration */ }
     try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_newapi_user_unique ON users(newapi_user_id) WHERE newapi_user_id IS NOT NULL AND newapi_user_id != ''"); } catch (e) { /* index exists */ }
     try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email COLLATE NOCASE) WHERE email IS NOT NULL AND email != ''"); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
