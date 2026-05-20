@@ -1,5 +1,7 @@
 ﻿const express = require('express');
 const path = require('path');
+const { performance } = require('perf_hooks');
+const fs = require('fs');
 const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
@@ -20,6 +22,7 @@ const app = express();
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = parseInt(process.env.PORT) || 9191;
 const HOST = process.env.HOST || '0.0.0.0';
+const SERVER_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const TRUST_PROXY_SETTING = process.env.TRUST_PROXY === 'false'
     ? false
     : (process.env.TRUST_PROXY === 'true' || !process.env.TRUST_PROXY ? true : process.env.TRUST_PROXY);
@@ -38,6 +41,8 @@ const NEWAPI_ADMIN_USER_ID = (process.env.NEWAPI_ADMIN_USER_ID || process.env.NE
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
+const EMAIL_SEND_TIMEOUT_MS = Math.max(5000, parseInt(process.env.EMAIL_SEND_TIMEOUT_MS || '15000', 10) || 15000);
+const EMAIL_SEND_RETRIES = Math.max(0, parseInt(process.env.EMAIL_SEND_RETRIES || '1', 10) || 1);
 const HEAT_EMAIL_STEP = 500;
 const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '8', 10));
 const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
@@ -48,6 +53,8 @@ const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEA
 const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
 const NEWAPI_USER_STATUS_ENABLED = 1;
 const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃', '12345'];
+const PERF_LOG_ALL_API = process.env.PERF_LOG_ALL_API !== 'false';
+const PERF_SLOW_REQUEST_MS = Math.max(50, parseInt(process.env.PERF_SLOW_REQUEST_MS || '300', 10) || 300);
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -113,6 +120,61 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
+
+function formatDuration(ms) {
+    return `${Number(ms || 0).toFixed(1)}ms`;
+}
+
+function formatPerfExtra(extra) {
+    if (!extra || typeof extra !== 'object') return '';
+    const safe = {};
+    Object.entries(extra).forEach(([key, value]) => {
+        if (value === undefined) return;
+        if (typeof value === 'string' && value.length > 120) safe[key] = `${value.slice(0, 120)}...`;
+        else safe[key] = value;
+    });
+    try {
+        return ` ${JSON.stringify(safe)}`;
+    } catch {
+        return '';
+    }
+}
+
+function markPerf(req, step, extra) {
+    if (!req.perf) return;
+    const now = performance.now();
+    req.perf.marks.push({
+        step,
+        total: now - req.perf.start,
+        delta: now - req.perf.last,
+        extra
+    });
+    req.perf.last = now;
+}
+
+app.use((req, res, next) => {
+    const start = performance.now();
+    req.perf = { start, last: start, marks: [] };
+    req.markPerf = (step, extra) => markPerf(req, step, extra);
+
+    res.on('finish', () => {
+        const total = performance.now() - start;
+        const pathName = req.path || '';
+        const shouldLog = res.statusCode >= 500
+            || total >= PERF_SLOW_REQUEST_MS
+            || (PERF_LOG_ALL_API && pathName.startsWith('/api/'));
+        if (!shouldLog) return;
+
+        const viewer = req.admin
+            ? `admin:${req.admin.id}`
+            : (req.user ? `user:${req.user.id}` : 'guest');
+        const marks = req.perf.marks.length
+            ? ` marks=${req.perf.marks.map((mark) => `${mark.step}+${formatDuration(mark.delta)}@${formatDuration(mark.total)}${formatPerfExtra(mark.extra)}`).join(' | ')}`
+            : '';
+        console.info(`[Perf] ${req.method} ${req.originalUrl} status=${res.statusCode} total=${formatDuration(total)} viewer=${viewer} ip=${req.realIp || '-'}${marks}`);
+    });
+    next();
+});
 
 // ============== Real IP & Ban Helpers ==============
 function normalizeIp(value) {
@@ -182,6 +244,7 @@ function findActiveIpBan(ip) {
 app.use((req, res, next) => {
     req.realIp = getRequestIp(req);
     const ban = findActiveIpBan(req.realIp);
+    markPerf(req, 'ip-ban-check', { banned: Boolean(ban) });
     if (ban) {
         return res.status(403).json({ error: '当前 IP 已被封禁', reason: ban.reason || '' });
     }
@@ -259,6 +322,7 @@ function isModeratorUser(user) {
 }
 
 function authenticateAdmin(req, res, next) {
+    markPerf(req, 'auth-admin-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '未授权' });
@@ -269,6 +333,7 @@ function authenticateAdmin(req, res, next) {
         const admin = validateAdminTokenPayload(decoded);
         if (!admin) return res.status(403).json({ error: '权限不足或登录状态已失效' });
         req.admin = admin;
+        markPerf(req, 'auth-admin-ok', { adminId: admin.id });
         next();
     } catch (err) {
         if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
@@ -277,6 +342,7 @@ function authenticateAdmin(req, res, next) {
 }
 
 function authenticateUser(req, res, next) {
+    markPerf(req, 'auth-user-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '请先登录' });
@@ -288,6 +354,7 @@ function authenticateUser(req, res, next) {
         if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
         if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
         req.user = user;
+        markPerf(req, 'auth-user-ok', { userId: user.id });
         next();
     } catch (err) {
         if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
@@ -296,6 +363,7 @@ function authenticateUser(req, res, next) {
 }
 
 function authenticateUserAllowUnbound(req, res, next) {
+    markPerf(req, 'auth-user-unbound-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '请先登录' });
@@ -306,6 +374,7 @@ function authenticateUserAllowUnbound(req, res, next) {
         const user = validateUserTokenPayload(decoded);
         if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
         req.user = user;
+        markPerf(req, 'auth-user-unbound-ok', { userId: user.id });
         next();
     } catch (err) {
         if (err.code === 'USER_BANNED') return res.status(403).json({ error: err.message });
@@ -314,9 +383,11 @@ function authenticateUserAllowUnbound(req, res, next) {
 }
 
 function optionalUserAuth(req, res, next) {
+    markPerf(req, 'auth-optional-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         req.user = null;
+        markPerf(req, 'auth-optional-guest');
         return next();
     }
     try {
@@ -324,17 +395,27 @@ function optionalUserAuth(req, res, next) {
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
             req.user = validateUserTokenPayload(decoded);
+            markPerf(req, 'auth-optional-user', { userId: req.user?.id || null });
         }
-        else if (decoded.role === 'admin') { req.admin = validateAdminTokenPayload(decoded); req.user = null; }
-        else req.user = null;
+        else if (decoded.role === 'admin') {
+            req.admin = validateAdminTokenPayload(decoded);
+            req.user = null;
+            markPerf(req, 'auth-optional-admin', { adminId: req.admin?.id || null });
+        }
+        else {
+            req.user = null;
+            markPerf(req, 'auth-optional-unknown-role');
+        }
         next();
     } catch (err) {
         req.user = null;
+        markPerf(req, 'auth-optional-failed');
         next();
     }
 }
 
 function requireUserOrAdmin(req, res, next) {
+    markPerf(req, 'auth-user-or-admin-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '请先登录后再操作' });
@@ -347,10 +428,12 @@ function requireUserOrAdmin(req, res, next) {
             if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
             req.user = user;
+            markPerf(req, 'auth-user-or-admin-user', { userId: user.id });
         } else if (decoded.role === 'admin') {
             const admin = validateAdminTokenPayload(decoded);
             if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             req.admin = admin;
+            markPerf(req, 'auth-user-or-admin-admin', { adminId: admin.id });
         } else {
             return res.status(403).json({ error: '权限不足' });
         }
@@ -362,6 +445,7 @@ function requireUserOrAdmin(req, res, next) {
 }
 
 function requireModeration(req, res, next) {
+    markPerf(req, 'auth-moderation-start');
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: '请先登录' });
@@ -373,6 +457,7 @@ function requireModeration(req, res, next) {
             const admin = validateAdminTokenPayload(decoded);
             if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             req.admin = admin;
+            markPerf(req, 'auth-moderation-admin', { adminId: admin.id });
             return next();
         }
         if (decoded.role === 'user') {
@@ -381,6 +466,7 @@ function requireModeration(req, res, next) {
             if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
             if (!isModeratorUser(user)) return res.status(403).json({ error: '权限不足' });
             req.user = user;
+            markPerf(req, 'auth-moderation-user', { userId: user.id });
             return next();
         }
         return res.status(403).json({ error: '权限不足' });
@@ -683,6 +769,20 @@ function isEmailConfigured() {
     return Boolean(config.apiKey && config.from);
 }
 
+function describeFetchFailure(err) {
+    if (!err) return '未知网络错误';
+    const parts = [];
+    if (err.name === 'AbortError') parts.push(`请求超时（${EMAIL_SEND_TIMEOUT_MS}ms）`);
+    if (err.message) parts.push(err.message);
+    if (err.cause?.code) parts.push(err.cause.code);
+    if (err.cause?.message && err.cause.message !== err.message) parts.push(err.cause.message);
+    return [...new Set(parts.filter(Boolean))].join(' / ') || '未知网络错误';
+}
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function sendZeaburEmail({ to, subject, html, text }) {
     const normalizedTo = normalizeEmail(to);
     if (!normalizedTo) throw new Error('收件邮箱格式无效');
@@ -691,25 +791,47 @@ async function sendZeaburEmail({ to, subject, html, text }) {
     if (!config.apiKey || !config.from) {
         throw new Error('邮件服务未配置，请在后台或环境变量里设置 Zeabur API Key 和发件邮箱');
     }
-
-    const response = await fetch(config.endpoint || ZEABUR_EMAIL_ENDPOINT, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify({
-            from: config.from,
-            to: [normalizedTo],
-            subject,
-            html,
-            text
-        })
+    const endpoint = config.endpoint || ZEABUR_EMAIL_ENDPOINT;
+    const requestBody = JSON.stringify({
+        from: config.from,
+        to: [normalizedTo],
+        subject,
+        html,
+        text
     });
+
+    let response = null;
+    let lastError = null;
+    for (let attempt = 0; attempt <= EMAIL_SEND_RETRIES; attempt += 1) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), EMAIL_SEND_TIMEOUT_MS);
+        try {
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`
+                },
+                body: requestBody,
+                signal: controller.signal
+            });
+            lastError = null;
+            break;
+        } catch (err) {
+            lastError = err;
+            if (attempt < EMAIL_SEND_RETRIES) await delay(500);
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    if (!response) {
+        throw new Error(`邮件服务连接失败：${describeFetchFailure(lastError)}；endpoint=${endpoint}`);
+    }
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-        const detail = data?.message || data?.error || `HTTP ${response.status}`;
+        const detail = data?.message || data?.error || data?.errors?.[0]?.extensions?.code || `HTTP ${response.status}`;
         throw new Error(`邮件发送失败：${detail}`);
     }
     return data;
@@ -717,7 +839,8 @@ async function sendZeaburEmail({ to, subject, html, text }) {
 
 function sendZeaburEmailQuietly(payload) {
     sendZeaburEmail(payload).catch((err) => {
-        console.error('[Email] Notification send failed:', err.message);
+        const target = payload?.to ? maskEmail(normalizeEmail(payload.to)) : '-';
+        console.error(`[Email] Notification send failed (${target}):`, err.message);
     });
 }
 
@@ -1337,9 +1460,12 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
+    markPerf(req, 'user-me-start', { userId: req.user.id });
     const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+    markPerf(req, 'user-me-db-read', { found: Boolean(user) });
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user: buildUserResponse(user) });
+    markPerf(req, 'user-me-response-json');
 });
 
 app.put('/api/user/preferences', authenticateUser, (req, res) => {
@@ -1904,6 +2030,7 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
+        markPerf(req, 'cards-start', { sortMode });
         const commentCountSql = cardCommentCountExpr('cc');
         const commentHeatCountSql = cardCommentHeatCountExpr('cc');
         const heatExpr = `((IFNULL(cc.views_count, 0) * ${VIEW_HEAT_WEIGHT}) + (IFNULL(${commentHeatCountSql}, 0) * ${COMMENT_HEAT_WEIGHT}) + (IFNULL(cc.downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
@@ -1931,7 +2058,8 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        const cards = db.prepare(
+        markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
+        const rawCards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.data,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
                     cc.views_count, cc.is_featured, cc.review_status,
@@ -1941,8 +2069,13 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
-        ).all(...params).map(card => attachUiTemplateSummary(card));
+        ).all(...params);
+        const dataBytes = rawCards.reduce((sum, row) => sum + Buffer.byteLength(row.data || '', 'utf8'), 0);
+        markPerf(req, 'cards-db-read', { rows: rawCards.length, dataBytes });
+        const cards = rawCards.map(card => attachUiTemplateSummary(card));
+        markPerf(req, 'cards-attach-ui-template', { rows: cards.length });
         res.json(cards);
+        markPerf(req, 'cards-response-json', { rows: cards.length });
     } catch (err) {
         console.error('Fetch cards error:', err);
         res.status(500).json({ error: '获取卡片失败' });
@@ -1953,6 +2086,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
+        markPerf(req, 'ui-templates-start', { sortMode });
         const whereParts = [];
         const params = [];
         let orderByClause = 'created_at DESC';
@@ -1985,7 +2119,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        const templates = db.prepare(
+        markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
+        const rawTemplates = db.prepare(
             `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at,
@@ -1994,8 +2129,13 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
              FROM ui_templates
              ${whereClause}
              ORDER BY ${orderByClause}`
-        ).all(...params).map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
+        ).all(...params);
+        const contentBytes = rawTemplates.reduce((sum, row) => sum + Buffer.byteLength(row.content || '', 'utf8'), 0);
+        markPerf(req, 'ui-templates-db-read', { rows: rawTemplates.length, contentBytes });
+        const templates = rawTemplates.map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
+        markPerf(req, 'ui-templates-sanitize', { rows: templates.length });
         res.json(templates);
+        markPerf(req, 'ui-templates-response-json', { rows: templates.length });
     } catch (err) {
         console.error('Fetch UI templates error:', err);
         res.status(500).json({ error: '获取 UI 模板失败' });
@@ -2273,7 +2413,9 @@ app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
 
 app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
     try {
+        markPerf(req, 'ui-template-detail-start', { id: req.params.id });
         const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        markPerf(req, 'ui-template-detail-db-read', { found: Boolean(template), contentBytes: template ? Buffer.byteLength(template.content || '', 'utf8') : 0 });
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
             || (req.admin && req.admin.id)
@@ -2283,14 +2425,18 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
 
         if (!req.admin && !isModeratorUser(req.user) && !(req.user && template.uploader_user_id === req.user.id)) {
             const viewLimit = recordAccountViewHeat(req, 'ui_template', req.params.id);
+            markPerf(req, 'ui-template-detail-view-limit', viewLimit);
             if (viewLimit.counted) {
                 db.prepare('UPDATE ui_templates SET views_count = views_count + 1 WHERE id = ?').run(req.params.id);
                 template.views_count = (template.views_count || 0) + 1;
+                markPerf(req, 'ui-template-detail-view-incremented', { viewsCount: template.views_count });
             }
         }
         Object.assign(template, getUiTemplateCommentCounts(req.params.id));
+        markPerf(req, 'ui-template-detail-comments-counted');
 
         res.json(sanitizeUiTemplateRow(template, { includeContent: true, viewer: { admin: req.admin, user: req.user } }));
+        markPerf(req, 'ui-template-detail-response-json');
     } catch (err) {
         console.error('Fetch UI template detail error:', err);
         res.status(500).json({ error: '获取 UI 模板详情失败' });
@@ -3867,6 +4013,7 @@ app.delete('/api/comments/:id', requireUserOrAdmin, (req, res) => {
 // ============== Admin Routes ==============
 app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
     try {
+        markPerf(req, 'admin-stats-start');
         const totalCards = db.prepare('SELECT COUNT(*) as count FROM character_cards').get().count;
         const totalComments = db.prepare('SELECT COUNT(*) as count FROM character_comments').get().count;
         const totalDownloads = db.prepare('SELECT COALESCE(SUM(downloads_count), 0) as count FROM character_cards').get().count;
@@ -3874,6 +4021,7 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
         const totalLikes = db.prepare('SELECT COALESCE(SUM(likes_count), 0) as count FROM character_comments').get().count;
         const totalVisits = db.prepare('SELECT COUNT(*) as count FROM page_views').get().count;
         const pendingCards = db.prepare("SELECT COUNT(*) as count FROM character_cards WHERE review_status = 'pending'").get().count;
+        markPerf(req, 'admin-stats-base-counts', { totalCards, totalComments, totalUsers, totalVisits, pendingCards });
         const bannedIpCount = db.prepare(
             "SELECT COUNT(*) as count FROM ip_bans WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))"
         ).get().count;
@@ -3892,6 +4040,7 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
         const topCards = db.prepare(
             'SELECT id, name, downloads_count FROM character_cards ORDER BY downloads_count DESC LIMIT 10'
         ).all();
+        markPerf(req, 'admin-stats-recent-counts', { bannedIpCount, recentCards, recentComments, todayNewUsers, topCards: topCards.length });
 
         // 7-day daily activity from operation_logs
         const dailyActivity = db.prepare(`
@@ -3905,6 +4054,7 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
             GROUP BY date(created_at)
             ORDER BY day ASC
         `).all();
+        markPerf(req, 'admin-stats-daily-activity', { rows: dailyActivity.length });
 
         // 7-day daily comments
         const dailyComments = db.prepare(`
@@ -3913,6 +4063,7 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
             WHERE created_at >= date('now', '-6 days')
             GROUP BY date(created_at)
         `).all();
+        markPerf(req, 'admin-stats-daily-comments', { rows: dailyComments.length });
 
         // 7-day daily visits
         const dailyVisits = db.prepare(`
@@ -3921,12 +4072,14 @@ app.get('/api/admin/stats', authenticateAdmin, (req, res) => {
             WHERE created_at >= date('now', '-6 days')
             GROUP BY date(created_at)
         `).all();
+        markPerf(req, 'admin-stats-daily-visits', { rows: dailyVisits.length });
 
         res.json({
             totalCards, totalComments, totalDownloads, totalUsers, totalLikes, totalVisits,
             recentCards, recentComments, todayNewUsers, todayNewCards, todayNewComments,
             loginAttempts, pendingCards, bannedIpCount, topCards, dailyActivity, dailyComments, dailyVisits
         });
+        markPerf(req, 'admin-stats-response-json');
     } catch (err) {
         console.error('Stats error:', err);
         res.status(500).json({ error: '获取统计失败' });
@@ -3940,6 +4093,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         const offset = (page - 1) * limit;
         const search = req.query.search || '';
         const status = req.query.status || '';
+        markPerf(req, 'admin-cards-start', { page, limit, hasSearch: Boolean(search), status });
 
         let query = `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.downloads_count,
                             cc.uploader_user_id, u.username AS uploader_username,
@@ -3968,13 +4122,17 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
             query += where;
             countQuery += where;
         }
+        markPerf(req, 'admin-cards-query-built', { whereParts: whereParts.length });
 
         const total = db.prepare(countQuery).get(...countParams).count;
+        markPerf(req, 'admin-cards-count', { total });
         query += ' ORDER BY cc.created_at DESC LIMIT ? OFFSET ?';
         params.push(limit, offset);
 
         const cards = db.prepare(query).all(...params);
+        markPerf(req, 'admin-cards-list', { rows: cards.length });
         res.json({ cards, total, page, limit, totalPages: Math.ceil(total / limit) });
+        markPerf(req, 'admin-cards-response-json', { rows: cards.length });
     } catch (err) {
         console.error('Admin cards error:', err);
         res.status(500).json({ error: '获取卡片列表失败' });
@@ -4328,6 +4486,7 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
         const offset = (page - 1) * limit;
         const status = String(req.query.status || '').trim();
         const search = String(req.query.search || '').trim().slice(0, 120);
+        markPerf(req, 'admin-redemptions-start', { page, limit, status, hasSearch: Boolean(search) });
 
         const whereParts = [];
         const params = [];
@@ -4348,8 +4507,10 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
         }
         const where = whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : '';
         const baseFrom = `FROM newapi_redemptions nr LEFT JOIN users u ON nr.user_id = u.id${where}`;
+        markPerf(req, 'admin-redemptions-query-built', { whereParts: whereParts.length, params: params.length });
 
         const total = db.prepare(`SELECT COUNT(*) as count ${baseFrom}`).get(...params).count;
+        markPerf(req, 'admin-redemptions-count', { total });
         const summary = db.prepare(
             `SELECT
                 COALESCE(SUM(nr.cookies), 0) as cookies_total,
@@ -4359,6 +4520,11 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
                 SUM(CASE WHEN nr.status = 'failed' THEN 1 ELSE 0 END) as failed_count
              ${baseFrom}`
         ).get(...params);
+        markPerf(req, 'admin-redemptions-summary', {
+            success: Number(summary.success_count || 0),
+            pending: Number(summary.pending_count || 0),
+            failed: Number(summary.failed_count || 0)
+        });
 
         const redemptionRows = db.prepare(
             `SELECT
@@ -4369,7 +4535,9 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
              ORDER BY nr.created_at DESC
              LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
+        markPerf(req, 'admin-redemptions-list', { rows: redemptionRows.length });
         const rewardStatsByUser = getUsersNewApiRewardStatsMap(redemptionRows.map((row) => row.user_id));
+        markPerf(req, 'admin-redemptions-reward-stats', { users: rewardStatsByUser.size });
         const redemptions = redemptionRows.map((row) => {
             const reward = rewardStatsByUser.get(Number(row.user_id)) || null;
             return {
@@ -4381,6 +4549,7 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
                 available_cookies: reward?.available_cookies ?? null
             };
         });
+        markPerf(req, 'admin-redemptions-map', { rows: redemptions.length });
 
         res.json({
             redemptions,
@@ -4396,6 +4565,7 @@ app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
                 failed_count: Number(summary.failed_count || 0)
             }
         });
+        markPerf(req, 'admin-redemptions-response-json', { rows: redemptions.length });
     } catch (err) {
         console.error('Admin New API redemptions error:', err);
         res.status(500).json({ error: '获取提现记录失败' });
@@ -4418,14 +4588,18 @@ const PUBLIC_SETTINGS_KEYS = new Set([
 
 app.get('/api/settings', (req, res) => {
     try {
+        markPerf(req, 'settings-start');
         const settings = db.prepare('SELECT key, value FROM settings').all();
+        markPerf(req, 'settings-db-read', { rows: settings.length });
         const result = {};
         settings.forEach((setting) => {
             if (PUBLIC_SETTINGS_KEYS.has(setting.key)) {
                 result[setting.key] = setting.value;
             }
         });
+        markPerf(req, 'settings-filter', { publicKeys: Object.keys(result).length });
         res.json(result);
+        markPerf(req, 'settings-response-json');
     } catch (err) {
         console.error('Public settings error:', err);
         res.status(500).json({ error: '获取站点设置失败' });
@@ -4679,6 +4853,7 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const offset = (page - 1) * limit;
         const search = req.query.search || '';
+        markPerf(req, 'admin-users-start', { page, limit, hasSearch: Boolean(search) });
 
         let where = '';
         const params = [];
@@ -4686,12 +4861,16 @@ app.get('/api/admin/users', authenticateAdmin, (req, res) => {
             where = ' WHERE username LIKE ? OR email LIKE ? OR newapi_user_id LIKE ?';
             params.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
+        markPerf(req, 'admin-users-query-built', { hasWhere: Boolean(where), params: params.length });
         const total = db.prepare(`SELECT COUNT(*) as count FROM users${where}`).get(...params).count;
+        markPerf(req, 'admin-users-count', { total });
         const users = db.prepare(
             `SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
         ).all(...params, limit, offset);
+        markPerf(req, 'admin-users-list', { rows: users.length });
 
         res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
+        markPerf(req, 'admin-users-response-json', { rows: users.length });
     } catch (err) {
         console.error('Admin users error:', err);
         res.status(500).json({ error: '获取用户列表失败' });
@@ -4814,11 +4993,14 @@ app.put('/api/admin/users/:id/ban', authenticateAdmin, (req, res) => {
 // ============== Visit Tracking ==============
 app.post('/api/track/visit', (req, res) => {
     try {
+        markPerf(req, 'track-visit-start');
         const visitPath = req.body.path || '/';
         const ip = getRequestIp(req);
         const ua = (req.headers['user-agent'] || '').substring(0, 512);
         db.prepare('INSERT INTO page_views (path, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?)').run(visitPath, ip, ua, new Date().toISOString());
+        markPerf(req, 'track-visit-db-insert', { path: visitPath });
         res.json({ success: true });
+        markPerf(req, 'track-visit-response-json');
     } catch (err) {
         res.status(500).json({ error: '记录失败' });
     }
@@ -4828,7 +5010,9 @@ app.post('/api/track/visit', (req, res) => {
 app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
     try {
         const { id } = req.params;
+        markPerf(req, 'card-view-start', { id });
         const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
+        markPerf(req, 'card-view-db-card', { found: Boolean(card), reviewStatus: card?.review_status || null });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         if (card.review_status !== 'approved' && !req.admin && !isModeratorUser(req.user) && !(req.user && card.uploader_user_id === req.user.id)) {
             return res.status(404).json({ error: '卡片不存在' });
@@ -4842,8 +5026,10 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
         }
 
         const viewLimit = recordAccountViewHeat(req, 'card', id);
+        markPerf(req, 'card-view-limit', viewLimit);
         if (!viewLimit.counted) {
             const current = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+            markPerf(req, 'card-view-current-count', { viewsCount: current?.views_count ?? null });
             return res.json({
                 success: true,
                 views_count: current.views_count,
@@ -4857,8 +5043,10 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
 
         db.prepare('UPDATE character_cards SET views_count = views_count + 1 WHERE id = ?').run(id);
         const updated = db.prepare('SELECT views_count FROM character_cards WHERE id = ?').get(id);
+        markPerf(req, 'card-view-incremented', { viewsCount: updated?.views_count ?? null });
         maybeSendCardHeatMilestoneEmail(id, req);
         res.json({ success: true, views_count: updated.views_count, counted: true });
+        markPerf(req, 'card-view-response-json');
     } catch (err) {
         console.error('Card view count error:', err);
         res.status(500).json({ error: '记录浏览量失败' });
@@ -4867,8 +5055,11 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
 
 app.get('/api/stats/visits', (req, res) => {
     try {
+        markPerf(req, 'visits-start');
         const total = db.prepare('SELECT COUNT(*) as count FROM page_views').get().count;
+        markPerf(req, 'visits-db-count', { total });
         res.json({ totalVisits: total });
+        markPerf(req, 'visits-response-json');
     } catch (err) {
         res.status(500).json({ error: '获取访问量失败' });
     }
@@ -4972,8 +5163,60 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+function getFileSizeSafe(filePath) {
+    try {
+        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function logDatabaseHealth() {
+    const started = performance.now();
+    const dbPath = path.join(SERVER_DATA_DIR, 'forum.db');
+    const tables = [
+        'users',
+        'character_cards',
+        'character_comments',
+        'ui_templates',
+        'ui_template_comments',
+        'page_views',
+        'operation_logs',
+        'account_view_limits',
+        'card_downloads',
+        'newapi_redemptions',
+        'ip_bans'
+    ];
+    const counts = {};
+    const tableTimings = {};
+
+    for (const table of tables) {
+        const tableStart = performance.now();
+        try {
+            counts[table] = db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count;
+            tableTimings[table] = formatDuration(performance.now() - tableStart);
+        } catch (err) {
+            counts[table] = `ERR:${err.message}`;
+            tableTimings[table] = formatDuration(performance.now() - tableStart);
+        }
+    }
+
+    let quickCheck = 'skipped';
+    const quickStart = performance.now();
+    try {
+        const row = db.prepare('PRAGMA quick_check').get();
+        quickCheck = row ? Object.values(row)[0] : 'empty';
+    } catch (err) {
+        quickCheck = `ERR:${err.message}`;
+    }
+    const quickMs = performance.now() - quickStart;
+
+    console.info(`[DB] health total=${formatDuration(performance.now() - started)} dbSize=${getFileSizeSafe(dbPath)} walSize=${getFileSizeSafe(`${dbPath}-wal`)} shmSize=${getFileSizeSafe(`${dbPath}-shm`)} quickCheck=${quickCheck} quickCheckTime=${formatDuration(quickMs)} counts=${JSON.stringify(counts)} countTimes=${JSON.stringify(tableTimings)}`);
+}
+
 // ============== Initialize & Start ==============
 initDatabase();
+logDatabaseHealth();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);
