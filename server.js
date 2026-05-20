@@ -1914,9 +1914,9 @@ function getEmbeddedUiTemplateVariableCount(rawData) {
     return keys.size;
 }
 
-function attachUiTemplateSummary(card, { keepData = false } = {}) {
+function attachUiTemplateSummary(card, { keepData = false, preferStoredSummary = false } = {}) {
     if (!card) return card;
-    if (Object.prototype.hasOwnProperty.call(card, 'data') && card.data != null) {
+    if (!preferStoredSummary && Object.prototype.hasOwnProperty.call(card, 'data') && card.data != null) {
         Object.assign(card, buildCardUiTemplateSummary(card.data));
     } else {
         card.ui_template_count = Number(card.ui_template_count || 0);
@@ -2632,7 +2632,7 @@ function isCorruptedAvatarUrl(avatarUrl, cardId) {
     const normalized = String(avatarUrl).trim();
     if (!normalized) return false;
     if (normalized.startsWith('blob:') || normalized.startsWith('file:')) return true;
-    return new RegExp(`/api/cards/${cardId}/(?:avatar|thumbnail)$`, 'i').test(normalized);
+    return new RegExp(`/api/cards/${cardId}/(?:avatar|thumbnail|preview-image)$`, 'i').test(normalized);
 }
 
 function sanitizeAvatarUrl(avatarUrl, cardId) {
@@ -2863,15 +2863,23 @@ function cacheThumbnail(cardId, body, contentType, cacheControl, cacheKey = '') 
     thumbnailCache.set(cardId, { body, contentType, cacheControl, cacheKey });
 }
 
+function clearCardImageCaches(cardId) {
+    thumbnailCache.delete(cardId);
+    previewImageCache.delete(cardId);
+}
+
 app.get('/api/cards/:id/avatar', async (req, res) => {
     try {
+        markPerf(req, 'avatar-start', { cardId: req.params.id });
         const row = db.prepare('SELECT avatar_url, name FROM character_cards WHERE id = ?').get(req.params.id);
+        markPerf(req, 'avatar-db-read', { found: Boolean(row), avatarBytes: row ? Buffer.byteLength(row.avatar_url || '', 'utf8') : 0 });
         if (!row) return res.status(404).end();
 
         const safeAvatarUrl = sanitizeAvatarUrl(row.avatar_url, req.params.id);
 
         // No avatar data — generate placeholder
         if (!safeAvatarUrl) {
+            markPerf(req, 'avatar-placeholder-start');
             const svg = buildPlaceholderSvg(row.name, req.params.id, 800, 1067, 320);
             if (!sharp) {
                 res.set('Content-Type', 'image/svg+xml');
@@ -2879,15 +2887,19 @@ app.get('/api/cards/:id/avatar', async (req, res) => {
                 return res.send(svg);
             }
             const placeholder = await sharp(Buffer.from(svg)).png().toBuffer();
+            markPerf(req, 'avatar-placeholder-generated', { bytes: placeholder.length });
             res.set('Content-Type', 'image/png');
             res.set('Cache-Control', 'public, max-age=86400');
             return res.send(placeholder);
         }
 
+        markPerf(req, 'avatar-resolve-asset-start');
         const asset = await resolveAvatarAsset(safeAvatarUrl);
+        markPerf(req, 'avatar-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
         res.set('Content-Type', asset.contentType);
         res.set('Cache-Control', asset.cacheControl);
         res.send(asset.buffer);
+        markPerf(req, 'avatar-response', { bytes: asset.buffer.length });
     } catch (err) {
         console.error('Avatar fetch error:', err);
         try {
@@ -2917,6 +2929,10 @@ const thumbnailCache = new Map();
 const THUMBNAIL_MAX_CACHE = 500;
 const thumbnailBuildPromises = new Map();
 const THUMBNAIL_CACHE_DIR = path.join(SERVER_DATA_DIR, 'thumbnail-cache');
+const previewImageCache = new Map();
+const PREVIEW_IMAGE_MAX_CACHE = 300;
+const previewImageBuildPromises = new Map();
+const PREVIEW_IMAGE_CACHE_DIR = path.join(SERVER_DATA_DIR, 'preview-image-cache');
 const REMOTE_FETCH_TIMEOUT_MS = 5000;
 const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_REMOTE_FETCH_RETRIES = 2;
@@ -2961,6 +2977,59 @@ async function writeThumbnailToDisk(cacheKey, body) {
         await fs.promises.rename(tempPath, finalPath);
     } catch (err) {
         console.warn('[Thumbnail] disk cache write failed:', err.message);
+    }
+}
+
+function cachePreviewImage(cardId, body, contentType, cacheControl, cacheKey = '') {
+    if (previewImageCache.size >= PREVIEW_IMAGE_MAX_CACHE) {
+        const firstKey = previewImageCache.keys().next().value;
+        previewImageCache.delete(firstKey);
+    }
+    previewImageCache.set(cardId, { body, contentType, cacheControl, cacheKey });
+}
+
+function makePreviewImageCacheKey(cardId, row) {
+    const signature = crypto
+        .createHash('sha1')
+        .update('preview-image-v1-w800-q84')
+        .update('\0')
+        .update(String(cardId || ''))
+        .update('\0')
+        .update(String(row?.name || ''))
+        .update('\0')
+        .update(String(row?.avatar_url || ''))
+        .digest('hex')
+        .slice(0, 24);
+    const safeId = String(cardId || 'card').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'card';
+    return `${safeId}-${signature}.webp`;
+}
+
+function getPreviewImageCachePath(cacheKey) {
+    return path.join(PREVIEW_IMAGE_CACHE_DIR, cacheKey);
+}
+
+async function readPreviewImageFromDisk(cacheKey) {
+    try {
+        const body = await fs.promises.readFile(getPreviewImageCachePath(cacheKey));
+        return {
+            body,
+            contentType: 'image/webp',
+            cacheControl: 'public, max-age=2592000, immutable'
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function writePreviewImageToDisk(cacheKey, body) {
+    try {
+        await fs.promises.mkdir(PREVIEW_IMAGE_CACHE_DIR, { recursive: true });
+        const finalPath = getPreviewImageCachePath(cacheKey);
+        const tempPath = `${finalPath}.${process.pid}.${Date.now()}.tmp`;
+        await fs.promises.writeFile(tempPath, body);
+        await fs.promises.rename(tempPath, finalPath);
+    } catch (err) {
+        console.warn('[PreviewImage] disk cache write failed:', err.message);
     }
 }
 
@@ -3111,13 +3180,144 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
     }
 });
 
+app.get('/api/cards/:id/preview-image', async (req, res) => {
+    try {
+        const cardId = req.params.id;
+        markPerf(req, 'preview-image-start', { cardId });
+
+        if (previewImageCache.has(cardId)) {
+            const cached = previewImageCache.get(cardId);
+            markPerf(req, 'preview-image-memory-hit', { bytes: cached.body.length });
+            res.set('Content-Type', cached.contentType);
+            res.set('Cache-Control', cached.cacheControl);
+            return res.send(cached.body);
+        }
+
+        const row = db.prepare('SELECT avatar_url, name FROM character_cards WHERE id = ?').get(cardId);
+        markPerf(req, 'preview-image-db-read', { found: Boolean(row) });
+        if (!row) return res.status(404).end();
+        const safeAvatarUrl = sanitizeAvatarUrl(row.avatar_url, cardId);
+        const cacheKey = makePreviewImageCacheKey(cardId, row);
+
+        const diskCached = await readPreviewImageFromDisk(cacheKey);
+        if (diskCached) {
+            markPerf(req, 'preview-image-disk-hit', { bytes: diskCached.body.length });
+            cachePreviewImage(cardId, diskCached.body, diskCached.contentType, diskCached.cacheControl, cacheKey);
+            res.set('Content-Type', diskCached.contentType);
+            res.set('Cache-Control', diskCached.cacheControl);
+            return res.send(diskCached.body);
+        }
+
+        if (previewImageBuildPromises.has(cacheKey)) {
+            markPerf(req, 'preview-image-wait-existing-build');
+            const generated = await previewImageBuildPromises.get(cacheKey);
+            cachePreviewImage(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+            res.set('Content-Type', generated.contentType);
+            res.set('Cache-Control', generated.cacheControl);
+            return res.send(generated.body);
+        }
+
+        const buildPreviewImage = async () => {
+            if (!safeAvatarUrl) {
+                const svg = buildPlaceholderSvg(row.name, cardId, 800, 1067, 320);
+                if (!sharp) {
+                    return {
+                        body: Buffer.from(svg),
+                        contentType: 'image/svg+xml',
+                        cacheControl: 'public, max-age=86400'
+                    };
+                }
+                const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 84 }).toBuffer();
+                return {
+                    body: placeholder,
+                    contentType: 'image/webp',
+                    cacheControl: 'public, max-age=2592000, immutable',
+                    persist: true
+                };
+            }
+
+            if (!sharp) {
+                const asset = await resolveAvatarAsset(safeAvatarUrl);
+                return {
+                    body: asset.buffer,
+                    contentType: asset.contentType,
+                    cacheControl: asset.cacheControl
+                };
+            }
+
+            markPerf(req, 'preview-image-resolve-asset-start');
+            const asset = await resolveAvatarAsset(safeAvatarUrl);
+            markPerf(req, 'preview-image-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
+
+            const preview = await sharp(asset.buffer)
+                .resize(800, null, { withoutEnlargement: true })
+                .webp({ quality: 84 })
+                .toBuffer();
+
+            markPerf(req, 'preview-image-sharp-generate', { bytes: preview.length });
+            return {
+                body: preview,
+                contentType: 'image/webp',
+                cacheControl: 'public, max-age=2592000, immutable',
+                persist: true
+            };
+        };
+
+        const buildPromise = buildPreviewImage();
+        previewImageBuildPromises.set(cacheKey, buildPromise);
+        const generated = await buildPromise;
+        previewImageBuildPromises.delete(cacheKey);
+        if (generated.persist) {
+            await writePreviewImageToDisk(cacheKey, generated.body);
+            markPerf(req, 'preview-image-disk-write', { bytes: generated.body.length });
+        }
+        cachePreviewImage(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+
+        res.set('Content-Type', generated.contentType);
+        res.set('Cache-Control', generated.cacheControl);
+        res.send(generated.body);
+        markPerf(req, 'preview-image-response', { bytes: generated.body.length });
+    } catch (err) {
+        if (req.params?.id) {
+            const cacheKeyPrefix = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+            for (const key of previewImageBuildPromises.keys()) {
+                if (key.startsWith(cacheKeyPrefix)) previewImageBuildPromises.delete(key);
+            }
+        }
+        console.error('Preview image generation error:', err);
+        try {
+            const row = db.prepare('SELECT name FROM character_cards WHERE id = ?').get(req.params.id);
+            if (!row) return res.status(404).end();
+            const svg = buildPlaceholderSvg(row.name, req.params.id, 800, 1067, 320);
+            if (!sharp) {
+                res.set('Content-Type', 'image/svg+xml');
+                res.set('Cache-Control', 'public, max-age=86400');
+                return res.send(svg);
+            }
+            const placeholder = await sharp(Buffer.from(svg)).webp({ quality: 84 }).toBuffer();
+            res.set('Content-Type', 'image/webp');
+            res.set('Cache-Control', 'public, max-age=86400');
+            return res.send(placeholder);
+        } catch (fallbackError) {
+            console.error('Preview image placeholder fallback error:', fallbackError);
+            res.status(500).end();
+        }
+    }
+});
+
 app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
     try {
+        markPerf(req, 'card-detail-start', { id: req.params.id });
         const card = db.prepare(
             `SELECT cc.*
              FROM character_cards cc
              WHERE cc.id = ?`
         ).get(req.params.id);
+        markPerf(req, 'card-detail-db-read', {
+            found: Boolean(card),
+            dataBytes: card ? Buffer.byteLength(card.data || '', 'utf8') : 0,
+            reviewStatus: card?.review_status || null
+        });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const canView = card.review_status === 'approved'
             || (req.admin && req.admin.id)
@@ -3125,9 +3325,13 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
         try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
+        markPerf(req, 'card-detail-parse-data', { hasData: Boolean(card.data) });
         Object.assign(card, getCardMetrics(req.params.id, { viewer: { admin: req.admin, user: req.user } }));
-        attachUiTemplateSummary(card, { keepData: true });
+        markPerf(req, 'card-detail-metrics');
+        attachUiTemplateSummary(card, { keepData: true, preferStoredSummary: true });
+        markPerf(req, 'card-detail-summary');
         res.json(card);
+        markPerf(req, 'card-detail-response-json');
     } catch (err) {
         console.error('Fetch card detail error:', err);
         res.status(500).json({ error: '获取卡片详情失败' });
@@ -3306,7 +3510,7 @@ app.delete('/api/cards/:id', (req, res) => {
             }
         });
         deleteAndReclaim();
-        thumbnailCache.delete(id);
+        clearCardImageCaches(id);
 
         logOperation({
             userType: isAdmin ? 'admin' : 'user',
@@ -3397,7 +3601,7 @@ app.put('/api/cards/:id', (req, res) => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         });
         updateCard();
-        thumbnailCache.delete(req.params.id);
+        clearCardImageCaches(req.params.id);
 
         logOperation({ userType, userId, username, action: 'edit', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card.name } });
 
@@ -4386,7 +4590,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         });
         reviewAndReward();
 
-        thumbnailCache.delete(id);
+        clearCardImageCaches(id);
         const updated = db.prepare(
             'SELECT id, name, description, creator_notes, data, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at FROM character_cards WHERE id = ?'
         ).get(id);
@@ -4443,7 +4647,7 @@ app.delete('/api/admin/cards/:id', authenticateAdmin, (req, res) => {
             }
         });
         deleteAndReclaim();
-        thumbnailCache.delete(req.params.id);
+        clearCardImageCaches(req.params.id);
         logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name, cookie_penalty: cookiePenalty } });
         res.json({ success: true });
     } catch (err) {

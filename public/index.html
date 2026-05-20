@@ -1223,7 +1223,7 @@
 
                 <!-- Fixed Background Image -->
                 <div class="fixed top-0 left-0 w-full h-[80vh] z-0 overflow-hidden bg-gray-900">
-                    <img :src="previewAsset.imageUrl || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar"
+                    <img :src="previewAsset.imageUrl || selectedCard.preview_image_url || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar"
                          id="mobile-bg-img"
                          class="w-full h-full object-cover object-top mobile-bg-img"
                          style="opacity: 1">
@@ -1431,7 +1431,7 @@
                 
                 <!-- Left: Image Section -->
                 <div class="relative w-2/5 h-auto flex-shrink-0 bg-gray-100">
-                    <img :src="previewAsset.imageUrl || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar" class="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-300" style="opacity: 1">
+                    <img :src="previewAsset.imageUrl || selectedCard.preview_image_url || selectedCard.thumbnail_url || selectedCard.avatar_url || selectedCard.avatar || defaultAvatar" class="absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-300" style="opacity: 1">
                 </div>
 
                 <!-- Right: Content Section -->
@@ -3075,8 +3075,9 @@
                             parseCreatorNotes(card);
                             card.ui_template_count = Number(card.ui_template_count || 0);
                             card.has_ui_templates = isUiTemplateCard(card);
-                            // Use the lightweight thumbnail in lists and the full asset in detail view.
+                            // Use lightweight cached images instead of the original asset in common views.
                             card.thumbnail_url = API_BASE + '/api/cards/' + card.id + '/thumbnail';
+                            card.preview_image_url = API_BASE + '/api/cards/' + card.id + '/preview-image';
                             card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
                             return card;
                         });
@@ -3178,6 +3179,7 @@
                     previewAsset.cardId = card.id;
                     previewAsset.loading = true;
                     const candidates = [
+                        { url: card.preview_image_url, source: 'preview' },
                         { url: card.thumbnail_url, source: 'thumbnail' },
                         { url: card.avatar_url, source: 'original' },
                         { url: defaultAvatar, source: 'fallback' }
@@ -3216,7 +3218,7 @@
                     const requestId = ++previewOpenRequestId;
                     previewOpening.active = true;
                     previewOpening.name = card?.name || card?.title || '角色卡';
-                    previewOpening.imageUrl = card?.thumbnail_url || card?.avatar_url || card?.avatar || defaultAvatar;
+                    previewOpening.imageUrl = card?.thumbnail_url || card?.preview_image_url || card?.avatar_url || card?.avatar || defaultAvatar;
                     return requestId;
                 };
 
@@ -4067,8 +4069,9 @@
                                 parseCreatorNotes(updated);
                                 updated.ui_template_count = Number(updated.ui_template_count || 0);
                                 updated.has_ui_templates = isUiTemplateCard(updated);
-                                updated.thumbnail_url = API_BASE + '/api/cards/' + updated.id + '/thumbnail';
-                                updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
+                            updated.thumbnail_url = API_BASE + '/api/cards/' + updated.id + '/thumbnail';
+                            updated.preview_image_url = API_BASE + '/api/cards/' + updated.id + '/preview-image';
+                            updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
                                 cards.value[idx] = updated;
                             }
                         }
@@ -4517,6 +4520,7 @@
                                 ...(listCard || card),
                                 ...fullCard,
                                 thumbnail_url: API_BASE + '/api/cards/' + card.id + '/thumbnail',
+                                preview_image_url: API_BASE + '/api/cards/' + card.id + '/preview-image',
                                 avatar_url: API_BASE + '/api/cards/' + card.id + '/avatar'
                             };
                             parseCreatorNotes(merged);
@@ -4556,8 +4560,8 @@
                         if (!canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
                     }
                     if (isDownloadingCard.value) return '正在生成下载文件...';
-                    if (previewAsset.loading) return '原图加载中...';
-                    if (previewAsset.source !== 'original') return '使用回退图片下载';
+                    if (previewAsset.loading) return '图片加载中...';
+                    if (previewAsset.source === 'fallback') return '使用占位图下载';
                     return '下载角色卡';
                 });
 
@@ -5302,6 +5306,7 @@
                             updatedCard = {
                                 ...data[0],
                                 thumbnail_url: API_BASE + '/api/cards/' + data[0].id + '/thumbnail?v=' + assetVersion,
+                                preview_image_url: API_BASE + '/api/cards/' + data[0].id + '/preview-image?v=' + assetVersion,
                                 avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar?v=' + assetVersion
                             };
                             parseCreatorNotes(updatedCard);
