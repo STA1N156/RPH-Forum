@@ -2632,7 +2632,7 @@ function isCorruptedAvatarUrl(avatarUrl, cardId) {
     const normalized = String(avatarUrl).trim();
     if (!normalized) return false;
     if (normalized.startsWith('blob:') || normalized.startsWith('file:')) return true;
-    return new RegExp(`/api/cards/${cardId}/(?:avatar|thumbnail|preview-image)$`, 'i').test(normalized);
+    return new RegExp(`/api/cards/${cardId}/(?:avatar|thumbnail|preview-image)(?:\\?.*)?$`, 'i').test(normalized);
 }
 
 function sanitizeAvatarUrl(avatarUrl, cardId) {

@@ -642,7 +642,7 @@
                         <div class="absolute inset-0 flex items-center justify-center">
                             <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
                         </div>
-                        <img :src="card.thumbnail_url || defaultAvatar" loading="lazy" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
+                        <img :src="card.thumbnail_url || defaultAvatar" :data-card-id="card.id" loading="lazy" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
                         
                         <!-- Download Count - Admin or card owner in Mine tab -->
                         <div v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
@@ -2000,6 +2000,15 @@
 
         // API Configuration (local backend)
         const API_BASE = '';  // Same origin
+        const THUMBNAIL_ASSET_VERSION = 'thumb800-v3';
+        const PREVIEW_IMAGE_ASSET_VERSION = 'preview800-v2';
+
+        const buildCardAssetUrl = (cardId, type, extraVersion = '') => {
+            const version = type === 'thumbnail' ? THUMBNAIL_ASSET_VERSION : PREVIEW_IMAGE_ASSET_VERSION;
+            const params = new URLSearchParams({ v: version });
+            if (extraVersion) params.set('t', String(extraVersion));
+            return API_BASE + '/api/cards/' + encodeURIComponent(cardId) + '/' + type + '?' + params.toString();
+        };
 
         // Safe localStorage wrapper (handles Tracking Prevention blocking)
         const safeStorage = {
@@ -3108,8 +3117,8 @@
                             card.ui_template_count = Number(card.ui_template_count || 0);
                             card.has_ui_templates = isUiTemplateCard(card);
                             // Use lightweight cached images instead of the original asset in common views.
-                            card.thumbnail_url = API_BASE + '/api/cards/' + card.id + '/thumbnail';
-                            card.preview_image_url = API_BASE + '/api/cards/' + card.id + '/preview-image';
+                            card.thumbnail_url = buildCardAssetUrl(card.id, 'thumbnail');
+                            card.preview_image_url = buildCardAssetUrl(card.id, 'preview-image');
                             card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
                             return card;
                         });
@@ -3167,6 +3176,14 @@
                     }
                 };
 
+                const loadedThumbnailUrls = new Set();
+
+                const rememberLoadedThumbnail = (card, imageElement) => {
+                    if (card?.thumbnail_url) loadedThumbnailUrls.add(card.thumbnail_url);
+                    const src = imageElement?.currentSrc || imageElement?.src || '';
+                    if (src) loadedThumbnailUrls.add(src);
+                };
+
                 const setCardThumbnailState = (cardOrId, ready, failed = false) => {
                     const cardId = typeof cardOrId === 'object' ? cardOrId?.id : cardOrId;
                     if (!cardId) return;
@@ -3184,11 +3201,31 @@
                     if (!card) return false;
                     if (card._thumbnailReady) return true;
                     const listCard = cards.value.find(item => item.id === card.id);
-                    return Boolean(listCard?._thumbnailReady);
+                    if (listCard?._thumbnailReady) return true;
+                    if (card.thumbnail_url && loadedThumbnailUrls.has(card.thumbnail_url)) return true;
+                    const imageElements = Array.from(document.querySelectorAll('img[data-card-id]'));
+                    const readyImage = imageElements.find((image) => {
+                        const src = image.currentSrc || image.src || '';
+                        return image.dataset.cardId === card.id
+                            && image.dataset.fallback !== '1'
+                            && image.complete
+                            && image.naturalWidth > 0
+                            && src.includes('/api/cards/')
+                            && src.includes('/thumbnail');
+                    });
+                    if (readyImage) {
+                        rememberLoadedThumbnail(card, readyImage);
+                        setCardThumbnailState(card.id, true, false);
+                        return true;
+                    }
+                    return false;
                 };
 
                 const markCardThumbnailLoaded = (card, event) => {
-                    if (event?.target) event.target.style.opacity = 1;
+                    if (event?.target) {
+                        event.target.style.opacity = 1;
+                        if (event.target.dataset.fallback !== '1') rememberLoadedThumbnail(card, event.target);
+                    }
                     setCardThumbnailState(card, true, false);
                 };
 
@@ -4143,8 +4180,8 @@
                                 parseCreatorNotes(updated);
                                 updated.ui_template_count = Number(updated.ui_template_count || 0);
                                 updated.has_ui_templates = isUiTemplateCard(updated);
-                            updated.thumbnail_url = API_BASE + '/api/cards/' + updated.id + '/thumbnail';
-                            updated.preview_image_url = API_BASE + '/api/cards/' + updated.id + '/preview-image';
+                            updated.thumbnail_url = buildCardAssetUrl(updated.id, 'thumbnail');
+                            updated.preview_image_url = buildCardAssetUrl(updated.id, 'preview-image');
                             updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
                                 cards.value[idx] = updated;
                             }
@@ -4601,8 +4638,8 @@
                             const merged = {
                                 ...(listCard || card),
                                 ...fullCard,
-                                thumbnail_url: API_BASE + '/api/cards/' + card.id + '/thumbnail',
-                                preview_image_url: API_BASE + '/api/cards/' + card.id + '/preview-image',
+                                thumbnail_url: buildCardAssetUrl(card.id, 'thumbnail'),
+                                preview_image_url: buildCardAssetUrl(card.id, 'preview-image'),
                                 avatar_url: API_BASE + '/api/cards/' + card.id + '/avatar'
                             };
                             parseCreatorNotes(merged);
@@ -5395,8 +5432,8 @@
                             const assetVersion = Date.now();
                             updatedCard = {
                                 ...data[0],
-                                thumbnail_url: API_BASE + '/api/cards/' + data[0].id + '/thumbnail?v=' + assetVersion,
-                                preview_image_url: API_BASE + '/api/cards/' + data[0].id + '/preview-image?v=' + assetVersion,
+                                thumbnail_url: buildCardAssetUrl(data[0].id, 'thumbnail', assetVersion),
+                                preview_image_url: buildCardAssetUrl(data[0].id, 'preview-image', assetVersion),
                                 avatar_url: API_BASE + '/api/cards/' + data[0].id + '/avatar?v=' + assetVersion
                             };
                             parseCreatorNotes(updatedCard);
