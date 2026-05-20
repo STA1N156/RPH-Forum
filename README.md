@@ -1,4 +1,4 @@
-# 🎭 角色卡广场 (RP Forum)
+# 🎭 万相广场 (RP Forum)
 
 一个自部署的角色卡分享论坛，支持 Docker 一键部署到 Zeabur。
 
