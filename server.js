@@ -55,6 +55,7 @@ const NEWAPI_USER_STATUS_ENABLED = 1;
 const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃', '12345'];
 const PERF_LOG_ALL_API = process.env.PERF_LOG_ALL_API !== 'false';
 const PERF_SLOW_REQUEST_MS = Math.max(50, parseInt(process.env.PERF_SLOW_REQUEST_MS || '300', 10) || 300);
+const CARD_UI_SUMMARY_BACKFILL = process.env.CARD_UI_SUMMARY_BACKFILL !== 'false';
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -1915,12 +1916,80 @@ function getEmbeddedUiTemplateVariableCount(rawData) {
 
 function attachUiTemplateSummary(card, { keepData = false } = {}) {
     if (!card) return card;
-    const uiTemplateCount = getUiTemplateCount(card.data);
-    card.has_ui_templates = uiTemplateCount > 0 ? 1 : 0;
-    card.ui_template_count = uiTemplateCount;
-    card.ui_template_variable_count = getEmbeddedUiTemplateVariableCount(card.data);
+    if (Object.prototype.hasOwnProperty.call(card, 'data') && card.data != null) {
+        Object.assign(card, buildCardUiTemplateSummary(card.data));
+    } else {
+        card.ui_template_count = Number(card.ui_template_count || 0);
+        card.has_ui_templates = Number(card.has_ui_templates || 0);
+        card.ui_template_variable_count = Number(card.ui_template_variable_count || 0);
+    }
     if (!keepData) delete card.data;
     return card;
+}
+
+function buildCardUiTemplateSummary(cardData) {
+    const uiTemplateCount = getUiTemplateCount(cardData);
+    return {
+        has_ui_templates: uiTemplateCount > 0 ? 1 : 0,
+        ui_template_count: uiTemplateCount,
+        ui_template_variable_count: getEmbeddedUiTemplateVariableCount(cardData)
+    };
+}
+
+function pushCardUiTemplateSummaryUpdate(fields, values, cardData) {
+    const summary = buildCardUiTemplateSummary(cardData);
+    fields.push('has_ui_templates = ?');
+    values.push(summary.has_ui_templates);
+    fields.push('ui_template_count = ?');
+    values.push(summary.ui_template_count);
+    fields.push('ui_template_variable_count = ?');
+    values.push(summary.ui_template_variable_count);
+}
+
+function scheduleCardUiSummaryBackfill() {
+    if (!CARD_UI_SUMMARY_BACKFILL) return;
+    let processed = 0;
+    const started = performance.now();
+
+    const runNext = () => {
+        try {
+            const row = db.prepare(
+                `SELECT id, data
+                 FROM character_cards
+                 WHERE has_ui_templates IS NULL
+                    OR ui_template_count IS NULL
+                    OR ui_template_variable_count IS NULL
+                 LIMIT 1`
+            ).get();
+
+            if (!row) {
+                if (processed > 0) {
+                    console.info(`[CardSummary] backfill complete processed=${processed} total=${formatDuration(performance.now() - started)}`);
+                }
+                return;
+            }
+
+            const summary = buildCardUiTemplateSummary(row.data);
+            db.prepare(
+                `UPDATE character_cards
+                 SET has_ui_templates = ?,
+                     ui_template_count = ?,
+                     ui_template_variable_count = ?
+                 WHERE id = ?`
+            ).run(summary.has_ui_templates, summary.ui_template_count, summary.ui_template_variable_count, row.id);
+
+            processed += 1;
+            if (processed % 100 === 0) {
+                console.info(`[CardSummary] backfilled ${processed} card(s) total=${formatDuration(performance.now() - started)}`);
+            }
+        } catch (err) {
+            console.warn('[CardSummary] backfill failed:', err.message);
+        }
+
+        setTimeout(runNext, 25);
+    };
+
+    setTimeout(runNext, 3000);
 }
 
 function sanitizeUiTemplateFileName(fileName) {
@@ -2060,20 +2129,22 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
         const rawCards = db.prepare(
-            `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.data,
+            `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
+                    COALESCE(cc.has_ui_templates, 0) AS has_ui_templates,
+                    COALESCE(cc.ui_template_count, 0) AS ui_template_count,
+                    COALESCE(cc.ui_template_variable_count, 0) AS ui_template_variable_count,
                     ${commentCountSql} AS comment_count,
                     ${commentHeatCountSql} AS comment_heat_count
              FROM character_cards cc
              ${whereClause}
              ORDER BY ${orderByClause}`
         ).all(...params);
-        const dataBytes = rawCards.reduce((sum, row) => sum + Buffer.byteLength(row.data || '', 'utf8'), 0);
-        markPerf(req, 'cards-db-read', { rows: rawCards.length, dataBytes });
+        markPerf(req, 'cards-db-read', { rows: rawCards.length });
         const cards = rawCards.map(card => attachUiTemplateSummary(card));
-        markPerf(req, 'cards-attach-ui-template', { rows: cards.length });
+        markPerf(req, 'cards-normalize-summary', { rows: cards.length });
         res.json(cards);
         markPerf(req, 'cards-response-json', { rows: cards.length });
     } catch (err) {
@@ -3104,6 +3175,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         const id = generateId();
         const now = new Date().toISOString();
         const dataStr = data ? JSON.stringify(data) : null;
+        const uiSummary = buildCardUiTemplateSummary(dataStr);
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
         const reviewStatus = req.admin ? 'approved' : 'pending';
@@ -3114,9 +3186,14 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         try {
             db.prepare(
                 `INSERT INTO character_cards
-                 (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now);
+                 (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
+                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+                id, name, description || '', safeAvatarUrl, dataStr,
+                uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
+                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+            );
         } catch (insertErr) {
             if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed')) {
                 const conflict = db.prepare('SELECT name FROM character_cards WHERE data_hash = ?').get(dataHash);
@@ -3126,9 +3203,14 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             if (insertErr.message && insertErr.message.includes('FOREIGN KEY')) {
                 db.prepare(
                     `INSERT INTO character_cards
-                     (id, name, description, avatar_url, data, creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                ).run(id, name, description || '', safeAvatarUrl, dataStr, creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now);
+                     (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
+                      creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).run(
+                    id, name, description || '', safeAvatarUrl, dataStr,
+                    uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
+                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+                );
             } else {
                 throw insertErr;
             }
@@ -3295,6 +3377,7 @@ app.put('/api/cards/:id', (req, res) => {
             }
             fields.push('data = ?');
             values.push(serializedData);
+            pushCardUiTemplateSummaryUpdate(fields, values, serializedData);
         }
         if (creator_notes !== undefined) { fields.push('creator_notes = ?'); values.push(creator_notes); }
         if (created_at !== undefined && decoded.role === 'admin') {
@@ -5346,6 +5429,7 @@ function logDatabaseHealth() {
 // ============== Initialize & Start ==============
 initDatabase();
 logDatabaseHealth();
+scheduleCardUiSummaryBackfill();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);

@@ -3165,7 +3165,7 @@
                 });
 
                 const fetchImageObjectUrl = async (url) => {
-                    const resp = await fetch(url, { cache: 'no-store' });
+                    const resp = await fetch(url);
                     if (!resp.ok) {
                         throw new Error('原图请求失败');
                     }
@@ -3178,8 +3178,8 @@
                     previewAsset.cardId = card.id;
                     previewAsset.loading = true;
                     const candidates = [
-                        { url: card.avatar_url, source: 'original' },
                         { url: card.thumbnail_url, source: 'thumbnail' },
+                        { url: card.avatar_url, source: 'original' },
                         { url: defaultAvatar, source: 'fallback' }
                     ].filter((item, index, list) => item.url && list.findIndex(entry => entry.url === item.url) === index);
 
@@ -3197,7 +3197,7 @@
                             }
                             setPreviewAssetUrl(finalUrl, Boolean(objectUrl), candidate.source);
                             previewAsset.ready = true;
-                            previewAsset.error = candidate.source === 'original' ? '' : '原图未能完整加载，已自动切换到可用图片。';
+                            previewAsset.error = candidate.source === 'fallback' ? '图片加载失败，已使用默认占位图。' : '';
                             previewAsset.loading = false;
                             return;
                         } catch (error) {
