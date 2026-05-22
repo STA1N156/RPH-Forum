@@ -56,6 +56,7 @@ const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃', '12345'];
 const PERF_LOG_ALL_API = process.env.PERF_LOG_ALL_API !== 'false';
 const PERF_SLOW_REQUEST_MS = Math.max(50, parseInt(process.env.PERF_SLOW_REQUEST_MS || '300', 10) || 300);
 const CARD_UI_SUMMARY_BACKFILL = process.env.CARD_UI_SUMMARY_BACKFILL !== 'false';
+const CARD_DETAIL_PREVIEW_BACKFILL = process.env.CARD_DETAIL_PREVIEW_BACKFILL !== 'false';
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -1762,6 +1763,318 @@ function parseStoredCardData(data) {
     }
 }
 
+function clonePlainObject(value) {
+    if (!value || typeof value !== 'object') return {};
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch {
+        return { ...value };
+    }
+}
+
+function getCharacterDisplayName(content = {}) {
+    return content.name || content.char_name || 'Character';
+}
+
+function applyCardDisplayMacros(text, content = {}) {
+    if (!text) return '';
+    return String(text).replace(/\{\{char\}\}/gi, getCharacterDisplayName(content));
+}
+
+function applyCardRegexScripts(text, content = {}, raw = {}) {
+    if (!text) return '';
+
+    const charName = getCharacterDisplayName(content);
+    const protectedSegmentPattern = /(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)/gi;
+    const protectedSegmentExactPattern = /^(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)$/i;
+    const replaceOutsideProtectedSegments = (source, regex, replacement) => {
+        return String(source || '').split(protectedSegmentPattern).map(part => {
+            if (!part || protectedSegmentExactPattern.test(part)) return part;
+            return part.replace(regex, replacement);
+        }).join('');
+    };
+
+    const htmlDocPattern = /(<!doctype html>|<html\b[^>]*>)/i;
+    const htmlMatch = String(text).trim().match(htmlDocPattern);
+    let protectedHtml = '';
+    let hasProtectedHtml = false;
+    let preText = '';
+    let postText = '';
+
+    if (htmlMatch) {
+        const startIndex = String(text).indexOf(htmlMatch[0]);
+        const closeTag = '</html>';
+        const closeIndex = String(text).toLowerCase().lastIndexOf(closeTag);
+        if (closeIndex !== -1 && closeIndex > startIndex) {
+            const endIndex = closeIndex + closeTag.length;
+            protectedHtml = String(text).substring(startIndex, endIndex).replace(/\{\{char\}\}/gi, charName);
+            preText = String(text).substring(0, startIndex);
+            postText = String(text).substring(endIndex);
+            hasProtectedHtml = true;
+        }
+    }
+
+    let result = hasProtectedHtml ? `${preText}___HTML_BLOCK_PLACEHOLDER___${postText}` : String(text);
+    result = result.replace(/\{\{char\}\}/gi, charName);
+
+    const scripts =
+        content.extensions?.regex_scripts
+        || raw.extensions?.regex_scripts
+        || content.regex_scripts
+        || raw.regex_scripts
+        || content.data?.extensions?.regex_scripts
+        || null;
+
+    if (scripts) {
+        const scriptList = Array.isArray(scripts) ? scripts : Object.values(scripts);
+        scriptList.forEach(script => {
+            try {
+                if (!script || script.disabled === true || script.promptOnly) return;
+                let regexPattern = script.regex || script.findRegex;
+                let flags = script.flags || script.regexFlags || 'g';
+                const replacement = Object.prototype.hasOwnProperty.call(script, 'replacement')
+                    ? script.replacement
+                    : (script.replaceString || '');
+                if (!regexPattern) return;
+
+                if (typeof regexPattern === 'string' && regexPattern.startsWith('/') && regexPattern.lastIndexOf('/') > 0) {
+                    const lastSlash = regexPattern.lastIndexOf('/');
+                    const potentialFlags = regexPattern.substring(lastSlash + 1);
+                    if (/^[gimsuy]*$/.test(potentialFlags)) {
+                        flags = potentialFlags;
+                        regexPattern = regexPattern.substring(1, lastSlash);
+                    }
+                }
+
+                [
+                    ['(?s)', 's'],
+                    ['(?i)', 'i'],
+                    ['(?m)', 'm']
+                ].forEach(([modifier, flag]) => {
+                    if (typeof regexPattern === 'string' && regexPattern.includes(modifier)) {
+                        regexPattern = regexPattern.split(modifier).join('');
+                        if (!String(flags).includes(flag)) flags += flag;
+                    }
+                });
+
+                flags = Array.from(new Set(String(flags || 'g').split(''))).join('');
+                const re = new RegExp(regexPattern, flags);
+                const shouldProtectHtml = typeof regexPattern === 'string' && !/[<>]/.test(regexPattern) && !regexPattern.includes('```');
+                result = shouldProtectHtml
+                    ? replaceOutsideProtectedSegments(result, re, replacement)
+                    : result.replace(re, replacement);
+            } catch (err) {
+                console.warn('[CardDetailPreview] regex script skipped:', err.message);
+            }
+        });
+    }
+
+    if (hasProtectedHtml) {
+        result = result.replace('___HTML_BLOCK_PLACEHOLDER___', protectedHtml);
+    }
+
+    return result;
+}
+
+function getCardUiTemplateMarkup(template) {
+    const candidates = [
+        template?.htmlTemplate,
+        template?.template,
+        template?.html,
+        template?.content,
+        template?.markup
+    ];
+    return candidates.find(item => typeof item === 'string' && item.trim()) || '';
+}
+
+function normalizeCardUiTemplatePreviewItem(template, index, options = {}) {
+    const html = getCardUiTemplateMarkup(template);
+    if (!html) return null;
+    const fallbackName = options.fallbackName || 'UI模板';
+    const fallbackVariables = options.fallbackVariables || {};
+    const idPrefix = options.idPrefix || 'embedded-ui';
+    return {
+        ...template,
+        id: template.id || `${idPrefix}-${index + 1}`,
+        name: template.name || template.title || `${fallbackName} ${index + 1}`,
+        htmlTemplate: stripTemplateCodeFence(String(html)),
+        initialVariableState: clonePlainObject(
+            template.initialVariableState
+            || template.initialVariables
+            || template.variables
+            || template.variableState
+            || template.previewData
+            || template.sampleData
+            || fallbackVariables
+            || {}
+        ),
+        order: Number.isFinite(Number(template.order)) ? Number(template.order) : 100
+    };
+}
+
+function collectCardUiTemplateList(value) {
+    if (!value) return [];
+    if (typeof value === 'string') {
+        try {
+            return collectCardUiTemplateList(JSON.parse(stripTemplateCodeFence(value)));
+        } catch {
+            return [];
+        }
+    }
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value.templates)) return value.templates;
+    if (Array.isArray(value.uiTemplates)) return value.uiTemplates;
+    if (Array.isArray(value.ui_templates)) return value.ui_templates;
+    return [];
+}
+
+function extractCardUiTemplatePreviewItems(sources = [], options = {}) {
+    const seen = new Set();
+    const templates = [];
+    const addTemplate = (template) => {
+        const normalized = normalizeCardUiTemplatePreviewItem(template, templates.length, options);
+        if (!normalized) return;
+        const key = template.id || `${normalized.name || ''}:${String(normalized.htmlTemplate).slice(0, 120)}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        templates.push(normalized);
+    };
+    const visit = (candidate) => {
+        if (!candidate) return;
+        if (typeof candidate === 'string') {
+            const cleaned = stripTemplateCodeFence(candidate);
+            try {
+                visit(JSON.parse(cleaned));
+            } catch {
+                if (/<[a-z][\s\S]*>/i.test(cleaned)) addTemplate({ htmlTemplate: cleaned });
+            }
+            return;
+        }
+        if (Array.isArray(candidate)) {
+            candidate.forEach(visit);
+            return;
+        }
+        if (getCardUiTemplateMarkup(candidate)) addTemplate(candidate);
+        collectCardUiTemplateList(candidate).forEach(addTemplate);
+    };
+    sources.forEach(visit);
+    return templates.sort((a, b) => (b.order || 0) - (a.order || 0));
+}
+
+function extractCardEmbeddedUiTemplates(rawData = {}) {
+    const content = rawData?.data || rawData || {};
+    const candidates = [
+        content.uiTemplates,
+        content.ui_templates,
+        rawData.uiTemplates,
+        rawData.ui_templates,
+        content.extensions?.uiTemplates,
+        content.extensions?.ui_templates,
+        content.extensions?.rp_hub_ui_templates,
+        rawData.extensions?.uiTemplates,
+        rawData.extensions?.ui_templates,
+        rawData.extensions?.rp_hub_ui_templates
+    ];
+    return extractCardUiTemplatePreviewItems(candidates, {
+        fallbackName: 'UI模板',
+        idPrefix: 'embedded-ui'
+    });
+}
+
+function buildCardDetailPreview(rawData, fallback = {}) {
+    const raw = parseStoredCardData(rawData) || {};
+    const content = raw.data || raw || {};
+    const sourceDescription = fallback.description || content.description || content.char_persona || '';
+    return {
+        version: 1,
+        detail_ready: true,
+        name: fallback.name || content.name || content.char_name || '',
+        description: applyCardDisplayMacros(sourceDescription, content),
+        personality: applyCardDisplayMacros(content.personality || '', content),
+        first_mes: applyCardRegexScripts(content.first_mes || '', content, raw),
+        uiTemplates: extractCardEmbeddedUiTemplates(raw)
+    };
+}
+
+function buildCardDetailPreviewJson(rawData, fallback = {}) {
+    try {
+        return JSON.stringify(buildCardDetailPreview(rawData, fallback));
+    } catch (err) {
+        console.warn('[CardDetailPreview] build failed:', err.message);
+        return JSON.stringify({
+            version: 1,
+            detail_ready: true,
+            name: fallback.name || '',
+            description: fallback.description || '',
+            personality: '',
+            first_mes: '',
+            uiTemplates: []
+        });
+    }
+}
+
+function syncCardEditableFieldsIntoData(rawData, updates = {}) {
+    const parsed = parseStoredCardData(rawData);
+    if (!parsed || typeof parsed !== 'object') return rawData || null;
+    const cloned = clonePlainObject(parsed);
+    const content = cloned.data && typeof cloned.data === 'object' && !Array.isArray(cloned.data)
+        ? cloned.data
+        : cloned;
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+        const value = String(updates.name || '');
+        content.name = value;
+        if (Object.prototype.hasOwnProperty.call(content, 'char_name')) content.char_name = value;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'description')) {
+        const value = String(updates.description || '');
+        content.description = value;
+        if (Object.prototype.hasOwnProperty.call(content, 'char_persona')) content.char_persona = value;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'creator_notes')) {
+        content.creator_notes = String(updates.creator_notes || '');
+    }
+    if (
+        Object.prototype.hasOwnProperty.call(updates, 'avatar_url')
+        && updates.avatar_url
+        && (Object.prototype.hasOwnProperty.call(content, 'avatar') || String(updates.avatar_url).startsWith('data:'))
+    ) {
+        content.avatar = String(updates.avatar_url);
+    }
+
+    return JSON.stringify(cloned);
+}
+
+function parseCardDetailPreview(value) {
+    const parsed = parseStoredCardData(value);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+        version: Number(parsed.version || 1),
+        detail_ready: true,
+        name: parsed.name || '',
+        description: parsed.description || '',
+        personality: parsed.personality || '',
+        first_mes: parsed.first_mes || '',
+        uiTemplates: Array.isArray(parsed.uiTemplates) ? parsed.uiTemplates : []
+    };
+}
+
+function attachCardDetailPreview(card, { keepPreviewColumn = false } = {}) {
+    if (!card) return card;
+    const preview = parseCardDetailPreview(card.detail_preview);
+    card._display = preview || {
+        version: 1,
+        detail_ready: false,
+        name: card.name || '',
+        description: card.description || '',
+        personality: '',
+        first_mes: '',
+        uiTemplates: []
+    };
+    if (!keepPreviewColumn) delete card.detail_preview;
+    return card;
+}
+
 const NON_RPH_CARD_UPLOAD_MESSAGE = '非本站卡片，多次尝试将被封禁';
 
 function hasRpHubWatermark(data) {
@@ -2009,6 +2322,49 @@ function scheduleCardUiSummaryBackfill() {
     };
 
     setTimeout(runNext, 3000);
+}
+
+function scheduleCardDetailPreviewBackfill() {
+    if (!CARD_DETAIL_PREVIEW_BACKFILL) return;
+    let processed = 0;
+    const started = performance.now();
+
+    const runNext = () => {
+        try {
+            const row = db.prepare(
+                `SELECT id, name, description, data
+                 FROM character_cards
+                 WHERE detail_preview IS NULL OR detail_preview = ''
+                 ORDER BY created_at DESC
+                 LIMIT 1`
+            ).get();
+
+            if (!row) {
+                if (processed > 0) {
+                    console.info(`[CardDetailPreview] backfill complete processed=${processed} total=${formatDuration(performance.now() - started)}`);
+                }
+                return;
+            }
+
+            const detailPreview = buildCardDetailPreviewJson(row.data, {
+                name: row.name,
+                description: row.description || ''
+            });
+            db.prepare('UPDATE character_cards SET detail_preview = ? WHERE id = ?')
+                .run(detailPreview, row.id);
+
+            processed += 1;
+            if (processed % 100 === 0) {
+                console.info(`[CardDetailPreview] backfilled ${processed} card(s) total=${formatDuration(performance.now() - started)}`);
+            }
+        } catch (err) {
+            console.warn('[CardDetailPreview] backfill failed:', err.message);
+        }
+
+        setTimeout(runNext, 25);
+    };
+
+    setTimeout(runNext, 5000);
 }
 
 function sanitizeUiTemplateFileName(fileName) {
@@ -3335,13 +3691,19 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
     try {
         markPerf(req, 'card-detail-start', { id: req.params.id });
         const card = db.prepare(
-            `SELECT cc.*
+            `SELECT cc.id, cc.name, cc.description, cc.avatar_url, cc.detail_preview,
+                    cc.has_ui_templates, cc.ui_template_count, cc.ui_template_variable_count,
+                    cc.creator_notes, cc.downloads_count, cc.comment_count_override,
+                    cc.uploader_user_id, cc.review_status, cc.reviewed_by_admin_id,
+                    cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
+                    cc.heat_email_milestone, cc.created_at, cc.updated_at,
+                    cc.views_count, cc.is_featured
              FROM character_cards cc
              WHERE cc.id = ?`
         ).get(req.params.id);
         markPerf(req, 'card-detail-db-read', {
             found: Boolean(card),
-            dataBytes: card ? Buffer.byteLength(card.data || '', 'utf8') : 0,
+            previewBytes: card ? Buffer.byteLength(card.detail_preview || '', 'utf8') : 0,
             reviewStatus: card?.review_status || null
         });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
@@ -3350,11 +3712,24 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
-        try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
-        markPerf(req, 'card-detail-parse-data', { hasData: Boolean(card.data) });
+        if (!parseCardDetailPreview(card.detail_preview)) {
+            const rawDataRow = db.prepare('SELECT data FROM character_cards WHERE id = ?').get(req.params.id);
+            markPerf(req, 'card-detail-preview-miss-read-data', {
+                dataBytes: rawDataRow ? Buffer.byteLength(rawDataRow.data || '', 'utf8') : 0
+            });
+            const previewJson = buildCardDetailPreviewJson(rawDataRow?.data || null, {
+                name: card.name,
+                description: card.description || ''
+            });
+            db.prepare('UPDATE character_cards SET detail_preview = ? WHERE id = ?').run(previewJson, req.params.id);
+            card.detail_preview = previewJson;
+            markPerf(req, 'card-detail-preview-built', { previewBytes: Buffer.byteLength(previewJson, 'utf8') });
+        }
         Object.assign(card, getCardMetrics(req.params.id, { viewer: { admin: req.admin, user: req.user } }));
         markPerf(req, 'card-detail-metrics');
-        attachUiTemplateSummary(card, { keepData: true, preferStoredSummary: true });
+        attachCardDetailPreview(card);
+        markPerf(req, 'card-detail-preview-attached');
+        attachUiTemplateSummary(card, { preferStoredSummary: true });
         markPerf(req, 'card-detail-summary');
         res.json(card);
         markPerf(req, 'card-detail-response-json');
@@ -3406,6 +3781,10 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         const now = new Date().toISOString();
         const dataStr = data ? JSON.stringify(data) : null;
         const uiSummary = buildCardUiTemplateSummary(dataStr);
+        const detailPreview = buildCardDetailPreviewJson(dataStr, {
+            name,
+            description: description || ''
+        });
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
         const reviewStatus = req.admin ? 'approved' : 'pending';
@@ -3416,11 +3795,11 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         try {
             db.prepare(
                 `INSERT INTO character_cards
-                 (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
+                 (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
                   creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
-                id, name, description || '', safeAvatarUrl, dataStr,
+                id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                 uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
                 creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
             );
@@ -3433,11 +3812,11 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             if (insertErr.message && insertErr.message.includes('FOREIGN KEY')) {
                 db.prepare(
                     `INSERT INTO character_cards
-                      (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
+                      (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
                        creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).run(
-                    id, name, description || '', safeAvatarUrl, dataStr,
+                    id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                     uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
                     creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
                 );
@@ -3447,8 +3826,8 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         }
 
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
-        try { card.data = card.data ? JSON.parse(card.data) : null; } catch (e) { card.data = null; }
-        attachUiTemplateSummary(card, { keepData: true });
+        attachCardDetailPreview(card);
+        attachUiTemplateSummary(card, { preferStoredSummary: true });
         logOperation({
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
@@ -3585,16 +3964,21 @@ app.put('/api/cards/:id', (req, res) => {
         const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace } = req.body;
         const fields = [];
         const values = [];
+        const hasDataUpdate = data !== undefined && data !== null;
+        const nextName = name !== undefined ? name : card.name;
+        const nextDescription = description !== undefined ? description : card.description;
+        const nextCreatorNotes = creator_notes !== undefined ? creator_notes : card.creator_notes;
+        let nextAvatarUrl = avatar_url !== undefined ? sanitizeAvatarUrl(avatar_url, req.params.id) : card.avatar_url;
+        let detailPreviewDataSource = card.data || null;
         if (name !== undefined)          { fields.push('name = ?');          values.push(name); }
         if (description !== undefined)   { fields.push('description = ?');   values.push(description); }
         if (avatar_url !== undefined) {
-            const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, req.params.id);
-            if (safeAvatarUrl) {
+            if (nextAvatarUrl) {
                 fields.push('avatar_url = ?');
-                values.push(safeAvatarUrl);
+                values.push(nextAvatarUrl);
             }
         }
-        if (data !== undefined) {
+        if (hasDataUpdate) {
             let serializedData;
             try {
                 serializedData = typeof data === 'string' ? data : JSON.stringify(data);
@@ -3607,6 +3991,7 @@ app.put('/api/cards/:id', (req, res) => {
             }
             fields.push('data = ?');
             values.push(serializedData);
+            detailPreviewDataSource = serializedData;
             pushCardUiTemplateSummaryUpdate(fields, values, serializedData);
         }
         if (creator_notes !== undefined) { fields.push('creator_notes = ?'); values.push(creator_notes); }
@@ -3621,6 +4006,33 @@ app.put('/api/cards/:id', (req, res) => {
             fields.push('rejection_reason = NULL');
         }
         if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+        detailPreviewDataSource = syncCardEditableFieldsIntoData(detailPreviewDataSource, {
+            name: nextName,
+            description: nextDescription || '',
+            creator_notes: nextCreatorNotes || '',
+            avatar_url: nextAvatarUrl || ''
+        });
+        if (detailPreviewDataSource) {
+            if (!hasDataUpdate) {
+                fields.push('data = ?');
+                values.push(detailPreviewDataSource);
+                pushCardUiTemplateSummaryUpdate(fields, values, detailPreviewDataSource);
+            } else {
+                const dataFieldIndex = fields.findIndex(field => field === 'data = ?');
+                let valueIndex = 0;
+                for (let i = 0; i < dataFieldIndex; i++) {
+                    valueIndex += fields[i].split('?').length - 1;
+                }
+                if (dataFieldIndex >= 0) values[valueIndex] = detailPreviewDataSource;
+            }
+            fields.push('data_hash = ?');
+            values.push(hashCardData(parseStoredCardData(detailPreviewDataSource) || detailPreviewDataSource));
+        }
+        fields.push('detail_preview = ?');
+        values.push(buildCardDetailPreviewJson(detailPreviewDataSource, {
+            name: nextName,
+            description: nextDescription || ''
+        }));
         fields.push('updated_at = ?');
         values.push(new Date().toISOString());
         values.push(req.params.id);
@@ -3633,12 +4045,15 @@ app.put('/api/cards/:id', (req, res) => {
         logOperation({ userType, userId, username, action: 'edit', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card.name } });
 
         const updated = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
-        try { updated.data = updated.data ? JSON.parse(updated.data) : null; } catch (e) { updated.data = null; }
-        attachUiTemplateSummary(updated, { keepData: true });
+        attachCardDetailPreview(updated);
+        attachUiTemplateSummary(updated, { preferStoredSummary: true });
         res.json([updated]);
     } catch (err) {
         if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
             return res.status(401).json({ error: '令牌无效或已过期' });
+        }
+        if (err.message && err.message.includes('UNIQUE constraint failed') && err.message.includes('data_hash')) {
+            return res.status(409).json({ error: '已存在完全相同的角色卡，禁止重复上传' });
         }
         console.error('Update card error:', err);
         res.status(500).json({ error: '更新卡片失败' });
@@ -5716,6 +6131,7 @@ initDatabase();
 logDatabaseHealth();
 cleanupOutdatedImageCaches();
 scheduleCardUiSummaryBackfill();
+scheduleCardDetailPreviewBackfill();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);

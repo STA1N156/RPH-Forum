@@ -56,6 +56,7 @@ function initDatabase() {
             description TEXT,
             avatar_url TEXT,
             data TEXT,
+            detail_preview TEXT,
             has_ui_templates INTEGER,
             ui_template_count INTEGER,
             ui_template_variable_count INTEGER,
@@ -312,6 +313,7 @@ function initDatabase() {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN data_hash TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN detail_preview TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN has_ui_templates INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN ui_template_count INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN ui_template_variable_count INTEGER'); } catch (e) { /* column exists */ }

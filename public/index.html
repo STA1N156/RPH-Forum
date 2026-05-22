@@ -4560,6 +4560,19 @@
                 const selectedTemplatePreviewItems = computed(() => buildStandaloneUiTemplatePreviewItems(selectedTemplate.value));
 
                 const buildPreviewCardModel = (card, dataOverride) => {
+                    if (!dataOverride && card?._display?.detail_ready) {
+                        return {
+                            ...card,
+                            renderId: Date.now(),
+                            _display: {
+                                personality: card._display.personality || '',
+                                first_mes: card._display.first_mes || '',
+                                description: card._display.description || card.description || '',
+                                uiTemplates: Array.isArray(card._display.uiTemplates) ? card._display.uiTemplates : [],
+                                name: card._display.name || card.name || ''
+                            }
+                        };
+                    }
                     const raw = dataOverride || card.data || {};
                     const content = raw.data || raw;
                     const sourceDescription = card.description || content.description || content.char_persona || '';
@@ -4597,7 +4610,7 @@
                     selectedCard.value = lightweightPreview;
                     selectedCardDetailError.value = '';
                     selectedCardDetailCardId.value = card.id;
-                    selectedCardDetailLoading.value = !card.data;
+                    selectedCardDetailLoading.value = !card._display?.detail_ready && !card.data;
 
                     preparePreviewAsset(lightweightPreview, { waitForLoad: !thumbnailReady }).then(() => {
                         if (requestId === previewOpenRequestId) stopPreviewOpening({ cancelPending: false });
@@ -4629,7 +4642,7 @@
                         }
                     }
 
-                    if (!card.data) {
+                    if (!card._display?.detail_ready && !card.data) {
                         try {
                             const headers = {};
                             if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
@@ -5414,10 +5427,12 @@
                         const editPayload = {
                             name: editingCard.value.name,
                             description: editingCard.value.description,
-                            data: editingCard.value.full_data,
                             creator_notes: editingCard.value.creator_notes,
                             reupload_replace: editingCard.value.reupload_replace === true
                         };
+                        if (editingCard.value.full_data !== undefined && editingCard.value.full_data !== null) {
+                            editPayload.data = editingCard.value.full_data;
+                        }
                         if (editingCard.value.avatar_url && /^(data:|https?:\/\/)/i.test(editingCard.value.avatar_url)) {
                             editPayload.avatar_url = editingCard.value.avatar_url;
                         }
