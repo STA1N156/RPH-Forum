@@ -1019,6 +1019,19 @@ function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, 
     });
 }
 
+function sendCommentReplyNotificationEmail({ to, ownerName, commenterName, itemType, title, content }) {
+    const commentText = String(content || '').trim();
+    if (!commentText) return;
+    if (isCommentEmailBlocked(commentText)) return;
+    const htmlContent = escapeHtml(commentText).replace(/\n/g, '<br>');
+    sendZeaburEmailQuietly({
+        to,
+        subject: `你在${itemType}「${title}」下的评论收到了回复`,
+        html: `<p>${escapeHtml(ownerName || '你好')}，你在${escapeHtml(itemType)}「${escapeHtml(title)}」下的评论收到了来自 ${escapeHtml(commenterName || '用户')} 的回复。</p><p>回复内容：</p><blockquote style="margin:12px 0;padding:12px;border-left:4px solid #dbeafe;background:#f8fafc;">${htmlContent}</blockquote>`,
+        text: `${ownerName || '你好'}，你在${itemType}「${title}」下的评论收到了来自 ${commenterName || '用户'} 的回复。\n回复内容：\n${commentText}`
+    });
+}
+
 function sendNewApiRedemptionSuccessEmail({ to, username, cookies, newApiUserId }) {
     const cookiesText = floorToTwoDecimals(cookies).toFixed(2).replace(/\.?0+$/, '');
     sendZeaburEmailQuietly({
@@ -2136,7 +2149,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
         const rawCards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
-                    cc.downloads_count, cc.uploader_user_id, cc.created_at,
+                    cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.updated_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     COALESCE(cc.has_ui_templates, 0) AS has_ui_templates,
@@ -3404,12 +3417,12 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             db.prepare(
                 `INSERT INTO character_cards
                  (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
-                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
                 id, name, description || '', safeAvatarUrl, dataStr,
                 uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
             );
         } catch (insertErr) {
             if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed')) {
@@ -3420,13 +3433,13 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             if (insertErr.message && insertErr.message.includes('FOREIGN KEY')) {
                 db.prepare(
                     `INSERT INTO character_cards
-                     (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
-                      creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                      (id, name, description, avatar_url, data, has_ui_templates, ui_template_count, ui_template_variable_count,
+                       creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).run(
                     id, name, description || '', safeAvatarUrl, dataStr,
                     uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
                 );
             } else {
                 throw insertErr;
@@ -3607,8 +3620,9 @@ app.put('/api/cards/:id', (req, res) => {
             fields.push('reviewed_at = NULL');
             fields.push('rejection_reason = NULL');
         }
-
         if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+        fields.push('updated_at = ?');
+        values.push(new Date().toISOString());
         values.push(req.params.id);
         const updateCard = db.transaction(() => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
@@ -4050,9 +4064,18 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         // Resolve reply info
         let replyToName = null;
+        let replyCommentAuthor = null;
         if (reply_to_id) {
-            const replyComment = db.prepare('SELECT c.id, u.username FROM character_comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?').get(reply_to_id);
-            if (replyComment) replyToName = replyComment.username || '匿名用户';
+            const replyComment = db.prepare(
+                `SELECT c.id, c.user_id, u.username, u.email, u.email_verified, u.comment_email_notifications
+                 FROM character_comments c
+                 LEFT JOIN users u ON c.user_id = u.id
+                 WHERE c.id = ? AND c.card_id = ?`
+            ).get(reply_to_id, req.params.cardId);
+            if (replyComment) {
+                replyToName = replyComment.username || '匿名用户';
+                replyCommentAuthor = replyComment;
+            }
         }
 
         // Check daily comment credit limit (max 2 comments per day earn credits)
@@ -4065,9 +4088,10 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         // Insert comment and optionally add credits
         const insertComment = db.transaction(() => {
+            const storedReplyToId = replyCommentAuthor ? reply_to_id : null;
             db.prepare(
                 'INSERT INTO character_comments (id, card_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).run(id, req.params.cardId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
+            ).run(id, req.params.cardId, userId, user.username, content.trim(), storedReplyToId, replyToName, now);
             if (!hadHeatComment) {
                 db.prepare(
                     'UPDATE character_cards SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
@@ -4088,10 +4112,28 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
         maybeSendCardHeatMilestoneEmail(req.params.cardId, req);
+        let ownerNotifiedUserId = null;
         if (card.uploader_user_id && card.uploader_user_id !== userId && userEmailBound(card) && userCommentEmailNotificationsEnabled(card)) {
             sendCommentNotificationEmail({
                 to: card.email,
                 ownerName: card.username,
+                commenterName: user.username,
+                itemType: '角色卡',
+                title: card.name,
+                content: content.trim()
+            });
+            ownerNotifiedUserId = card.uploader_user_id;
+        }
+        if (
+            replyCommentAuthor?.user_id
+            && replyCommentAuthor.user_id !== userId
+            && replyCommentAuthor.user_id !== ownerNotifiedUserId
+            && userEmailBound(replyCommentAuthor)
+            && userCommentEmailNotificationsEnabled(replyCommentAuthor)
+        ) {
+            sendCommentReplyNotificationEmail({
+                to: replyCommentAuthor.email,
+                ownerName: replyCommentAuthor.username,
                 commenterName: user.username,
                 itemType: '角色卡',
                 title: card.name,
@@ -4205,11 +4247,18 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         const now = new Date().toISOString();
 
         let replyToName = null;
+        let replyCommentAuthor = null;
         if (reply_to_id) {
             const replyComment = db.prepare(
-                'SELECT c.id, u.username FROM ui_template_comments c LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ? AND c.template_id = ?'
+                `SELECT c.id, c.user_id, u.username, u.email, u.email_verified, u.comment_email_notifications
+                 FROM ui_template_comments c
+                 LEFT JOIN users u ON c.user_id = u.id
+                 WHERE c.id = ? AND c.template_id = ?`
             ).get(reply_to_id, req.params.templateId);
-            if (replyComment) replyToName = replyComment.username || '匿名用户';
+            if (replyComment) {
+                replyToName = replyComment.username || '匿名用户';
+                replyCommentAuthor = replyComment;
+            }
         }
 
         const todayStr = now.slice(0, 10);
@@ -4219,9 +4268,10 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         ).get(req.params.templateId, userId));
 
         const insertComment = db.transaction(() => {
+            const storedReplyToId = replyCommentAuthor ? reply_to_id : null;
             db.prepare(
                 'INSERT INTO ui_template_comments (id, template_id, user_id, nickname, content, reply_to_id, reply_to_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            ).run(id, req.params.templateId, userId, user.username, content.trim(), reply_to_id || null, replyToName, now);
+            ).run(id, req.params.templateId, userId, user.username, content.trim(), storedReplyToId, replyToName, now);
             if (!hadHeatComment) {
                 db.prepare(
                     'UPDATE ui_templates SET comment_count_override = comment_count_override + 1 WHERE id = ? AND comment_count_override IS NOT NULL'
@@ -4241,10 +4291,28 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         comment.template_uploader_id = template.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
+        let ownerNotifiedUserId = null;
         if (template.uploader_user_id && template.uploader_user_id !== userId && userEmailBound(template) && userCommentEmailNotificationsEnabled(template)) {
             sendCommentNotificationEmail({
                 to: template.email,
                 ownerName: template.username,
+                commenterName: user.username,
+                itemType: 'UI模板',
+                title: template.title,
+                content: content.trim()
+            });
+            ownerNotifiedUserId = template.uploader_user_id;
+        }
+        if (
+            replyCommentAuthor?.user_id
+            && replyCommentAuthor.user_id !== userId
+            && replyCommentAuthor.user_id !== ownerNotifiedUserId
+            && userEmailBound(replyCommentAuthor)
+            && userCommentEmailNotificationsEnabled(replyCommentAuthor)
+        ) {
+            sendCommentReplyNotificationEmail({
+                to: replyCommentAuthor.email,
+                ownerName: replyCommentAuthor.username,
                 commenterName: user.username,
                 itemType: 'UI模板',
                 title: template.title,

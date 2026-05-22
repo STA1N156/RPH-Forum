@@ -1892,7 +1892,7 @@
                     <div class="flex items-center justify-between gap-4 py-2">
                         <div class="min-w-0">
                             <div class="text-base font-bold text-gray-900">评论邮件提醒</div>
-                            <p class="text-xs text-gray-500 mt-1 leading-relaxed">别人评论你的角色卡或 UI 模板时，发送提醒到绑定邮箱。</p>
+                            <p class="text-xs text-gray-500 mt-1 leading-relaxed">别人评论你的角色卡、UI 模板，或回复你的评论时，发送提醒到绑定邮箱。</p>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
                             <input v-model="userSettingsForm.comment_email_notifications" type="checkbox" class="sr-only peer">
@@ -2002,6 +2002,8 @@
         const API_BASE = '';  // Same origin
         const THUMBNAIL_ASSET_VERSION = 'thumb800-v3';
         const PREVIEW_IMAGE_ASSET_VERSION = 'preview800-v2';
+
+        const getCardAssetVersion = (card) => card?.updated_at || card?.created_at || '';
 
         const buildCardAssetUrl = (cardId, type, extraVersion = '') => {
             const version = type === 'thumbnail' ? THUMBNAIL_ASSET_VERSION : PREVIEW_IMAGE_ASSET_VERSION;
@@ -3117,8 +3119,9 @@
                             card.ui_template_count = Number(card.ui_template_count || 0);
                             card.has_ui_templates = isUiTemplateCard(card);
                             // Use lightweight cached images instead of the original asset in common views.
-                            card.thumbnail_url = buildCardAssetUrl(card.id, 'thumbnail');
-                            card.preview_image_url = buildCardAssetUrl(card.id, 'preview-image');
+                            const assetVersion = getCardAssetVersion(card);
+                            card.thumbnail_url = buildCardAssetUrl(card.id, 'thumbnail', assetVersion);
+                            card.preview_image_url = buildCardAssetUrl(card.id, 'preview-image', assetVersion);
                             card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
                             return card;
                         });
@@ -4180,8 +4183,9 @@
                                 parseCreatorNotes(updated);
                                 updated.ui_template_count = Number(updated.ui_template_count || 0);
                                 updated.has_ui_templates = isUiTemplateCard(updated);
-                            updated.thumbnail_url = buildCardAssetUrl(updated.id, 'thumbnail');
-                            updated.preview_image_url = buildCardAssetUrl(updated.id, 'preview-image');
+                            const assetVersion = getCardAssetVersion(updated);
+                            updated.thumbnail_url = buildCardAssetUrl(updated.id, 'thumbnail', assetVersion);
+                            updated.preview_image_url = buildCardAssetUrl(updated.id, 'preview-image', assetVersion);
                             updated.avatar_url = API_BASE + '/api/cards/' + updated.id + '/avatar';
                                 cards.value[idx] = updated;
                             }
@@ -4638,8 +4642,8 @@
                             const merged = {
                                 ...(listCard || card),
                                 ...fullCard,
-                                thumbnail_url: buildCardAssetUrl(card.id, 'thumbnail'),
-                                preview_image_url: buildCardAssetUrl(card.id, 'preview-image'),
+                                thumbnail_url: buildCardAssetUrl(card.id, 'thumbnail', getCardAssetVersion(fullCard) || getCardAssetVersion(card)),
+                                preview_image_url: buildCardAssetUrl(card.id, 'preview-image', getCardAssetVersion(fullCard) || getCardAssetVersion(card)),
                                 avatar_url: API_BASE + '/api/cards/' + card.id + '/avatar'
                             };
                             parseCreatorNotes(merged);
