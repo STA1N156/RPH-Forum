@@ -5977,17 +5977,60 @@ app.get('/api/stats/visits', (req, res) => {
     }
 });
 
+function getForumDbPath() {
+    return path.join(SERVER_DATA_DIR, 'forum.db');
+}
+
+function getBackupStats(database = db) {
+    const count = (table) => {
+        try {
+            return Number(database.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get()?.c || 0);
+        } catch {
+            return 0;
+        }
+    };
+    return {
+        users: count('users'),
+        cards: count('character_cards'),
+        comments: count('character_comments'),
+        ui_templates: count('ui_templates'),
+        ui_template_comments: count('ui_template_comments'),
+        settings: count('settings'),
+        redemptions: count('newapi_redemptions')
+    };
+}
+
 // ============== Data Export/Import (SQLite DB File) ==============
 app.get('/api/admin/export', authenticateAdmin, (req, res) => {
     try {
-        // Checkpoint WAL to ensure all data is in the main DB file
+        // Checkpoint WAL so recent writes are included in the downloaded DB file.
         db.pragma('wal_checkpoint(TRUNCATE)');
 
-        const dbPath = path.join(DATA_DIR, 'forum.db');
+        const dbPath = getForumDbPath();
+        if (!fs.existsSync(dbPath)) {
+            return res.status(500).json({ error: '导出失败: 数据库文件不存在' });
+        }
+
+        const quickCheck = db.pragma('quick_check', { simple: true });
+        if (quickCheck !== 'ok') {
+            return res.status(500).json({ error: `导出失败: 数据库自检未通过 (${quickCheck})` });
+        }
+
+        const stats = getBackupStats(db);
         const filename = `rph-forum-backup-${new Date().toISOString().slice(0, 10)}.db`;
+        const dbSize = fs.statSync(dbPath).size;
 
         res.setHeader('Content-Type', 'application/x-sqlite3');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Disposition', createAttachmentDisposition(filename));
+        res.setHeader('Content-Length', String(dbSize));
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-RPH-Backup-Size', String(dbSize));
+        res.setHeader('X-RPH-Backup-Users', String(stats.users));
+        res.setHeader('X-RPH-Backup-Cards', String(stats.cards));
+        res.setHeader('X-RPH-Backup-Comments', String(stats.comments));
+        res.setHeader('X-RPH-Backup-Ui-Templates', String(stats.ui_templates));
+        res.setHeader('X-RPH-Backup-Redemptions', String(stats.redemptions));
+        console.info(`[Backup] export ${filename} size=${dbSize} stats=${JSON.stringify(stats)}`);
         res.sendFile(dbPath);
     } catch (err) {
         console.error('Export error:', err);
@@ -6009,8 +6052,8 @@ app.post('/api/admin/import', authenticateAdmin, (req, res) => {
                     return res.status(400).json({ error: '无效的数据库文件，请上传 .db 格式的备份文件' });
                 }
 
-                const dbPath = path.join(DATA_DIR, 'forum.db');
-                const backupPath = path.join(DATA_DIR, `forum-pre-import-${Date.now()}.db.bak`);
+                const dbPath = getForumDbPath();
+                const backupPath = path.join(SERVER_DATA_DIR, `forum-pre-import-${Date.now()}.db.bak`);
 
                 // Checkpoint WAL before backup
                 db.pragma('wal_checkpoint(TRUNCATE)');

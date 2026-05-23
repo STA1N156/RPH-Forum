@@ -1174,8 +1174,18 @@
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                                         <button @click="exportData" :disabled="dataExporting" class="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                            {{ dataExporting ? '导出中...' : '一键导出数据库文件' }}
+                                            {{ dataExporting ? (exportProgress.label || '导出中...') : '一键导出数据库文件' }}
                                         </button>
+                                    </div>
+                                    <div v-if="exportProgress.visible" class="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                                        <div class="flex items-center justify-between gap-3 mb-2">
+                                            <span class="text-sm font-medium text-emerald-800">{{ exportProgress.label }}</span>
+                                            <span class="text-sm font-semibold text-emerald-700">{{ exportProgress.percent }}%</span>
+                                        </div>
+                                        <div class="h-2.5 overflow-hidden rounded-full bg-white border border-emerald-100">
+                                            <div class="h-full rounded-full bg-emerald-500 transition-all duration-300" :style="{ width: exportProgress.percent + '%' }"></div>
+                                        </div>
+                                        <p v-if="exportProgress.detail" class="mt-2 text-xs text-emerald-700">{{ exportProgress.detail }}</p>
                                     </div>
                                     <div class="border-t border-gray-100 pt-4">
                                         <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务）</p>
@@ -2209,29 +2219,123 @@
                 const dataExporting = ref(false);
                 const dataImporting = ref(false);
                 const importResult = ref(null);
+                const exportProgress = reactive({
+                    visible: false,
+                    percent: 0,
+                    label: '',
+                    detail: ''
+                });
+
+                function setExportProgress(percent, label, detail = '') {
+                    exportProgress.visible = true;
+                    exportProgress.percent = Math.max(0, Math.min(100, Math.round(percent)));
+                    exportProgress.label = label;
+                    exportProgress.detail = detail;
+                }
+
+                function formatBackupBytes(bytes) {
+                    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+                    const units = ['B', 'KB', 'MB', 'GB'];
+                    let value = bytes;
+                    let unitIndex = 0;
+                    while (value >= 1024 && unitIndex < units.length - 1) {
+                        value /= 1024;
+                        unitIndex += 1;
+                    }
+                    return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+                }
+
+                function getDownloadFilename(resp) {
+                    const fallback = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
+                    const disposition = resp.headers.get('Content-Disposition') || '';
+                    const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+                    if (encodedMatch) {
+                        try {
+                            return decodeURIComponent(encodedMatch[1]);
+                        } catch (err) {
+                            return fallback;
+                        }
+                    }
+                    const plainMatch = disposition.match(/filename="?([^"]+)"?/i);
+                    return plainMatch ? plainMatch[1] : fallback;
+                }
 
                 async function exportData() {
                     dataExporting.value = true;
+                    let prepareTimer = null;
                     try {
+                        setExportProgress(5, '正在准备备份...', '正在整理数据库最新内容');
+                        prepareTimer = setInterval(() => {
+                            if (exportProgress.percent < 38) {
+                                setExportProgress(exportProgress.percent + 1, '正在准备备份...', '正在整理数据库最新内容');
+                            }
+                        }, 450);
+
                         const resp = await fetch(API_BASE + '/api/admin/export', { headers: authHeaders() });
+                        clearInterval(prepareTimer);
+                        prepareTimer = null;
+
                         if (!resp.ok) {
                             const err = await resp.json().catch(() => ({}));
                             throw new Error(err.error || '导出失败');
                         }
-                        const blob = await resp.blob();
+
+                        const filename = getDownloadFilename(resp);
+                        const totalBytes = Number(resp.headers.get('Content-Length') || resp.headers.get('X-RPH-Backup-Size') || 0);
+                        const totalText = formatBackupBytes(totalBytes);
+                        setExportProgress(45, '备份已准备，开始下载...', totalText ? `总大小约 ${totalText}` : '正在读取备份文件');
+
+                        let blob;
+                        if (resp.body && resp.body.getReader) {
+                            const reader = resp.body.getReader();
+                            const chunks = [];
+                            let receivedBytes = 0;
+
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                chunks.push(value);
+                                receivedBytes += value.length;
+
+                                if (totalBytes > 0) {
+                                    const percent = 45 + (receivedBytes / totalBytes) * 55;
+                                    const receivedText = formatBackupBytes(receivedBytes);
+                                    setExportProgress(percent, '正在下载备份...', `${receivedText} / ${totalText}`);
+                                } else {
+                                    const roughPercent = Math.min(95, 45 + Math.floor(receivedBytes / (1024 * 1024)));
+                                    setExportProgress(roughPercent, '正在下载备份...', formatBackupBytes(receivedBytes));
+                                }
+                            }
+
+                            blob = new Blob(chunks, { type: resp.headers.get('Content-Type') || 'application/x-sqlite3' });
+                        } else {
+                            blob = await resp.blob();
+                        }
+
+                        setExportProgress(100, '下载准备完成', `${filename} 已生成`);
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
+                        a.download = filename;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
                         URL.revokeObjectURL(url);
                         showToast('数据库导出成功', 'success');
                     } catch (err) {
+                        setExportProgress(100, '导出失败', err.message || '导出失败');
                         showToast(err.message || '导出失败', 'error');
                     } finally {
+                        if (prepareTimer) clearInterval(prepareTimer);
                         dataExporting.value = false;
+                        setTimeout(() => {
+                            if (!dataExporting.value) {
+                                exportProgress.visible = false;
+                                exportProgress.percent = 0;
+                                exportProgress.label = '';
+                                exportProgress.detail = '';
+                            }
+                        }, 2500);
                     }
                 }
 
@@ -2308,7 +2412,7 @@
                     handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
                     toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
                     restoreSavedTagSnapshot, loadSettings, saveSettings, saveEmailSettings, saveNewApiSettings,
-                    dataExporting, dataImporting, importResult, exportData, importData
+                    dataExporting, dataImporting, importResult, exportProgress, exportData, importData
                 };
             }
         }).mount('#admin-app');
