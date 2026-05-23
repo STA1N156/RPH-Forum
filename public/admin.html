@@ -1186,6 +1186,9 @@
                                             <div class="h-full rounded-full bg-emerald-500 transition-all duration-300" :style="{ width: exportProgress.percent + '%' }"></div>
                                         </div>
                                         <p v-if="exportProgress.detail" class="mt-2 text-xs text-emerald-700">{{ exportProgress.detail }}</p>
+                                        <a v-if="exportProgress.downloadUrl" :href="exportProgress.downloadUrl" :download="exportProgress.filename" class="mt-3 inline-flex items-center gap-2 text-sm font-medium text-emerald-700 hover:text-emerald-900">
+                                            没有弹出下载？点这里
+                                        </a>
                                     </div>
                                     <div class="border-t border-gray-100 pt-4">
                                         <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务）</p>
@@ -2223,7 +2226,9 @@
                     visible: false,
                     percent: 0,
                     label: '',
-                    detail: ''
+                    detail: '',
+                    downloadUrl: '',
+                    filename: ''
                 });
 
                 function setExportProgress(percent, label, detail = '') {
@@ -2245,83 +2250,49 @@
                     return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
                 }
 
-                function getDownloadFilename(resp) {
-                    const fallback = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
-                    const disposition = resp.headers.get('Content-Disposition') || '';
-                    const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-                    if (encodedMatch) {
-                        try {
-                            return decodeURIComponent(encodedMatch[1]);
-                        } catch (err) {
-                            return fallback;
-                        }
-                    }
-                    const plainMatch = disposition.match(/filename="?([^"]+)"?/i);
-                    return plainMatch ? plainMatch[1] : fallback;
+                function startBrowserDownload(url, filename) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    if (filename) a.download = filename;
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => a.remove(), 1000);
                 }
 
                 async function exportData() {
                     dataExporting.value = true;
                     let prepareTimer = null;
                     try {
+                        exportProgress.downloadUrl = '';
+                        exportProgress.filename = '';
                         setExportProgress(5, '正在准备备份...', '正在整理数据库最新内容');
                         prepareTimer = setInterval(() => {
-                            if (exportProgress.percent < 38) {
+                            if (exportProgress.percent < 88) {
                                 setExportProgress(exportProgress.percent + 1, '正在准备备份...', '正在整理数据库最新内容');
                             }
                         }, 450);
 
-                        const resp = await fetch(API_BASE + '/api/admin/export', { headers: authHeaders() });
+                        const resp = await fetch(API_BASE + '/api/admin/export-token', {
+                            method: 'POST',
+                            headers: authHeaders()
+                        });
                         clearInterval(prepareTimer);
                         prepareTimer = null;
 
+                        const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) {
-                            const err = await resp.json().catch(() => ({}));
-                            throw new Error(err.error || '导出失败');
+                            throw new Error(data.error || '导出失败');
                         }
 
-                        const filename = getDownloadFilename(resp);
-                        const totalBytes = Number(resp.headers.get('Content-Length') || resp.headers.get('X-RPH-Backup-Size') || 0);
-                        const totalText = formatBackupBytes(totalBytes);
-                        setExportProgress(45, '备份已准备，开始下载...', totalText ? `总大小约 ${totalText}` : '正在读取备份文件');
-
-                        let blob;
-                        if (resp.body && resp.body.getReader) {
-                            const reader = resp.body.getReader();
-                            const chunks = [];
-                            let receivedBytes = 0;
-
-                            while (true) {
-                                const { done, value } = await reader.read();
-                                if (done) break;
-                                chunks.push(value);
-                                receivedBytes += value.length;
-
-                                if (totalBytes > 0) {
-                                    const percent = 45 + (receivedBytes / totalBytes) * 55;
-                                    const receivedText = formatBackupBytes(receivedBytes);
-                                    setExportProgress(percent, '正在下载备份...', `${receivedText} / ${totalText}`);
-                                } else {
-                                    const roughPercent = Math.min(95, 45 + Math.floor(receivedBytes / (1024 * 1024)));
-                                    setExportProgress(roughPercent, '正在下载备份...', formatBackupBytes(receivedBytes));
-                                }
-                            }
-
-                            blob = new Blob(chunks, { type: resp.headers.get('Content-Type') || 'application/x-sqlite3' });
-                        } else {
-                            blob = await resp.blob();
-                        }
-
-                        setExportProgress(100, '下载准备完成', `${filename} 已生成`);
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = filename;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        URL.revokeObjectURL(url);
-                        showToast('数据库导出成功', 'success');
+                        const filename = data.filename || `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
+                        const totalText = formatBackupBytes(Number(data.size || 0));
+                        const downloadUrl = API_BASE + data.download_url;
+                        exportProgress.downloadUrl = downloadUrl;
+                        exportProgress.filename = filename;
+                        setExportProgress(100, '备份已生成，浏览器开始下载', totalText ? `${filename}，大小约 ${totalText}` : filename);
+                        startBrowserDownload(downloadUrl, filename);
+                        showToast('备份已交给浏览器下载', 'success');
                     } catch (err) {
                         setExportProgress(100, '导出失败', err.message || '导出失败');
                         showToast(err.message || '导出失败', 'error');
@@ -2334,8 +2305,10 @@
                                 exportProgress.percent = 0;
                                 exportProgress.label = '';
                                 exportProgress.detail = '';
+                                exportProgress.downloadUrl = '';
+                                exportProgress.filename = '';
                             }
-                        }, 2500);
+                        }, 15000);
                     }
                 }
 

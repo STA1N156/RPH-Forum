@@ -76,6 +76,10 @@ const LOCKOUT_MINUTES = 1;
 // ============== Captcha Store ==============
 const captchaTokens = new Map(); // token -> { createdAt, used }
 
+// ============== Admin Export Downloads ==============
+const adminExportDownloads = new Map(); // token -> prepared backup download
+const ADMIN_EXPORT_DOWNLOAD_TTL_MS = 5 * 60 * 1000;
+
 // ============== Upload Rate Limiting ==============
 const MAX_UPLOAD_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
 const MAX_UI_TEMPLATE_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB text template
@@ -111,6 +115,26 @@ setInterval(() => {
         else uploadRateMap.set(key, active);
     }
 }, 5 * 60 * 1000);
+
+function cleanupAdminExportDownload(token) {
+    const record = adminExportDownloads.get(token);
+    if (!record) return;
+    adminExportDownloads.delete(token);
+    if (record.path) {
+        fs.unlink(record.path, (err) => {
+            if (err && err.code !== 'ENOENT') {
+                console.warn('[Backup] temp cleanup failed:', err.message);
+            }
+        });
+    }
+}
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [token, record] of adminExportDownloads) {
+        if (!record || record.expiresAt <= now) cleanupAdminExportDownload(token);
+    }
+}, 60 * 1000);
 
 // ============== Middleware ==============
 app.use(helmet({
@@ -5981,6 +6005,12 @@ function getForumDbPath() {
     return path.join(SERVER_DATA_DIR, 'forum.db');
 }
 
+function getBackupTempDir() {
+    const dir = path.join(SERVER_DATA_DIR, 'backup-downloads');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
 function getBackupStats(database = db) {
     const count = (table) => {
         try {
@@ -6000,41 +6030,150 @@ function getBackupStats(database = db) {
     };
 }
 
+async function createAdminBackupSnapshot() {
+    // Checkpoint WAL so recent writes are included in the downloaded DB file.
+    db.pragma('wal_checkpoint(TRUNCATE)');
+
+    const dbPath = getForumDbPath();
+    if (!fs.existsSync(dbPath)) {
+        throw new Error('数据库文件不存在');
+    }
+
+    const quickCheck = db.pragma('quick_check', { simple: true });
+    if (quickCheck !== 'ok') {
+        throw new Error(`数据库自检未通过 (${quickCheck})`);
+    }
+
+    const stats = getBackupStats(db);
+    const filename = `rph-forum-backup-${new Date().toISOString().slice(0, 10)}.db`;
+    const snapshotPath = path.join(
+        getBackupTempDir(),
+        `rph-forum-export-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.db`
+    );
+
+    await db.backup(snapshotPath);
+    const size = fs.statSync(snapshotPath).size;
+    return { path: snapshotPath, filename, size, stats };
+}
+
+function setAdminBackupDownloadHeaders(res, snapshot) {
+    res.setHeader('Content-Type', 'application/x-sqlite3');
+    res.setHeader('Content-Disposition', createAttachmentDisposition(snapshot.filename));
+    res.setHeader('Content-Length', String(snapshot.size));
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Accept-Ranges', 'none');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-RPH-Backup-Source', 'snapshot');
+    res.setHeader('X-RPH-Backup-Size', String(snapshot.size));
+    res.setHeader('X-RPH-Backup-Users', String(snapshot.stats.users));
+    res.setHeader('X-RPH-Backup-Cards', String(snapshot.stats.cards));
+    res.setHeader('X-RPH-Backup-Comments', String(snapshot.stats.comments));
+    res.setHeader('X-RPH-Backup-Ui-Templates', String(snapshot.stats.ui_templates));
+    res.setHeader('X-RPH-Backup-Redemptions', String(snapshot.stats.redemptions));
+}
+
+function streamAdminBackupSnapshot(req, res, snapshot, cleanup) {
+    let fileStream = null;
+    let cleaned = false;
+    const cleanupOnce = () => {
+        if (cleaned) return;
+        cleaned = true;
+        cleanup?.();
+    };
+
+    setAdminBackupDownloadHeaders(res, snapshot);
+    console.info(`[Backup] export ${snapshot.filename} size=${snapshot.size} source=snapshot stats=${JSON.stringify(snapshot.stats)}`);
+
+    fileStream = fs.createReadStream(snapshot.path);
+    fileStream.on('error', (streamErr) => {
+        console.error('Export stream error:', streamErr);
+        if (!res.headersSent) {
+            res.status(500).json({ error: '导出失败: ' + streamErr.message });
+        } else {
+            res.destroy(streamErr);
+        }
+        cleanupOnce();
+    });
+    fileStream.on('close', cleanupOnce);
+
+    res.on('close', () => {
+        if (!res.writableEnded && fileStream) {
+            fileStream.destroy();
+        }
+    });
+
+    fileStream.pipe(res);
+}
+
 // ============== Data Export/Import (SQLite DB File) ==============
-app.get('/api/admin/export', authenticateAdmin, (req, res) => {
+app.post('/api/admin/export-token', authenticateAdmin, async (req, res) => {
     try {
-        // Checkpoint WAL so recent writes are included in the downloaded DB file.
-        db.pragma('wal_checkpoint(TRUNCATE)');
+        const snapshot = await createAdminBackupSnapshot();
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = Date.now() + ADMIN_EXPORT_DOWNLOAD_TTL_MS;
+        adminExportDownloads.set(token, {
+            ...snapshot,
+            token,
+            adminId: req.admin.id,
+            username: req.admin.username,
+            expiresAt
+        });
+        res.cookie('rph_admin_export_token', token, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: IS_PRODUCTION,
+            maxAge: ADMIN_EXPORT_DOWNLOAD_TTL_MS,
+            path: '/api/admin/export/file'
+        });
+        res.json({
+            success: true,
+            filename: snapshot.filename,
+            size: snapshot.size,
+            stats: snapshot.stats,
+            expires_in_seconds: Math.floor(ADMIN_EXPORT_DOWNLOAD_TTL_MS / 1000),
+            download_url: '/api/admin/export/file'
+        });
+    } catch (err) {
+        console.error('Export prepare error:', err);
+        res.status(500).json({ error: '导出失败: ' + err.message });
+    }
+});
 
-        const dbPath = getForumDbPath();
-        if (!fs.existsSync(dbPath)) {
-            return res.status(500).json({ error: '导出失败: 数据库文件不存在' });
-        }
+app.get('/api/admin/export/file', (req, res) => {
+    const token = String(req.cookies?.rph_admin_export_token || '');
+    const snapshot = adminExportDownloads.get(token);
+    if (!snapshot || snapshot.expiresAt <= Date.now() || !snapshot.path || !fs.existsSync(snapshot.path)) {
+        cleanupAdminExportDownload(token);
+        res.clearCookie('rph_admin_export_token', { path: '/api/admin/export/file' });
+        return res.status(410).json({ error: '下载链接已过期，请重新点击导出' });
+    }
 
-        const quickCheck = db.pragma('quick_check', { simple: true });
-        if (quickCheck !== 'ok') {
-            return res.status(500).json({ error: `导出失败: 数据库自检未通过 (${quickCheck})` });
-        }
+    res.clearCookie('rph_admin_export_token', { path: '/api/admin/export/file' });
+    streamAdminBackupSnapshot(req, res, snapshot, () => cleanupAdminExportDownload(token));
+});
 
-        const stats = getBackupStats(db);
-        const filename = `rph-forum-backup-${new Date().toISOString().slice(0, 10)}.db`;
-        const dbSize = fs.statSync(dbPath).size;
-
-        res.setHeader('Content-Type', 'application/x-sqlite3');
-        res.setHeader('Content-Disposition', createAttachmentDisposition(filename));
-        res.setHeader('Content-Length', String(dbSize));
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('X-RPH-Backup-Size', String(dbSize));
-        res.setHeader('X-RPH-Backup-Users', String(stats.users));
-        res.setHeader('X-RPH-Backup-Cards', String(stats.cards));
-        res.setHeader('X-RPH-Backup-Comments', String(stats.comments));
-        res.setHeader('X-RPH-Backup-Ui-Templates', String(stats.ui_templates));
-        res.setHeader('X-RPH-Backup-Redemptions', String(stats.redemptions));
-        console.info(`[Backup] export ${filename} size=${dbSize} stats=${JSON.stringify(stats)}`);
-        res.sendFile(dbPath);
+app.get('/api/admin/export', authenticateAdmin, async (req, res) => {
+    let snapshot = null;
+    try {
+        snapshot = await createAdminBackupSnapshot();
+        streamAdminBackupSnapshot(req, res, snapshot, () => {
+            if (!snapshot?.path) return;
+            fs.unlink(snapshot.path, (err) => {
+                if (err && err.code !== 'ENOENT') {
+                    console.warn('[Backup] temp cleanup failed:', err.message);
+                }
+            });
+        });
     } catch (err) {
         console.error('Export error:', err);
-        res.status(500).json({ error: '导出失败: ' + err.message });
+        if (snapshot?.path) {
+            fs.unlink(snapshot.path, () => {});
+        }
+        if (!res.headersSent) {
+            res.status(500).json({ error: '导出失败: ' + err.message });
+        } else {
+            res.destroy(err);
+        }
     }
 });
 
