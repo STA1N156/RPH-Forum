@@ -1,19 +1,20 @@
 {
-  "name": "nai2api",
+  "name": "rp-forum",
   "version": "1.0.0",
-  "description": "Docker-ready NovelAI to API gateway with STA1N keys, user credits, account pool load balancing, direct image URLs, and polling jobs.",
-  "main": "server/index.js",
-  "type": "module",
+  "description": "角色卡广场 - RP Character Card Forum",
+  "main": "server.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "check": "node --check server/index.js && node --check server/providers.js && node --check server/store.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^12.10.0"
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.7.0",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "sharp": "^0.34.5"
   }
 }

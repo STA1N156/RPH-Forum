@@ -1,444 +1,99 @@
-# Nai2API
+# 🎭 角色卡广场 (RP Forum)
 
-Nai2API 是一个 Docker-ready 的 NovelAI 图片生成网关。它把 NovelAI 账号池封装成一个可管理的 Web/API 服务：管理员在后台添加 NovelAI Persistent API Token，发放 `STA1N-...` 用户密钥，用户可以在网页中生成图片，也可以把 `/generate` 图片直链接嵌入到脚本、网页或论坛模板里。
+一个自部署的角色卡分享论坛，支持 Docker 一键部署到 Zeabur。
 
-项目重点是“好部署、好管理、好嵌入”：支持卡密/密钥额度、账号负载、账号并发限制、排队、缓存、后台监控、迁移包导入导出，以及持久化。
+## ✨ 功能特性
 
-## 功能
+- **角色卡上传与分享** - 支持 PNG/JSON 格式的角色卡文件
+- **匿名评论系统** - 所有人都可以匿名评论
+- **下载积分系统** - 上传赚积分，下载消耗积分
+- **管理员后台** - 专业的 Web 管理界面
+- **暴力破解防护** - IP/账户级别登录限制
+- **内置 SQLite 数据库** - 无需外部数据库服务
+- **Docker 部署** - 一个容器包含所有服务
+- **数据持久化** - 通过 Volume 挂载保存数据
 
-- 用户前台：`/`
-- 管理后台：`/admin`
-- 用户密钥：管理员直接生成 `STA1N-...`，无需用户二次开通
-- 额度扣费：真实生成每次固定扣 `1` 点，失败会自动退回
-- NovelAI 账号池：支持多个 Persistent API Token，按可用并发自动分配
-- 并发控制：每个账号默认最多同时生成 `2` 个，可在系统设置调整
-- 排队机制：网页生图可排队并显示状态；图片 URL 请求会等待，超过 60 秒返回“服务器繁忙”
-- 图片缓存：同参数可命中缓存，避免重复扣费；后台可设置最大缓存数量、预览、搜索、清理
-- 生成尺寸：仅保留横图、竖图、方图三种常用规格
-- 步数策略：网页生成支持较高步数；`/generate` 图片 URL 请求会把步数限制到最高 `28`
-- 嵌入代码：前台可一键复制完整 HTML 代码，适合通用 AI 插图脚本
-- OpenAI 兼容：支持 `/v1/models` 和 `/v1/chat/completions`，可用 `STA1N-...` 密钥作为 Bearer API Key
-- 数据迁移：后台一键导出/导入配置包；迁移包不包含任务记录和图片缓存
-- 持久化：所有数据写入 `DATA_DIR`，Docker/Zeabur 推荐挂载到 `/data`
+## 🚀 一键部署到 Zeabur
 
-## 目录结构
+[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates?q=rp-forum)
 
-```text
-.
-├─ public/              # 前台和后台静态页面
-├─ server/              # Node.js 后端接口、NovelAI 适配、数据存储
-├─ data/                # 本地持久化数据目录
-├─ Dockerfile           # Zeabur / Docker 部署入口
-├─ docker-compose.yml   # 本地 Docker Compose
-├─ .env.example         # 环境变量示例
-└─ README.md
-```
+### 部署步骤
 
-## 环境变量
+1. Fork 本仓库到你的 GitHub 账户
+2. 在 [Zeabur](https://zeabur.com) 注册/登录
+3. 创建新项目 → 选择「从 GitHub 部署」→ 选择 fork 的仓库
+4. 部署完成后，在服务设置中添加 **Volume 挂载**：
+   - Volume ID: `data`
+   - 挂载路径: `/app/data`
+5. 首次登录后立即修改管理员密码
+6. 访问 `https://你的域名/admin` 进入管理后台
+
+## ⚙️ 环境变量
 
 | 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `PORT` | `8080` | 服务监听端口。Zeabur 会注入 `PORT`，本项目默认也使用 8080。 |
-| `HOST` | `0.0.0.0` | 服务监听地址。容器部署时需要监听 `0.0.0.0`。 |
-| `ADMIN_TOKEN` | `123456` | 管理后台密码。正式部署必须改成强密码。 |
-| `DATA_DIR` | `/data` | 数据存储目录。Docker/Zeabur 持久化时挂载这个目录。 |
-| `NOVELAI_API_URL` | `https://image.novelai.net` | NovelAI 图片接口地址，通常不用改。 |
-| `MOCK_WHEN_NO_ACCOUNT` | `true` | 没有账号时是否返回 mock 预览图。生产环境建议 `false`。 |
-| `DIRECT_GENERATE_TIMEOUT_MS` | `60000` | `/generate` 图片 URL 请求最长等待时间，默认 60 秒。 |
-| `OPENAI_CHAT_TIMEOUT_MS` | `600000` | OpenAI Chat Completions 兼容接口最长等待时间，默认 10 分钟。 |
-| `ACCOUNT_INFLIGHT_TIMEOUT_MS` | `600000` | 账号并发占用超时保护，默认 10 分钟。 |
+|------|--------|------|
+| `ADMIN_USERNAME` | `admin` | 管理员用户名 |
+| `ADMIN_PASSWORD` | 平台生成强密码 | 管理员初始密码，生产环境必须显式设置 |
+| `JWT_SECRET` | 平台生成强密钥 | JWT 签名密钥，建议显式设置；未设置时会回退为基于 ADMIN_PASSWORD 派生的稳定密钥 |
+| `PORT` | `9191` | 服务端口 |
+| `DATA_DIR` | `/app/data` | 数据存储目录 |
 
-## 本地运行
+## 🔒 安全特性
 
-### 方式一：Docker Compose
+- **登录速率限制**: 每个 IP + 用户名组合 15 分钟内最多 5 次尝试
+- **JWT 认证**: 管理员接口需要令牌验证
+- **密码哈希**: 使用 bcrypt (cost=12) 存储密码
+- **安全头**: 通过 Helmet 中间件设置安全响应头
+- **审计日志**: 记录所有登录尝试（成功/失败）
+- **健康检查**: 容器通过 `/health` 端点暴露存活状态
 
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
+## 🖥️ 管理后台
 
-访问：
+访问 `/admin` 路径进入管理后台，功能包括：
 
-```text
-用户前台：http://localhost:8080/
-管理后台：http://localhost:8080/admin
-```
+- **仪表盘** - 卡片/评论/下载统计总览
+- **卡片管理** - 搜索、分页、删除卡片
+- **评论管理** - 查看、删除评论
+- **用户管理** - 调整下载次数、重置用户密码
+- **标签管理** - 编辑热门标签、标签库与隐藏标签
+- **操作日志** - 查看登录尝试和管理员操作记录
+- **系统设置** - 站点名称、权限配置、修改密码
 
-停止：
-
-```bash
-docker compose down
-```
-
-### 方式二：Node.js
-
-需要 Node.js 20 或更高版本。
+## 🐳 本地开发
 
 ```bash
+# 安装依赖
 npm install
+
+# 启动服务
 npm start
+
+# 访问
+# 论坛: http://localhost:9191
+# 管理后台: http://localhost:9191/admin
 ```
 
-Windows 本地也可以直接运行：
-
-```powershell
-.\run-server.cmd
-```
-
-## 首次使用流程
-
-1. 打开 `/admin`。
-2. 输入 `ADMIN_TOKEN`，默认是 `123456`。
-3. 在“NovelAI 账号池”中添加一个或多个 NovelAI Persistent API Token。
-4. 在“发放 STA1N 密钥”里生成用户密钥，并设置额度。
-5. 打开 `/`，填入 `STA1N-...` 用户密钥，点击“加载密钥”查看可用点数。
-6. 填提示词和参数后生成图片。
-7. 需要嵌入脚本时，复制前台生成的 HTML 嵌入代码。
-
-## NovelAI 账号池
-
-每个 NovelAI 账号都有自己的并发计数。系统会优先选择当前负载最低、最近使用时间更早的可用账号。
-
-后台支持：
-
-- 添加账号
-- 启用/禁用账号
-- 批量删除账号
-- 导入/导出账号 token
-- 查看成功/失败统计
-- 重置监控数据
-- 调整每个账号最高并发数
-
-如果所有账号都达到并发上限：
-
-- 网页生成会进入排队状态，并显示排队人数
-- `/generate` 图片 URL 请求会挂起等待
-- 图片 URL 请求超过 60 秒仍未生成，会返回“服务器繁忙，请稍后再试”的图片
-
-## 尺寸
-
-| 名称 | 分辨率 |
-| --- | --- |
-| 竖图 | `832 x 1216` |
-| 横图 | `1216 x 832` |
-| 方图 | `1024 x 1024` |
-
-## 生成接口
-
-### 图片直链
-
-```text
-GET /generate?token=STA1N-xxx&tag=1girl&size=竖图&steps=28&scale=6&cfg=0&sampler=k_dpmpp_2m_sde&negative=bad anatomy&nocache=0&noise_schedule=karras
-```
-
-常用参数：
-
-| 参数 | 说明 |
-| --- | --- |
-| `token` | 用户密钥，必须是后台生成的 `STA1N-...` |
-| `tag` | 用户提示词 |
-| `artist` | 质量前缀或画师前缀 |
-| `size` | `竖图`、`横图`、`方图` |
-| `steps` | 生成步数。图片 URL 请求最高按 28 路由。 |
-| `scale` | Prompt guidance scale |
-| `cfg` | NovelAI rescale/cfg 相关参数 |
-| `sampler` | 采样器 |
-| `negative` | 负面提示词 |
-| `nocache` | `0` 命中缓存，`1` 强制重画 |
-| `noise_schedule` | 噪声调度，例如 `karras` |
-
-### 嵌入 HTML 示例
-
-```html
-<div style="width: auto; height: auto; max-width: 100%; border: 8px solid transparent; background-image: linear-gradient(45deg, #FFC9D9, #CCE5FF); position: relative; border-radius: 16px; overflow: hidden; display: flex; justify-content: center; align-items: center; animation: gradientBG 3s ease infinite; box-shadow: 0 4px 15px rgba(204,229,255,0.3);"><div style="background: rgba(255,255,255,0.85); backdrop-filter: blur(5px); width: 100%; height: 100%; position: absolute; top: 0; left: 0;"></div><img src="https://your-domain.com/generate?tag=$1&token=STA1N-xxxxxx&model=nai-diffusion-4-5-full&artist=artist:ningen_mame,, noyu_(noyu23386566),, toosaka asagi,, location,\n20::best quality, absurdres, very aesthetic, detailed, masterpiece::,:,, very aesthetic, masterpiece, no text,&size=竖图&steps=28&scale=6&cfg=0&sampler=k_dpmpp_2m_sde&negative={{{{bad anatomy}}}},{bad feet},bad hands,{{{bad proportions}}},{blurry},cloned face,cropped,{{{deformed}}},{{{disfigured}}},error,{{{extra arms}}},{extra digit},{{{extra legs}}},extra limbs,{{extra limbs}},{fewer digits},{{{fused fingers}}},gross proportions,jpeg artifacts,{{{{long neck}}}},low quality,{malformed limbs},{{missing arms}},{missing fingers},{{missing legs}},mutated hands,{{{mutation}}},normal quality,poorly drawn face,poorly drawn hands,signature,text,{{too many fingers}},{{{ugly}}},username,watermark,worst quality&nocache=0&noise_schedule=karras" alt="生成图片" style="max-width: 100%; height: auto; width: auto; display: block; object-fit: contain; transition: transform 0.3s ease; position: relative; z-index: 1;"></div><style>@keyframes gradientBG {0% {background-image: linear-gradient(45deg, #FFC9D9, #CCE5FF);}50% {background-image: linear-gradient(225deg, #FFC9D9, #CCE5FF);}100% {background-image: linear-gradient(45deg, #FFC9D9, #CCE5FF);}}</style>
-```
-
-把 `https://your-domain.com` 换成你的域名，把 `STA1N-xxxxxx` 换成用户密钥即可。
-
-### OpenAI Chat Completions 兼容
-
-模型列表：
-
-```text
-GET /v1/models
-```
-
-请求头使用后台生成的用户密钥：
-
-```text
-Authorization: Bearer STA1N-xxxxxx
-Content-Type: application/json
-```
-
-模型 ID 使用分辨率前缀、固定模型和采样器后缀，例如：
-
-```text
-[2K]nai-diffusion-4-5-full:k_dpmpp_2m_sde
-[4K]nai-diffusion-4-5-full:k_dpmpp_2m_sde
-```
-
-OpenAI 兼容接口可用两档分辨率，网页前台暂不提供这两个选项：
-
-| 前缀 | 扣费 | 竖图 | 横图 | 方图 |
-| --- | ---: | --- | --- | --- |
-| 无前缀 | `1` 点 | `832 x 1216` | `1216 x 832` | `1024 x 1024` |
-| `[2K]` | `20` 点 | `1088 x 1600` | `1600 x 1088` | `1344 x 1344` |
-| `[4K]` | `35` 点 | `1344 x 1984` | `1984 x 1344` | `1728 x 1728` |
-
-非流式示例：
+### Docker 本地运行
 
 ```bash
-curl https://your-domain.com/v1/chat/completions \
-  -H "Authorization: Bearer STA1N-xxxxxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "[2K]nai-diffusion-4-5-full:k_dpmpp_2m_sde",
-    "messages": [
-      {
-        "role": "user",
-        "content": "提示词:1girl, silver hair\n画师串:ningen_mame,, noyu_(noyu23386566),,\n尺寸:竖图\n提示词引导值:6\n缩放引导值:0\n负面提示词:bad anatomy, bad hands, text, watermark, worst quality"
-      }
-    ]
-  }'
+docker build -t rp-forum .
+docker run -p 9191:9191 -v rp-forum-data:/app/data rp-forum
 ```
 
-流式请求加上 `"stream": true`。服务会按 OpenAI SSE 格式输出文本进度，例如“排队中”“已路由账号 #1，正在生成”，完成后返回一段 Markdown 图片链接。
+## 📁 项目结构
 
-OpenAI 兼容接口会严格校验最后一条 `user` 消息。必须按下面字段格式填写，缺字段或只写普通文本会返回 `400`：“请求格式错误，请参考群内使用指南”。其中 `画师串` 和 `负面提示词` 可以留空，但字段行仍要保留；`负面提示词` 留空时会自动使用网站默认负面提示词。步数由后端固定为 `28`，请求里即使出现步数字段也不会改变实际步数。
-
-支持的中文字段：
-
-| 字段 | 映射参数 |
-| --- | --- |
-| `提示词` | `tag` |
-| `画师串` | `artist` |
-| `尺寸` | `size` |
-| `提示词引导值` | `scale` |
-| `缩放引导值` | `cfg` |
-| `负面提示词` | `negative` |
-| `采样器` | `sampler` |
-
-也可以在 JSON 里传 `nai` 对象覆盖参数：
-
-```json
-{
-  "model": "[2K]nai-diffusion-4-5-full:k_dpmpp_2m_sde",
-  "messages": [{ "role": "user", "content": "提示词:1girl\n负面提示词:bad anatomy, bad hands, text, watermark" }],
-  "nai": {
-    "size": "竖图",
-    "scale": 6,
-    "cfg": 0,
-    "negative": "bad anatomy, bad hands, text, watermark"
-  }
-}
+```
+├── server.js          # Express 服务器 (API + 静态文件)
+├── database.js        # SQLite 数据库初始化
+├── package.json       # 依赖配置
+├── Dockerfile         # Docker 构建文件
+├── zeabur.json        # Zeabur 部署模板
+├── public/
+│   ├── index.html     # 论坛主页 (Vue.js + Tailwind)
+│   └── admin.html     # 管理后台
+└── data/              # SQLite 数据库 (运行时生成)
 ```
 
-## 管理 API
+## 📜 License
 
-所有管理接口都需要请求头：
-
-```text
-x-admin-token: ADMIN_TOKEN
-```
-
-常用接口：
-
-```text
-GET    /api/health
-GET    /api/settings
-PUT    /api/settings
-GET    /api/admin/summary
-POST   /api/admin/users
-PATCH  /api/admin/users
-DELETE /api/admin/users
-POST   /api/admin/accounts
-PATCH  /api/admin/accounts/:id
-DELETE /api/admin/accounts
-POST   /api/admin/accounts/reset-stats
-GET    /api/admin/accounts/export
-POST   /api/admin/accounts/import
-GET    /api/admin/images
-DELETE /api/admin/images
-GET    /api/admin/export
-POST   /api/admin/import
-POST   /api/jobs
-GET    /api/jobs/:id
-```
-
-## 数据存储
-
-Nai2API 使用 SQLite 元数据 + 图片文件的方式存储，默认路径：
-
-```text
-/data/library.sqlite
-/data/images/
-```
-
-`library.sqlite` 包含：
-
-- 系统设置
-- 用户密钥和余额
-- 卡密
-- NovelAI 账号池
-- 最近任务
-- 图片缓存元数据
-- 操作流水
-
-真实图片文件存放在 `/data/images/`。旧版本的 `/data/library.json` 会在第一次启动时自动导入到 `/data/library.sqlite`；迁移成功后，旧的 `library.json` / `library.json.bak` 会被删除来腾出空间。
-
-SQLite 会按记录写入数据，不再每次改余额、任务或图片缓存时重写整个 `library.json`，高并发生成时更稳。数据库内部会把用户、账号、任务、图片、流水等拆到独立表里；图片缓存列表会直接用 SQLite 分页和筛选，不再扫描全部图片记录。
-
-启动时会打印带 `[runtime]` 前缀的关键日志，包括 SQLite 打开、建表、旧 JSON 读取、迁移写入、旧 JSON 删除、旧版 SQLite 泛用表升级等耗时；后台总览和图片分页如果超过 500ms，也会打印慢日志，方便定位卡点。
-
-Docker Compose 已经挂载：
-
-```yaml
-volumes:
-  - ./data:/data
-```
-
-所以本地重建容器不会丢失数据。
-
-## 数据迁移包
-
-后台“一键打包导出”用于迁移配置，不用于备份图片缓存。
-
-迁移包包含：
-
-- 系统设置
-- 卡密
-- 用户密钥和余额
-- NovelAI 账号池
-
-迁移包不包含：
-
-- 最近任务记录
-- 图片缓存
-- 操作流水
-
-如果你要完整备份图片缓存，需要直接备份整个 `/data` 目录，或者在服务器层面对 `/data` Volume 做备份。
-
-## 部署到 Zeabur
-
-Zeabur 官方文档说明：GitHub 集成可以直接从 GitHub 部署代码，并且 push 后会自动重新部署；项目根目录存在 `Dockerfile` 时，Zeabur 会按 Dockerfile 构建；环境变量在服务的 Variables 页面设置；需要持久化数据时，在服务的 Volumes 页面挂载目录。
-
-### 1. 准备仓库
-
-把本项目推送到 GitHub。仓库根目录需要包含：
-
-```text
-Dockerfile
-package.json
-server/
-public/
-```
-
-`data/` 可以保留空目录，也可以不上传真实生产数据。不要把你的 NovelAI token 或 `.env` 提交到 GitHub。
-
-Docker 镜像不会复制本地 `data/` 目录。Zeabur 构建阶段只需要代码，运行阶段再把 Volume 挂载到 `/data`。
-
-### 2. 创建 Zeabur 服务
-
-1. 登录 Zeabur。
-2. 创建 Project。
-3. 添加 Service。
-4. 选择 GitHub。
-5. 授权并选择你的 Nai2API 仓库。
-6. Zeabur 检测到 `Dockerfile` 后会用 Dockerfile 构建。
-7. 等待构建完成。
-
-### 3. 配置环境变量
-
-进入服务的 Variables 页面，添加：
-
-```env
-ADMIN_TOKEN=换成强密码
-DATA_DIR=/data
-HOST=0.0.0.0
-NOVELAI_API_URL=https://image.novelai.net
-MOCK_WHEN_NO_ACCOUNT=false
-DIRECT_GENERATE_TIMEOUT_MS=60000
-```
-
-`PORT` 通常不需要手动设置，Zeabur 会为服务注入端口变量；本项目 Dockerfile 默认暴露 `8080`。
-
-### 4. 挂载持久化 Volume
-
-进入服务的 Volumes 页面：
-
-```text
-Volume ID: data
-Mount Directory: /data
-```
-
-这一步很重要。Nai2API 的数据库文件在 `/data/library.sqlite`，图片缓存文件在 `/data/images/`，不挂载 Volume 的话，服务重启或重新部署后数据可能回到初始状态。
-
-注意：Zeabur 官方文档提示，挂载 Volume 后服务会变成有状态服务，重启时不能使用零停机切换，会有短暂中断；另外，挂载时目标目录会被清空，所以如果里面已有重要数据，需要先导出或备份。
-
-### 5. 绑定域名
-
-在 Zeabur 服务的 Domains / Networking 页面添加域名。拿到域名后：
-
-```text
-用户前台：https://你的域名/
-管理后台：https://你的域名/admin
-图片接口：https://你的域名/generate
-```
-
-如果你在前台复制嵌入代码，记得确认生成 URL 使用的是公网域名，而不是 `localhost:8080`。
-
-### 6. 迁移本地数据到 Zeabur
-
-推荐方式：
-
-1. 本地打开 `/admin`。
-2. 点击“一键打包导出”。
-3. Zeabur 部署完成后，打开线上 `/admin`。
-4. 在数据迁移区域导入这个 JSON。
-
-这种方式会迁移密钥、余额、卡密、账号池和设置，但不会迁移图片缓存。
-
-如果你确实要迁移图片缓存：
-
-1. 停止本地服务，确保 `data/` 不再写入。
-2. 备份本地整个 `data/` 目录。
-3. 通过 Zeabur 文件管理或其他服务器文件方式上传到 `/data/library.sqlite` 和 `/data/images/`。如果你手里是旧版 `/data/library.json`，也可以上传它，服务第一次启动会自动导入。
-4. 重启服务。
-
-### 7. 上线后检查
-
-打开：
-
-```text
-https://你的域名/api/health
-```
-
-正常会返回类似：
-
-```json
-{
-  "ok": true,
-  "service": "Nai2API",
-  "users": 0,
-  "enabledAccounts": 0,
-  "cards": 0,
-  "adminConfigured": true
-}
-```
-
-然后进入 `/admin` 添加 NovelAI 账号，生成 `STA1N-...` 用户密钥，再到前台测试生成。
-
-## 安全建议
-
-- 生产环境一定要修改 `ADMIN_TOKEN`。
-- 不要把 `.env`、`data/library.sqlite`、`data/library.json`、NovelAI token 提交到公开仓库。
-- Zeabur 上把敏感配置放在 Variables，不写进代码。
-- 定期导出迁移包，或备份整个 `/data` 目录。
-- `MOCK_WHEN_NO_ACCOUNT=false`，避免线上没有账号时仍返回 mock 图。
-
-## Zeabur 参考文档
-
-- Dockerfile 部署：https://zeabur.com/docs/zh-CN/deploy/methods/dockerfile
-- GitHub 集成：https://zeabur.com/docs/en-US/deploy/methods/github-integration
-- 环境变量：https://zeabur.com/docs/en-US/deploy/config/environment-variables
-- Volumes 持久化：https://zeabur.com/docs/en-US/data-management/volumes
+MIT

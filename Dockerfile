@@ -1,28 +1,26 @@
-FROM node:20-bookworm-slim AS deps
+FROM node:18-slim
 
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
+# Install build dependencies for better-sqlite3
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --include=optional
 
-FROM node:20-bookworm-slim
+COPY server.js database.js ./
+COPY public/ ./public/
 
-WORKDIR /app
+# Create data directory for SQLite persistence
+RUN mkdir -p /app/data
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY package*.json ./
-COPY server ./server
-COPY public ./public
-
-RUN mkdir -p /data
-
+ENV PORT=9191
+ENV HOST=0.0.0.0
+ENV DATA_DIR=/app/data
 ENV NODE_ENV=production
-ENV DATA_DIR=/data
 
-EXPOSE 8080
+EXPOSE 9191
 
-CMD ["node", "server/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "const http=require('http');const req=http.get('http://127.0.0.1:' + (process.env.PORT || 9191) + '/health',res=>process.exit(res.statusCode===200?0:1));req.on('error',()=>process.exit(1));req.setTimeout(4000,()=>{req.destroy();process.exit(1);});"
+
+CMD ["node", "server.js"]

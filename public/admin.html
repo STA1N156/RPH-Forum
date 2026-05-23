@@ -1,298 +1,2317 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nai2API 管理后台</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body class="admin-page">
-    <header class="topbar admin-topbar">
-      <div class="brand">
-        <span class="brand-mark">OPS</span>
-        <div>
-          <h1>Nai2API 管理后台</h1>
-          <p id="adminState">等待验证</p>
-        </div>
-      </div>
-      <nav class="top-actions">
-        <a class="nav-link" href="/">用户界面</a>
-        <button id="refreshBtn" class="secondary hidden">刷新监控</button>
-      </nav>
-    </header>
-
-    <main class="admin-shell">
-      <section id="loginPanel" class="panel login-panel">
-        <div class="panel-title">
-          <div>
-            <h2>管理员验证</h2>
-            <span>ADMIN_TOKEN</span>
-          </div>
-        </div>
-        <label>
-          Admin Token
-          <input id="adminToken" type="password" autocomplete="current-password" />
-        </label>
-        <button id="enterAdminBtn" class="primary wide">进入后台</button>
-      </section>
-
-      <section id="dashboard" class="hidden">
-        <div class="metric-grid">
-          <article class="metric-card">
-            <span>RPM</span>
-            <strong id="metricUsers">0</strong>
-          </article>
-          <article class="metric-card">
-            <span>1h 实际成功率</span>
-            <strong id="metricCredits">0</strong>
-          </article>
-          <article class="metric-card">
-            <span>可用账号</span>
-            <strong id="metricAccounts">0</strong>
-          </article>
-          <article class="metric-card">
-            <span>缓存图片</span>
-            <strong id="metricImages">0</strong>
-          </article>
-        </div>
-
-        <section class="panel usage-panel">
-          <div class="panel-title">
-            <div>
-              <h2>使用图表</h2>
-              <span id="usageChartSummary">北京时间，按小时 00-23 统计</span>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 角色卡广场</title>
+    <script src="/tailwind.js"></script>
+    <script src="/vue.global.js"></script>
+    <style>
+        [v-cloak] { display: none !important; }
+        body { font-family: 'PingFang SC', system-ui, -apple-system, sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="admin-app" v-cloak>
+        <!-- Login Screen -->
+        <div v-if="!isAuthenticated" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+            <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-900">管理员登录</h1>
+                    <p class="text-gray-500 mt-2">角色卡广场 · 管理后台</p>
+                </div>
+                <form @submit.prevent="handleLogin">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                            <input v-model="loginForm.username" type="text" required autocomplete="username"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="请输入管理员用户名">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                            <input v-model="loginForm.password" type="password" required autocomplete="current-password"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="请输入密码">
+                        </div>
+                        <div v-if="loginError" class="bg-red-50 text-red-600 text-sm p-3 rounded-xl">
+                            {{ loginError }}
+                        </div>
+                        <button type="submit" :disabled="loginLoading"
+                            class="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span v-if="loginLoading">登录中...</span>
+                            <span v-else>登 录</span>
+                        </button>
+                    </div>
+                </form>
+                <div class="mt-6 text-center">
+                    <a href="/" class="text-sm text-gray-500 hover:text-blue-600 transition">← 返回论坛首页</a>
+                </div>
             </div>
-            <div class="usage-chart-controls">
-              <button id="clearLogsBtn" class="danger" type="button">清空日志</button>
-              <select id="usageDateSelect" class="inline-select usage-date-select" aria-label="选择图表日期"></select>
-            </div>
-          </div>
-          <div id="usageChart" class="usage-chart" aria-label="选中日期使用统计"></div>
-        </section>
-
-        <div class="admin-grid">
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>发放 STA1N 密钥</h2>
-                <span>管理员直接生成，用户拿到即可使用</span>
-              </div>
-            </div>
-            <div class="grid-three">
-              <label>
-                数量
-                <input id="userCount" type="number" min="1" max="200" value="5" />
-              </label>
-              <label>
-                额度
-                <input id="userCredits" type="number" min="1" value="20" />
-              </label>
-              <label>
-                备注
-                <input id="userNote" value="issued" />
-              </label>
-            </div>
-            <button id="createUsersBtn" class="primary wide">生成密钥</button>
-            <textarea id="newUsersOutput" class="codebox" rows="6" readonly></textarea>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>系统设置</h2>
-                <span>单次生图固定扣 1 点，每账号最高并发固定为 1</span>
-              </div>
-            </div>
-            <div class="grid-two">
-              <label class="settings-wide">
-                最大缓存图片数
-                <input id="maxCacheImages" type="number" min="0" max="200000" value="500" />
-              </label>
-            </div>
-            <button id="saveSettingsBtn" class="primary wide">保存设置</button>
-          </section>
         </div>
 
-        <div class="admin-grid">
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>Nai2API 账号池</h2>
-                <span>负载均衡与 token 迁移</span>
-              </div>
-            </div>
-            <label>
-              账号备注
-              <input id="accountName" placeholder="nai-1" />
-            </label>
-            <label>
-              Persistent API Token
-              <textarea id="accountToken" class="codebox" rows="3" placeholder="pst-..."></textarea>
-            </label>
-            <label>
-              SOCKS5 Proxy
-              <input id="accountProxy" placeholder="socks5://user:pass@127.0.0.1:1080" />
-            </label>
-            <div class="button-row">
-              <button id="addAccountBtn" class="primary">加入账号池</button>
-              <button id="exportAccountsBtn" class="secondary">导出账号</button>
-            </div>
-            <label>
-              批量导入 token
-              <textarea id="accountImportText" class="codebox" rows="4" placeholder="每行一个 token，也支持：备注,token,proxy,权重"></textarea>
-            </label>
-            <div class="button-row">
-              <button id="importAccountsBtn" class="secondary">追加导入</button>
-              <button id="replaceAccountsBtn" class="ghost">覆盖导入</button>
-            </div>
-            <label>
-              SOCKS5 Proxy List
-              <textarea id="accountProxyImportText" class="codebox" rows="5" placeholder="45.41.173.217:6584:STA1N156:156456aa"></textarea>
-            </label>
-            <div class="button-row">
-              <button id="applyAccountProxiesBtn" class="secondary">按顺序应用代理</button>
-            </div>
-          </section>
+        <!-- Admin Dashboard -->
+        <div v-else class="min-h-screen bg-gray-50 md:flex">
+            <div v-if="showMobileMenu" class="fixed inset-0 z-30 bg-black/40 md:hidden" @click="showMobileMenu = false"></div>
+            <!-- Sidebar -->
+            <aside class="fixed inset-y-0 left-0 z-40 w-[85vw] max-w-xs bg-gray-900 text-white flex-shrink-0 flex flex-col transform transition-transform duration-200 md:static md:w-64 md:max-w-none md:translate-x-0"
+                   :class="showMobileMenu ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
+                <div class="p-6 border-b border-gray-800">
+                    <h1 class="text-lg font-bold">🎭 角色卡广场</h1>
+                    <p class="text-gray-400 text-sm mt-1">管理后台</p>
+                </div>
+                <nav class="flex-1 p-4 space-y-1">
+                    <button @click="currentPage = 'dashboard'; showMobileMenu = false" :class="currentPage === 'dashboard' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                        仪表盘
+                    </button>
+                    <button @click="currentPage = 'cards'; showMobileMenu = false; loadAdminCards()" :class="currentPage === 'cards' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        卡片管理
+                    </button>
+                    <button @click="currentPage = 'ipbans'; showMobileMenu = false; loadIpBans()" :class="currentPage === 'ipbans' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728m0-12.728l12.728 12.728M12 3a9 9 0 110 18 9 9 0 010-18z"/></svg>
+                        IP封禁
+                    </button>
+                    <button @click="currentPage = 'comments'; showMobileMenu = false; loadAdminComments()" :class="currentPage === 'comments' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                        评论管理
+                    </button>
+                    <button @click="currentPage = 'users'; showMobileMenu = false; loadAdminUsers()" :class="currentPage === 'users' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        用户管理
+                    </button>
+                    <button @click="currentPage = 'redemptions'; showMobileMenu = false; loadRedemptions()" :class="currentPage === 'redemptions' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m8-6a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
+                        提现记录
+                    </button>
+                    <button v-if="false" @click="currentPage = 'tags'; showMobileMenu = false; loadSettings()" :class="currentPage === 'tags' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+                        标签管理
+                    </button>
+                    <button @click="currentPage = 'logs'; showMobileMenu = false; loadLogs()" :class="currentPage === 'logs' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        操作日志
+                    </button>
+                    <button @click="currentPage = 'settings'; showMobileMenu = false; loadSettings()" :class="currentPage === 'settings' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        系统设置
+                    </button>
+                </nav>
+                <div class="p-4 border-t border-gray-800">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold">A</div>
+                            <span class="ml-3 text-sm text-gray-300">{{ adminUser?.username }}</span>
+                        </div>
+                        <button @click="handleLogout" class="text-gray-500 hover:text-red-400 transition" title="退出登录">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </aside>
 
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>数据包迁移</h2>
-                <span>包含密钥、额度、账号池和系统设置，不包含记录与图片缓存</span>
-              </div>
-              <div class="button-row compact-actions">
-                <button id="exportPackageBtn" class="secondary">一键打包导出</button>
-                <label class="file-button">
-                  选择数据包
-                  <input id="packageFile" type="file" accept="application/json,.json" />
-                </label>
-              </div>
-            </div>
-            <textarea id="packageImportText" class="codebox import-area" rows="4" placeholder="也可以把导出的 JSON 数据包粘贴到这里"></textarea>
-            <div class="button-row">
-              <button id="importPackageMergeBtn" class="secondary">合并导入</button>
-              <button id="importPackageReplaceBtn" class="danger">覆盖导入</button>
-            </div>
-          </section>
+            <!-- Main Content -->
+            <main class="flex-1 min-w-0 overflow-auto">
+                <!-- Header -->
+                <header class="bg-white border-b border-gray-200 px-4 md:px-8 py-4 flex items-center justify-between gap-4 sticky top-0 z-20">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <button @click="showMobileMenu = true" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                        </button>
+                        <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                        </h2>
+                    </div>
+                    <a href="/" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
+                </header>
+
+                <div class="p-4 md:p-8">
+                    <!-- Dashboard -->
+                    <div v-if="currentPage === 'dashboard'">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">总卡片数</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalCards || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentCards || 0 }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">总评论数</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalComments || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentComments || 0 }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">注册用户</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalUsers || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-green-600 mt-2">今日 +{{ stats.todayNewUsers || 0 }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">总访问量</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalVisits || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Second Row: More Stats -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">总下载量</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalDownloads || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">总点赞数</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.totalLikes || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">今日新卡片</p>
+                                        <p class="text-3xl font-bold text-gray-900 mt-1">{{ stats.todayNewCards || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm text-gray-500">24h失败登录</p>
+                                        <p class="text-3xl font-bold" :class="(stats.loginAttempts || 0) > 10 ? 'text-red-600' : 'text-gray-900'">{{ stats.loginAttempts || 0 }}</p>
+                                    </div>
+                                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                                    </div>
+                                </div>
+                                <p v-if="(stats.loginAttempts || 0) > 10" class="text-xs text-red-600 mt-2">⚠ 疑似暴力破解攻击</p>
+                            </div>
+                        </div>
+
+                        <!-- 7-Day Activity Chart -->
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">近7日活动趋势</h3>
+                            <div class="flex items-center gap-4 mb-4 text-xs">
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-500 inline-block"></span> 上传</span>
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-green-500 inline-block"></span> 评论</span>
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-purple-500 inline-block"></span> 下载</span>
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-cyan-500 inline-block"></span> 访问</span>
+                            </div>
+                            <div class="h-48 flex items-end gap-1" v-if="chartData.length > 0">
+                                <div v-for="day in chartData" :key="day.date" class="flex-1 flex flex-col items-center gap-1">
+                                    <div class="w-full flex gap-0.5 items-end justify-center" style="height: 140px;">
+                                        <div class="flex-1 bg-blue-500 rounded-t transition-all" :style="{ height: day.uploads / chartMax * 140 + 'px', minHeight: day.uploads > 0 ? '4px' : '0' }" :title="'上传: ' + day.uploads"></div>
+                                        <div class="flex-1 bg-green-500 rounded-t transition-all" :style="{ height: day.comments / chartMax * 140 + 'px', minHeight: day.comments > 0 ? '4px' : '0' }" :title="'评论: ' + day.comments"></div>
+                                        <div class="flex-1 bg-purple-500 rounded-t transition-all" :style="{ height: day.downloads / chartMax * 140 + 'px', minHeight: day.downloads > 0 ? '4px' : '0' }" :title="'下载: ' + day.downloads"></div>
+                                        <div class="flex-1 bg-cyan-500 rounded-t transition-all" :style="{ height: day.visits / chartMax * 140 + 'px', minHeight: day.visits > 0 ? '4px' : '0' }" :title="'访问: ' + day.visits"></div>
+                                    </div>
+                                    <span class="text-[10px] text-gray-400 mt-1">{{ day.label }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="h-48 flex items-center justify-center text-gray-400 text-sm">暂无活动数据</div>
+                        </div>
+
+                        <!-- Top Cards -->
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">下载排行 Top 10</h3>
+                            <div class="space-y-3">
+                                <div v-for="(card, index) in (stats.topCards || [])" :key="card.id" class="flex items-center justify-between py-2 px-3 rounded-xl hover:bg-gray-50">
+                                    <div class="flex items-center">
+                                        <span class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" :class="index < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'">{{ index + 1 }}</span>
+                                        <span class="ml-3 text-gray-900">{{ card.name }}</span>
+                                    </div>
+                                    <span class="text-sm text-gray-500">{{ card.downloads_count }} 次下载</span>
+                                </div>
+                                <div v-if="!stats.topCards?.length" class="text-center text-gray-400 py-8">暂无数据</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cards Management -->
+                    <div v-if="currentPage === 'cards'">
+                        <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                            <input v-model="cardSearch" @input="loadAdminCards()" type="text" placeholder="搜索卡片名称..."
+                                class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full md:w-64">
+                            <select v-model="cardStatusFilter" @change="cardPage = 1; loadAdminCards()" class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none w-full md:w-44">
+                                <option value="">全部状态</option>
+                                <option value="pending">待审核</option>
+                                <option value="approved">已通过</option>
+                                <option value="rejected">已拒绝</option>
+                            </select>
+                            <span class="text-sm text-gray-500">共 {{ cardData.total || 0 }} 张卡片</span>
+                        </div>
+                        <div class="md:hidden space-y-4">
+                            <div v-for="card in cardData.cards" :key="'mobile-card-' + card.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-base font-semibold text-gray-900 break-all">{{ card.name }}</p>
+                                        <p class="text-xs text-gray-400 mt-1">{{ formatDate(card.created_at) }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">上传者：{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</p>
+                                        <p class="text-xs mt-1" :class="card.review_status === 'pending' ? 'text-amber-600' : (card.review_status === 'rejected' ? 'text-red-600' : 'text-green-600')">{{ getReviewStatusLabel(card.review_status) }}</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'approved')" class="px-3 py-1.5 rounded-xl bg-green-50 text-green-600 text-sm font-medium">通过</button>
+                                        <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'rejected')" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 text-sm font-medium">拒绝</button>
+                                        <button @click="downloadAdminCard(card)" class="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 text-sm font-medium">下载</button>
+                                        <button @click="deleteAdminCard(card)" class="px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium">删除</button>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-gray-500 leading-relaxed">{{ card.description || '暂无描述' }}</p>
+                                <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                                    <span>下载次数</span>
+                                    <span class="font-semibold text-gray-900">{{ card.downloads_count }}</span>
+                                </div>
+                            </div>
+                            <div v-if="!cardData.cards?.length" class="text-center text-gray-400 py-12">暂无卡片</div>
+                        </div>
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                            <table class="w-full min-w-[760px]">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">上传者</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="card in cardData.cards" :key="card.id" class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 text-sm font-medium text-gray-900 max-w-[200px] truncate">{{ card.name }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-500 max-w-[300px] truncate">{{ card.description }}</td>
+                                        <td class="px-6 py-4 text-sm">
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium" :class="card.review_status === 'pending' ? 'bg-amber-100 text-amber-700' : (card.review_status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')">{{ getReviewStatusLabel(card.review_status) }}</span>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ card.downloads_count }}</td>
+                                        <td class="px-6 py-4 text-xs text-gray-500 font-mono">{{ card.uploader_ip_address || '-' }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(card.created_at) }}</td>
+                                        <td class="px-6 py-4 text-right whitespace-nowrap">
+                                            <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'approved')" class="text-green-600 hover:text-green-800 text-sm font-medium mr-3">通过</button>
+                                            <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'rejected')" class="text-amber-600 hover:text-amber-800 text-sm font-medium mr-3">拒绝</button>
+                                            <button @click="downloadAdminCard(card)" class="text-blue-600 hover:text-blue-800 text-sm font-medium mr-3">下载</button>
+                                            <button @click="deleteAdminCard(card)" class="text-red-600 hover:text-red-800 text-sm font-medium">删除</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            </div>
+                            <div v-if="!cardData.cards?.length" class="text-center text-gray-400 py-12">暂无卡片</div>
+                        </div>
+                        <!-- Pagination -->
+                        <div v-if="cardData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="cardPage--; loadAdminCards()" :disabled="cardPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ cardPage }} / {{ cardData.totalPages }}</span>
+                            <button @click="cardPage++; loadAdminCards()" :disabled="cardPage >= cardData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <div v-if="currentPage === 'ipbans'">
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+                            <div class="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                                <input v-model="ipBanForm.ip_pattern" type="text" placeholder="IP 或 IPv4 CIDR，例如 203.0.113.7 或 203.0.113.0/24"
+                                    class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                <input v-model="ipBanForm.reason" type="text" placeholder="封禁原因"
+                                    class="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                <button @click="createIpBan" :disabled="ipBanSaving" class="bg-red-600 text-white px-5 py-2 rounded-xl hover:bg-red-700 transition disabled:opacity-60">
+                                    {{ ipBanSaving ? '封禁中...' : '封禁' }}
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">当前识别到的管理员真实 IP：<span class="font-mono">{{ ipBanData.current_ip || '-' }}</span></p>
+                        </div>
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[760px]">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP/CIDR</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">原因</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+                                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="ban in ipBanData.bans" :key="ban.id" class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 text-sm font-mono text-gray-900">{{ ban.ip_pattern }}</td>
+                                            <td class="px-6 py-4 text-sm text-gray-500">{{ ban.reason || '-' }}</td>
+                                            <td class="px-6 py-4 text-sm">
+                                                <span class="px-2 py-1 rounded-full text-xs font-medium" :class="ban.is_active ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'">{{ ban.is_active ? '生效中' : '已解除' }}</span>
+                                            </td>
+                                            <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(ban.created_at) }}</td>
+                                            <td class="px-6 py-4 text-right">
+                                                <button v-if="ban.is_active" @click="removeIpBan(ban)" class="text-blue-600 hover:text-blue-800 text-sm font-medium">解除</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="!ipBanData.bans?.length" class="text-center text-gray-400 py-12">暂无封禁记录</div>
+                        </div>
+                    </div>
+
+                    <!-- Comments Management -->
+                    <div v-if="currentPage === 'comments'">
+                        <div class="mb-4">
+                            <span class="text-sm text-gray-500">共 {{ commentData.total || 0 }} 条评论</span>
+                        </div>
+                        <div class="md:hidden space-y-4">
+                            <div v-for="comment in commentData.comments" :key="'mobile-comment-' + comment.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-900">{{ comment.card_name || '已删除卡片' }}</p>
+                                        <p class="text-xs text-gray-400 mt-1">{{ comment.nickname }} · {{ formatDate(comment.created_at) }}</p>
+                                    </div>
+                                    <button @click="deleteAdminComment(comment)" class="px-3 py-1.5 rounded-xl bg-red-50 text-red-600 text-sm font-medium">删除</button>
+                                </div>
+                                <p class="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{{ comment.content }}</p>
+                            </div>
+                            <div v-if="!commentData.comments?.length" class="text-center text-gray-400 py-12">暂无评论</div>
+                        </div>
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                            <table class="w-full min-w-[820px]">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">所属卡片</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">昵称</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">内容</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="comment in commentData.comments" :key="comment.id" class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 text-sm text-blue-600 max-w-[150px] truncate">{{ comment.card_name || '已删除' }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ comment.nickname }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-900 max-w-[400px] truncate">{{ comment.content }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(comment.created_at) }}</td>
+                                        <td class="px-6 py-4 text-right">
+                                            <button @click="deleteAdminComment(comment)" class="text-red-600 hover:text-red-800 text-sm font-medium">删除</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            </div>
+                            <div v-if="!commentData.comments?.length" class="text-center text-gray-400 py-12">暂无评论</div>
+                        </div>
+                        <div v-if="commentData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="commentPage--; loadAdminComments()" :disabled="commentPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ commentPage }} / {{ commentData.totalPages }}</span>
+                            <button @click="commentPage++; loadAdminComments()" :disabled="commentPage >= commentData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- Users Management -->
+                    <div v-if="currentPage === 'users'">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                            <div>
+                                <span class="text-sm text-gray-500">共 {{ userData.total || 0 }} 位注册用户</span>
+                            </div>
+                            <input v-model="userSearch" @input="userPage = 1; loadAdminUsers()" placeholder="搜索用户名..." class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-64" />
+                        </div>
+                        <div class="md:hidden space-y-4">
+                            <div v-for="user in userData.users" :key="'mobile-' + user.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-base font-semibold text-gray-900">{{ user.username }}</p>
+                                        <p class="text-xs text-gray-400 mt-1">ID {{ user.id }}</p>
+                                        <p class="text-xs text-gray-500 mt-1 break-all">{{ user.email || '未绑定邮箱' }}</p>
+                                        <p class="text-xs text-gray-500 mt-1 break-all">STA1N API ID：{{ user.newapi_user_id || '未绑定' }}</p>
+                                    </div>
+                                    <div class="flex flex-col items-end gap-2">
+                                        <span class="text-xs px-2 py-1 rounded-full" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'">{{ user.is_banned ? '已封禁' : (user.last_login ? '最近活跃' : '从未登录') }}</span>
+                                        <span v-if="user.is_moderator" class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">前台审核员</span>
+                                    </div>
+                                </div>
+                                <div v-if="user.is_banned && user.ban_reason" class="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-700">
+                                    封禁原因：{{ user.ban_reason }}
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">注册时间</p>
+                                        <p class="text-gray-700 mt-1">{{ formatDate(user.created_at) }}</p>
+                                    </div>
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">最后登录</p>
+                                        <p class="text-gray-700 mt-1">{{ user.last_login ? formatDate(user.last_login) : '从未' }}</p>
+                                    </div>
+                                </div>
+                                <div class="rounded-2xl border border-gray-200 p-3 space-y-3">
+                                    <div class="flex items-center gap-2">
+                                        <input v-model.number="userDraft(user).download_credits" type="number" min="0" class="flex-1 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50">{{ userDraft(user).saving ? '保存中...' : '保存次数' }}</button>
+                                    </div>
+                                </div>
+                                <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="w-full px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
+                                    {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解除封禁' : '封禁用户') }}
+                                </button>
+                                <button @click="toggleUserModerator(user)" :disabled="userDraft(user).moderating" class="w-full px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50" :class="user.is_moderator ? 'bg-gray-100 text-gray-700' : 'bg-blue-600 text-white'">
+                                    {{ userDraft(user).moderating ? '处理中...' : (user.is_moderator ? '取消前台审核员' : '设为前台审核员') }}
+                                </button>
+                            </div>
+                            <div v-if="!userData.users?.length" class="text-center text-gray-400 py-12">暂无用户</div>
+                        </div>
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                            <table class="w-full min-w-[1020px]">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户名</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">邮箱</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">STA1N API ID</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">下载积分</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">注册时间</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">最后登录</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="user in userData.users" :key="user.id" class="hover:bg-gray-50">
+                                        <td class="px-6 py-4 text-sm text-gray-900 font-mono">{{ user.id }}</td>
+                                        <td class="px-6 py-4 text-sm font-medium text-gray-900">{{ user.username }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-600 max-w-[220px] break-all">
+                                            <div>{{ user.email || '未绑定邮箱' }}</div>
+                                            <span class="inline-flex mt-1 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="user.email_verified ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                                {{ user.email_verified ? '已验证' : '未验证' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-600">
+                                            <div>{{ user.newapi_user_id || '未绑定' }}</div>
+                                            <div class="text-xs text-gray-400 mt-1">已提现 {{ Number(user.newapi_redeemed_cookies || 0).toFixed(2) }}🍪</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm">
+                                            <div class="space-y-2 w-44">
+                                                <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">{{ user.is_banned ? '已封禁' : '正常' }}</span>
+                                                <span v-if="user.is_moderator" class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">前台审核员</span>
+                                                <p v-if="user.is_banned && user.ban_reason" class="text-xs text-red-600 break-words">{{ user.ban_reason }}</p>
+                                                <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
+                                                    {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解封' : '封禁') }}
+                                                </button>
+                                                <button @click="toggleUserModerator(user)" :disabled="userDraft(user).moderating" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_moderator ? 'bg-gray-100 text-gray-700' : 'bg-blue-600 text-white'">
+                                                    {{ userDraft(user).moderating ? '处理中...' : (user.is_moderator ? '取消审核员' : '设为审核员') }}
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-900">
+                                            <div class="flex items-center gap-2 w-44">
+                                                <input v-model.number="userDraft(user).download_credits" type="number" min="0" class="w-24 px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                                <button @click="saveUserCredits(user)" :disabled="userDraft(user).saving" class="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap">{{ userDraft(user).saving ? '保存中...' : '保存' }}</button>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ formatDate(user.created_at) }}</td>
+                                        <td class="px-6 py-4 text-sm text-gray-500">{{ user.last_login ? formatDate(user.last_login) : '从未' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            </div>
+                            <div v-if="!userData.users?.length" class="text-center text-gray-400 py-12">暂无用户</div>
+                        </div>
+                        <div v-if="userData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="userPage--; loadAdminUsers()" :disabled="userPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ userPage }} / {{ userData.totalPages }}</span>
+                            <button @click="userPage++; loadAdminUsers()" :disabled="userPage >= userData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- New API Redemptions -->
+                    <div v-if="currentPage === 'redemptions'">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                            <div class="text-sm text-gray-500">
+                                共 {{ redemptionData.total || 0 }} 条提现记录
+                            </div>
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div class="relative">
+                                    <input v-model.trim="redemptionSearch" @keyup.enter="redemptionPage = 1; loadRedemptions()" type="search" placeholder="搜用户ID、用户名、STA1N API ID"
+                                        class="w-full sm:w-72 pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <select v-model="redemptionStatusFilter" @change="redemptionPage = 1; loadRedemptions()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">全部状态</option>
+                                    <option value="success">成功</option>
+                                    <option value="pending">处理中</option>
+                                    <option value="failed">失败</option>
+                                </select>
+                                <button @click="redemptionPage = 1; loadRedemptions()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">搜索</button>
+                                <button v-if="redemptionSearch || redemptionStatusFilter" @click="redemptionSearch = ''; redemptionStatusFilter = ''; redemptionPage = 1; loadRedemptions()" class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition">清空</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">成功提现</p>
+                                <p class="mt-1 text-2xl font-bold text-gray-900">{{ redemptionData.summary?.success_count || 0 }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">成功提现 🍪</p>
+                                <p class="mt-1 text-2xl font-bold text-amber-600">{{ formatCookieAmount(redemptionData.summary?.cookies_success || 0) }}</p>
+                            </div>
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                                <p class="text-xs text-gray-400">失败 / 处理中</p>
+                                <p class="mt-1 text-2xl font-bold text-gray-900">{{ redemptionData.summary?.failed_count || 0 }} / {{ redemptionData.summary?.pending_count || 0 }}</p>
+                            </div>
+                        </div>
+
+                        <div class="md:hidden space-y-4">
+                            <div v-for="item in redemptionData.redemptions" :key="'mobile-redemption-' + item.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-base font-semibold text-gray-900">用户 ID {{ item.user_id }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">{{ item.username || '未知用户' }}</p>
+                                        <p class="text-xs text-gray-500 mt-1 break-all">STA1N API ID：{{ item.newapi_user_id || '-' }}</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full font-medium" :class="getRedemptionStatusClass(item.status)">
+                                        {{ getRedemptionStatusLabel(item.status) }}
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">提现数量</p>
+                                        <p class="text-gray-800 mt-1 font-semibold">{{ formatCookieAmount(item.cookies) }}🍪</p>
+                                    </div>
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-gray-400 text-xs">当前剩余</p>
+                                        <p class="text-gray-800 mt-1 font-semibold">{{ item.available_cookies === null ? '-' : formatCookieAmount(item.available_cookies) + '🍪' }}</p>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 space-y-1">
+                                    <p>申请时间：{{ formatDate(item.created_at) }}</p>
+                                    <p>完成时间：{{ formatDate(item.completed_at) }}</p>
+                                    <p v-if="item.error" class="text-red-600 break-all">失败原因：{{ item.error }}</p>
+                                </div>
+                            </div>
+                            <div v-if="!redemptionData.redemptions?.length" class="text-center text-gray-400 py-12">暂无提现记录</div>
+                        </div>
+
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full min-w-[940px]">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">STA1N API ID</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">提现</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">当前剩余</th>
+                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        <tr v-for="item in redemptionData.redemptions" :key="item.id" class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                                                <div>{{ formatDate(item.created_at) }}</div>
+                                                <div v-if="item.completed_at" class="text-gray-400 mt-1">完成：{{ formatDate(item.completed_at) }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-900">
+                                                <div class="font-medium">{{ item.username || '未知用户' }}</div>
+                                                <div class="text-xs text-gray-400 font-mono mt-1">ID {{ item.user_id }}</div>
+                                                <div class="text-xs text-gray-400 break-all mt-1">{{ item.email || '-' }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600 font-mono break-all">{{ item.newapi_user_id || '-' }}</td>
+                                            <td class="px-4 py-3 text-sm text-amber-700 font-semibold">{{ formatCookieAmount(item.cookies) }}🍪</td>
+                                            <td class="px-4 py-3 text-sm text-gray-700">
+                                                <div>{{ item.available_cookies === null ? '-' : formatCookieAmount(item.available_cookies) + '🍪' }}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm">
+                                                <span class="text-xs px-2 py-1 rounded-full font-medium" :class="getRedemptionStatusClass(item.status)">
+                                                    {{ getRedemptionStatusLabel(item.status) }}
+                                                </span>
+                                                <p v-if="item.error" class="text-xs text-red-600 mt-2 max-w-[220px] break-words">{{ item.error }}</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="!redemptionData.redemptions?.length" class="text-center text-gray-400 py-12">暂无提现记录</div>
+                        </div>
+
+                        <div v-if="redemptionData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="redemptionPage--; loadRedemptions()" :disabled="redemptionPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ redemptionPage }} / {{ redemptionData.totalPages }}</span>
+                            <button @click="redemptionPage++; loadRedemptions()" :disabled="redemptionPage >= redemptionData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- Operation Logs -->
+                    <div v-if="currentPage === 'logs'">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                            <span class="text-sm text-gray-500">共 {{ logData.total || 0 }} 条记录</span>
+                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <div class="relative">
+                                    <input v-model.trim="logSearch" @keyup.enter="logPage = 1; loadLogs()" type="search" placeholder="搜索用户、卡名、IP、详情"
+                                        class="w-full sm:w-64 pl-9 pr-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.35-5.65a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+                                <button @click="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">搜索</button>
+                                <button v-if="logSearch" @click="logSearch = ''; logPage = 1; loadLogs()" class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition">清空</button>
+                                <select v-model="logActionFilter" @change="logPage = 1; loadLogs()" class="px-4 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">全部操作</option>
+                                    <option value="login">登录</option>
+                                    <option value="register">注册</option>
+                                    <option value="upload">上传</option>
+                                    <option value="upload_pending">上传待审核</option>
+                                    <option value="download">下载</option>
+                                    <option value="edit">编辑</option>
+                                    <option value="delete">删除</option>
+                                    <option value="admin_login">管理员登录</option>
+                                    <option value="admin_delete_card">管理员删卡</option>
+                                    <option value="admin_delete_comment">管理员删评论</option>
+                                    <option value="admin_approve_card">审核通过</option>
+                                    <option value="admin_reject_card">审核拒绝</option>
+                                    <option value="admin_ban_ip">封禁 IP</option>
+                                    <option value="admin_unban_ip">解除 IP 封禁</option>
+                                    <option value="admin_ban_user">封禁用户</option>
+                                    <option value="admin_unban_user">解除用户封禁</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="md:hidden space-y-4">
+                            <div v-for="log in logData.logs" :key="'mobile-log-' + log.id" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-900">{{ getActionLabel(log.action) }}</p>
+                                        <p class="text-xs text-gray-400 mt-1">{{ formatDate(log.created_at) }}</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full font-medium" :class="{
+                                        'bg-indigo-100 text-indigo-700': log.user_type === 'admin',
+                                        'bg-blue-100 text-blue-700': log.user_type === 'user',
+                                        'bg-gray-100 text-gray-600': log.user_type === 'anonymous'
+                                    }">{{ log.user_type }}</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-xs text-gray-400">用户</p>
+                                        <p class="mt-1 text-gray-700">{{ log.username || '-' }}</p>
+                                    </div>
+                                    <div class="rounded-xl bg-gray-50 p-3">
+                                        <p class="text-xs text-gray-400">目标</p>
+                                        <p class="mt-1 text-gray-700">{{ formatLogTarget(log) }}</p>
+                                    </div>
+                                </div>
+                                <div class="rounded-xl bg-gray-50 p-3 text-sm text-gray-600 break-all">
+                                    <p class="text-xs text-gray-400 mb-1">详情</p>
+                                    <p>{{ log.details || '-' }}</p>
+                                </div>
+                            </div>
+                            <div v-if="!logData.logs?.length" class="text-center text-gray-400 py-12">暂无日志</div>
+                        </div>
+                        <div class="hidden md:block bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div class="overflow-x-auto">
+                            <table class="w-full min-w-[920px]">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">目标</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">详情</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <tr v-for="log in logData.logs" :key="log.id" class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{{ formatDate(log.created_at) }}</td>
+                                        <td class="px-4 py-3">
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="{
+                                                'bg-indigo-100 text-indigo-700': log.user_type === 'admin',
+                                                'bg-blue-100 text-blue-700': log.user_type === 'user',
+                                                'bg-gray-100 text-gray-600': log.user_type === 'anonymous'
+                                            }">{{ log.user_type }}</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-sm text-gray-900">{{ log.username || '-' }}</td>
+                                        <td class="px-4 py-3">
+                                            <span class="text-xs px-2 py-0.5 rounded-full font-medium" :class="{
+                                                'bg-blue-100 text-blue-700': log.action === 'login',
+                                                'bg-green-100 text-green-700': log.action === 'register',
+                                                'bg-purple-100 text-purple-700': log.action === 'upload',
+                                                'bg-cyan-100 text-cyan-700': log.action === 'download',
+                                                'bg-yellow-100 text-yellow-700': log.action === 'edit',
+                                                'bg-red-100 text-red-700': log.action?.includes('delete'),
+                                                'bg-indigo-100 text-indigo-700': log.action === 'admin_login'
+                                            }">{{ getActionLabel(log.action) }}</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-gray-500">
+                                            <span>{{ formatLogTarget(log) || '-' }}</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-xs text-gray-500 font-mono">{{ log.ip_address || '-' }}</td>
+                                        <td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" :title="log.details">{{ log.details || '-' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            </div>
+                            <div v-if="!logData.logs?.length" class="text-center text-gray-400 py-12">暂无日志</div>
+                        </div>
+                        <div v-if="logData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="logPage--; loadLogs()" :disabled="logPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ logPage }} / {{ logData.totalPages }}</span>
+                            <button @click="logPage++; loadLogs()" :disabled="logPage >= logData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- Tags -->
+                    <div v-if="false">
+                        <div class="max-w-4xl space-y-4 md:space-y-5">
+                            <div class="bg-gradient-to-r from-amber-50 via-orange-50 to-white rounded-2xl border border-amber-200 p-4 md:p-5">
+                                <div class="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">标签管理</h3>
+                                        <p class="mt-1 text-sm text-gray-600">这里直接控制前台的热门标签和标签库展示内容。当前操作先写入草稿，点击保存后才会同步到前台。</p>
+                                    </div>
+                                    <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                                        <span :class="tagSettingsDirty ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'" class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-sm font-medium">
+                                            {{ tagSettingsDirty ? '有未保存草稿' : '草稿已保存' }}
+                                        </span>
+                                        <button @click="saveSettings" :disabled="settingsSaving" class="bg-orange-600 text-white px-5 py-2 rounded-xl hover:bg-orange-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                            {{ settingsSaving ? '保存中...' : '保存标签配置' }}
+                                        </button>
+                                        <button @click="restoreSavedTagSnapshot" :disabled="!tagSettingsDirty || settingsSaving" class="px-5 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                            撤销本次修改
+                                        </button>
+                                    </div>
+                                </div>
+                                <div v-if="tagSettingsDirty" class="mt-3 rounded-2xl border border-amber-200 bg-white/70 px-4 py-3 text-sm text-amber-700">
+                                    当前修改仍在后台草稿中。点击“保存标签配置”后，前台热门标签和标签库才会应用这次变更。
+                                </div>
+                            </div>
+
+                            <div class="grid gap-4 xl:grid-cols-2">
+                                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                                    <div class="flex items-center justify-between gap-3 mb-3">
+                                        <h3 class="text-lg font-bold text-gray-900">热门标签</h3>
+                                        <span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">首页优先展示</span>
+                                    </div>
+                                    <div class="flex flex-col gap-2.5 sm:flex-row">
+                                        <input
+                                            v-model="tagInput.popular"
+                                            @keydown.enter.prevent="addTags('popular')"
+                                            type="text"
+                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
+                                            class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                                        >
+                                        <button @click="addTags('popular')" class="px-5 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">
+                                            添加标签
+                                        </button>
+                                        <button @click="toggleBatchPanel('popular')" class="px-4 py-2.5 rounded-xl border border-orange-200 text-sm font-medium text-orange-700 hover:bg-orange-50 transition">
+                                            {{ batchDraft.popular.open ? '收起批量' : '批量操作' }}
+                                        </button>
+                                    </div>
+                                    <p class="mt-2 text-xs text-gray-500">单个标签可直接编辑或删除；打开批量模式后，点击下方标签会自动加入批量队列。</p>
+
+                                    <div v-if="isTagEditorOpen('popular')" class="mt-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div class="text-sm font-semibold text-orange-800">正在编辑单个热门标签</div>
+                                            <button @click="closeTagEditor('popular')" class="text-xs font-medium text-gray-500 hover:text-gray-700">返回列表</button>
+                                        </div>
+                                        <div class="flex flex-col gap-2 sm:flex-row">
+                                            <input
+                                                v-model="tagEditing.popular.value"
+                                                @keydown.enter.prevent="confirmTagEdit('popular')"
+                                                @keydown.esc.prevent="closeTagEditor('popular')"
+                                                type="text"
+                                                class="flex-1 px-4 py-2.5 text-sm border border-orange-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-400"
+                                            >
+                                            <button @click="confirmTagEdit('popular')" class="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">保存标签</button>
+                                            <button @click="deleteEditingTag('popular')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">删除标签</button>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="batchDraft.popular.open" class="mt-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
+                                        <div class="flex flex-wrap gap-2">
+                                            <button v-for="action in batchActionOptions" :key="'popular-batch-' + action.value" @click="batchDraft.popular.action = action.value" :class="batchDraft.popular.action === action.value ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-orange-700 border-orange-200 hover:bg-orange-50'" class="px-3 py-1.5 rounded-xl border text-sm font-medium transition">
+                                                {{ action.label }}
+                                            </button>
+                                        </div>
+                                        <textarea v-model="batchDraft.popular.text" rows="4" class="w-full px-4 py-3 border border-orange-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-orange-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <button @click="applyBatchTags('popular')" class="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">执行批量操作</button>
+                                            <button @click="clearBatchDraft('popular')" class="px-4 py-2.5 rounded-xl border border-orange-200 text-sm font-medium text-orange-700 hover:bg-orange-50 transition">清空批量内容</button>
+                                            <button @click="clearConfiguredTags('popular')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">清空当前配置</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 space-y-3">
+                                        <div>
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-sm font-semibold text-gray-800">当前配置</div>
+                                                <span class="text-xs text-gray-400">{{ tagEditor.popular.length }} 个</span>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
+                                                <template v-for="(tag, index) in tagEditor.popular" :key="'popular-editor-' + tag + '-' + index">
+                                                    <div class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 max-w-full">
+                                                        <button @click="handleConfiguredTagClick('popular', index)" class="text-sm font-medium text-orange-700 break-all text-left hover:text-orange-900 transition" title="点击编辑标签或加入批量队列">
+                                                            {{ tag }}
+                                                        </button>
+                                                        <button @click="removeTag('popular', index)" class="p-1 rounded-full text-orange-500 hover:bg-orange-100 hover:text-red-600 transition" title="删除标签">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </template>
+                                                <span v-if="!tagEditor.popular.length" class="text-sm text-gray-400">当前未手动配置热门标签。</span>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="hiddenTagState.popular.length > 0">
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
+                                                <button @click="clearHiddenTags('popular')" class="text-xs font-medium text-orange-700 hover:text-orange-900">清空隐藏</button>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button v-for="tag in hiddenTagState.popular" :key="'popular-hidden-' + tag" @click="handleHiddenTagClick('popular', tag)" class="px-3 py-1 rounded-full text-sm border border-dashed border-orange-200 bg-white text-orange-600 hover:bg-orange-50 transition">
+                                                    恢复 {{ tag }}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div class="text-xs font-medium text-gray-500 mb-2">前台热门标签预览</div>
+                                            <div class="flex flex-wrap gap-2 min-h-[2rem]">
+                                                <button v-for="tag in popularTagPreview" :key="'popular-' + tag" @click="handlePreviewTagClick('popular', tag)" class="px-3 py-1 rounded-full text-sm bg-orange-100 text-orange-700 hover:bg-orange-200 transition">{{ tag }}</button>
+                                                <span v-if="!popularTagPreview.length" class="text-sm text-gray-400">暂无热门标签预览。</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                                    <div class="flex items-center justify-between gap-3 mb-3">
+                                        <h3 class="text-lg font-bold text-gray-900">标签库</h3>
+                                        <span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">搜索与筛选基础库</span>
+                                    </div>
+                                    <div class="flex flex-col gap-2.5 sm:flex-row">
+                                        <input
+                                            v-model="tagInput.library"
+                                            @keydown.enter.prevent="addTags('library')"
+                                            type="text"
+                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
+                                            class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                                        >
+                                        <button @click="addTags('library')" class="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
+                                            添加标签
+                                        </button>
+                                        <button @click="toggleBatchPanel('library')" class="px-4 py-2.5 rounded-xl border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition">
+                                            {{ batchDraft.library.open ? '收起批量' : '批量操作' }}
+                                        </button>
+                                    </div>
+                                    <p class="mt-2 text-xs text-gray-500">标签库用于控制前台左上角标签库的展示顺序和基础集合；打开批量模式后，点击下方标签会自动加入批量队列。</p>
+
+                                    <div v-if="isTagEditorOpen('library')" class="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 space-y-3">
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div class="text-sm font-semibold text-blue-800">正在编辑单个标签库标签</div>
+                                            <button @click="closeTagEditor('library')" class="text-xs font-medium text-gray-500 hover:text-gray-700">返回列表</button>
+                                        </div>
+                                        <div class="flex flex-col gap-2 sm:flex-row">
+                                            <input
+                                                v-model="tagEditing.library.value"
+                                                @keydown.enter.prevent="confirmTagEdit('library')"
+                                                @keydown.esc.prevent="closeTagEditor('library')"
+                                                type="text"
+                                                class="flex-1 px-4 py-2.5 text-sm border border-blue-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-400"
+                                            >
+                                            <button @click="confirmTagEdit('library')" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">保存标签</button>
+                                            <button @click="deleteEditingTag('library')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">删除标签</button>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="batchDraft.library.open" class="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 space-y-3">
+                                        <div class="flex flex-wrap gap-2">
+                                            <button v-for="action in batchActionOptions" :key="'library-batch-' + action.value" @click="batchDraft.library.action = action.value" :class="batchDraft.library.action === action.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'" class="px-3 py-1.5 rounded-xl border text-sm font-medium transition">
+                                                {{ action.label }}
+                                            </button>
+                                        </div>
+                                        <textarea v-model="batchDraft.library.text" rows="4" class="w-full px-4 py-3 border border-blue-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-blue-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                            <button @click="applyBatchTags('library')" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">执行批量操作</button>
+                                            <button @click="clearBatchDraft('library')" class="px-4 py-2.5 rounded-xl border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition">清空批量内容</button>
+                                            <button @click="clearConfiguredTags('library')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">清空当前配置</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 space-y-3">
+                                        <div>
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-sm font-semibold text-gray-800">当前配置</div>
+                                                <span class="text-xs text-gray-400">{{ tagEditor.library.length }} 个</span>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
+                                                <template v-for="(tag, index) in tagEditor.library" :key="'library-editor-' + tag + '-' + index">
+                                                    <div class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 max-w-full">
+                                                        <button @click="handleConfiguredTagClick('library', index)" class="text-sm font-medium text-blue-700 break-all text-left hover:text-blue-900 transition" title="点击编辑标签或加入批量队列">
+                                                            {{ tag }}
+                                                        </button>
+                                                        <button @click="removeTag('library', index)" class="p-1 rounded-full text-blue-500 hover:bg-blue-100 hover:text-red-600 transition" title="删除标签">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </template>
+                                                <span v-if="!tagEditor.library.length" class="text-sm text-gray-400">当前未手动配置标签库。</span>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="hiddenTagState.library.length > 0">
+                                            <div class="flex items-center justify-between gap-3 mb-2">
+                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
+                                                <button @click="clearHiddenTags('library')" class="text-xs font-medium text-blue-700 hover:text-blue-900">清空隐藏</button>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                <button v-for="tag in hiddenTagState.library" :key="'library-hidden-' + tag" @click="handleHiddenTagClick('library', tag)" class="px-3 py-1 rounded-full text-sm border border-dashed border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition">
+                                                    恢复 {{ tag }}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div class="text-xs font-medium text-gray-500 mb-2">前台标签库预览</div>
+                                            <div class="flex flex-wrap gap-2 min-h-[2rem] max-h-40 overflow-y-auto pr-1">
+                                                <button v-for="item in tagLibraryPreview" :key="'library-' + item.tag" @click="handlePreviewTagClick('library', item.tag)" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 transition">
+                                                    <span>{{ item.tag }}</span>
+                                                    <span class="text-[11px] font-bold opacity-70">{{ item.count }}</span>
+                                                </button>
+                                                <span v-if="!tagLibraryPreview.length" class="text-sm text-gray-400">暂无标签库预览。</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings -->
+                    <div v-if="currentPage === 'settings'">
+                        <div class="max-w-3xl space-y-6">
+                            <!-- Site Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-4">站点设置</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">站点名称</label>
+                                        <input v-model="siteSettings.site_name" type="text" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">站点描述</label>
+                                        <input v-model="siteSettings.site_description" type="text" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
+                                        <label class="flex items-center gap-2">
+                                            <input v-model="siteSettings.allow_anonymous_upload" type="checkbox" true-value="true" false-value="false" class="w-4 h-4 text-blue-600 rounded">
+                                            <span class="text-sm text-gray-700">允许匿名上传</span>
+                                        </label>
+                                        <label class="flex items-center gap-2">
+                                            <input v-model="siteSettings.allow_anonymous_comment" type="checkbox" true-value="true" false-value="false" class="w-4 h-4 text-blue-600 rounded">
+                                            <span class="text-sm text-gray-700">允许匿名评论</span>
+                                        </label>
+                                    </div>
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                        <button @click="saveSettings" :disabled="settingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                            {{ settingsSaving ? '保存中...' : '保存设置' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Email Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div class="flex items-start justify-between gap-4 mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">Zeabur 邮箱配置</h3>
+                                        <p class="text-sm text-gray-500 mt-1">用于注册验证码、忘记密码、审核结果、待审核提醒、评论提醒和热度通知。</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="emailSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                        {{ emailSettings.configured ? '已启用' : '未启用' }}
+                                    </span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        当前 Key：{{ emailSettings.api_key_configured ? emailSettings.api_key_masked : '未配置' }}
+                                        <span v-if="emailSettings.api_key_source === 'environment'">（来自环境变量）</span>
+                                        <span v-if="emailSettings.api_key_source === 'admin'">（来自后台配置）</span>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur API Key</label>
+                                        <input v-model="emailSettings.api_key" type="password" autocomplete="off" placeholder="留空则保留当前 Key"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input v-model="emailSettings.clear_api_key" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
+                                        清除后台保存的 Key，改用环境变量
+                                    </label>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">发件邮箱</label>
+                                        <input v-model="emailSettings.from" type="email" placeholder="例如 noreply@example.com"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">站点公网地址</label>
+                                        <input v-model="emailSettings.public_base_url" type="url" placeholder="例如 https://forum.example.com"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">管理员通知邮箱</label>
+                                        <textarea v-model="emailSettings.admin_emails" rows="3" placeholder="可填写多个 QQ 邮箱，用换行、逗号或分号分隔"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"></textarea>
+                                        <p class="text-xs text-gray-400 mt-1">有角色卡或 UI 模板进入待审核时，会提醒这里填写的 QQ 邮箱。</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">评论邮件提醒屏蔽词</label>
+                                        <textarea v-model="emailSettings.comment_block_words" rows="3" placeholder="每行一个词；数字也可以；评论包含任意词时不发作者邮件"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"></textarea>
+                                        <p class="text-xs text-gray-400 mt-1">默认包含“已严肃”、“严肃”和“12345”。评论里出现 12345 或全角 １２３４５ 都不会触发作者邮件提醒。</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Zeabur Email API 地址</label>
+                                        <input v-model="emailSettings.endpoint" type="url"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <button @click="saveEmailSettings" :disabled="emailSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                        {{ emailSettingsSaving ? '保存中...' : '保存邮箱配置' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- STA1N API Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div class="flex items-start justify-between gap-4 mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">STA1N API 配置</h3>
+                                        <p class="text-sm text-gray-500 mt-1">用户绑定 STA1N API 用户 ID 后，可用广场热度提现 🍪。</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="newApiSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                        {{ newApiSettings.configured ? '已启用' : '未启用' }}
+                                    </span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        当前规则：{{ newApiSettings.heat_per_cookie || 8 }} 热度 = 1🍪
+                                        <div class="mt-1">
+                                            当前 Token：{{ newApiSettings.admin_token_configured ? newApiSettings.admin_token_masked : '未配置' }}
+                                            <span v-if="newApiSettings.admin_token_source === 'environment'">（来自环境变量）</span>
+                                            <span v-if="newApiSettings.admin_token_source === 'admin'">（来自后台配置）</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">STA1N API 地址</label>
+                                        <input v-model="newApiSettings.base_url" type="url" placeholder="例如 https://api.example.com"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">管理用户 ID</label>
+                                        <input v-model="newApiSettings.admin_user_id" inputmode="numeric" placeholder="例如 1"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">管理员 Token</label>
+                                        <input v-model="newApiSettings.admin_token" type="password" autocomplete="off" placeholder="留空则保留当前 Token"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input v-model="newApiSettings.clear_admin_token" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
+                                        清除后台保存的 Token，改用环境变量
+                                    </label>
+                                    <button @click="saveNewApiSettings" :disabled="newApiSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                        {{ newApiSettingsSaving ? '保存中...' : '保存 STA1N API 配置' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Data Management -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <h3 class="text-lg font-bold text-gray-900 mb-2">数据管理</h3>
+                                <p class="text-sm text-gray-500 mb-4">导出全部数据库文件（.db），在新环境部署后导入即可延续使用。直接传输数据库文件，不会出现 JSON 序列化失败的问题。</p>
+                                <div class="space-y-4">
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                        <button @click="exportData" :disabled="dataExporting" class="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                            {{ dataExporting ? '导出中...' : '一键导出数据库文件' }}
+                                        </button>
+                                    </div>
+                                    <div class="border-t border-gray-100 pt-4">
+                                        <p class="text-sm text-gray-500 mb-3">导入 .db 数据库备份文件（将替换当前数据并重启服务）</p>
+                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                            <label class="inline-flex items-center gap-2 bg-gray-900 text-white px-6 py-2.5 rounded-xl hover:bg-gray-800 transition text-sm font-medium cursor-pointer" :class="dataImporting ? 'opacity-60 cursor-not-allowed' : ''">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m4-8l-4-4m0 0L16 8m4-4v12"/></svg>
+                                                {{ dataImporting ? '导入中...' : '选择 .db 文件并导入' }}
+                                                <input type="file" accept=".db" @change="importData" class="hidden" :disabled="dataImporting">
+                                            </label>
+                                        </div>
+                                        <div v-if="importResult" class="mt-3 rounded-xl p-3 text-sm" :class="importResult.success ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'">
+                                            {{ importResult.message }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
         </div>
 
-        <div class="admin-grid wide-grid">
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>账号监控</h2>
-                <span id="accountCount">0 个账号</span>
-              </div>
+        <!-- Toast Notifications -->
+        <div class="fixed top-4 right-4 z-50 space-y-2">
+            <div v-for="toast in toasts" :key="toast.id"
+                :class="{
+                    'bg-green-500': toast.type === 'success',
+                    'bg-red-500': toast.type === 'error',
+                    'bg-yellow-500': toast.type === 'warning',
+                    'bg-blue-500': toast.type === 'info'
+                }"
+                class="text-white px-4 py-3 rounded-xl shadow-lg text-sm max-w-sm animate-slide-in">
+                {{ toast.message }}
             </div>
-            <div class="toolbar">
-              <label class="checkline">
-                <input id="selectAllAccounts" type="checkbox" />
-                全选
-              </label>
-              <button id="enableAccountsBtn" class="secondary">启用</button>
-              <button id="disableAccountsBtn" class="secondary">禁用</button>
-              <button id="refreshAccountQuotaBtn" class="secondary">刷新点数</button>
-              <button id="resetAccountStatsBtn" class="ghost">重置监控</button>
-              <button id="deleteAccountsBtn" class="ghost">批量删除</button>
-            </div>
-            <div id="accountList" class="data-list"></div>
-          </section>
-
-          <section id="userMonitorPanel" class="panel collapsible-panel is-collapsed">
-            <div class="panel-title">
-              <div>
-                <h2>密钥监控</h2>
-                <span id="userCountText">0 个密钥</span>
-              </div>
-              <button id="userMonitorToggle" class="secondary collapse-toggle" type="button" aria-expanded="false" aria-controls="userMonitorBody">展开</button>
-            </div>
-            <div id="userMonitorBody" class="collapsible-body" hidden>
-              <div class="toolbar">
-                <input id="userSearch" class="search-input" placeholder="搜索密钥、备注或卡密来源" />
-                <label class="checkline">
-                  <input id="selectAllUsers" type="checkbox" />
-                  全选
-                </label>
-                <input id="balanceAdjustValue" class="inline-input" type="number" value="10" />
-                <button id="setBalanceBtn" class="secondary">设置额度</button>
-                <button id="addBalanceBtn" class="secondary">增加额度</button>
-                <button id="deleteUsersBtn" class="danger">批量删除</button>
-              </div>
-              <div id="userList" class="data-list"></div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>最近任务</h2>
-                <span id="jobCountText">0 条</span>
-              </div>
-            </div>
-            <div id="jobList" class="data-list"></div>
-            <div class="pager">
-              <button id="jobPrevBtn" class="ghost" type="button">上一页</button>
-              <span id="jobPageText">第 1 / 1 页</span>
-              <button id="jobNextBtn" class="ghost" type="button">下一页</button>
-            </div>
-          </section>
         </div>
-
-        <section class="panel error-log-panel">
-          <div class="panel-title">
-            <div>
-              <h2>错误日志</h2>
-              <span id="errorLogCount">最近 7 天失败请求</span>
-            </div>
-          </div>
-          <div id="errorLogList" class="data-list error-log-list"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-title">
-            <div>
-              <h2>缓存图片</h2>
-              <span id="imageCountText">0 / 0</span>
-            </div>
-            <div class="button-row compact-actions image-cache-actions">
-              <input id="imageSearch" class="search-input" placeholder="搜索提示词、模型或密钥" />
-              <select id="imageTier" class="inline-select" aria-label="缓存图片分辨率筛选">
-                <option value="">全部</option>
-                <option value="standard">普通</option>
-                <option value="2K">2K</option>
-                <option value="4K">4K</option>
-              </select>
-              <select id="imageRows" class="inline-select" aria-label="缓存图片显示行数">
-                <option value="3" selected>3 行</option>
-                <option value="5">5 行</option>
-                <option value="8">8 行</option>
-              </select>
-              <button id="refreshImagesBtn" class="secondary">刷新列表</button>
-              <button id="clearImagesBtn" class="danger">清理缓存</button>
-            </div>
-          </div>
-          <div id="imageList" class="image-cache-grid"></div>
-          <div class="pager">
-            <button id="imagePrevBtn" class="ghost" type="button">上一页</button>
-            <span id="imagePageText">第 1 / 1 页</span>
-            <button id="imageNextBtn" class="ghost" type="button">下一页</button>
-          </div>
-        </section>
-      </section>
-    </main>
-
-    <div id="imagePreview" class="image-preview hidden" role="dialog" aria-modal="true">
-      <button id="closeImagePreviewBtn" class="preview-close" aria-label="关闭预览">×</button>
-      <div class="preview-stage">
-        <img id="previewImage" alt="缓存图片预览" />
-        <div class="preview-meta">
-          <strong id="previewTitle"></strong>
-          <span id="previewInfo"></span>
-        </div>
-      </div>
     </div>
 
-    <div id="toast" class="toast" role="status"></div>
-    <script src="/admin.js" type="module"></script>
-  </body>
+    <script>
+        const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const API_BASE = '';
+                const token = ref(localStorage.getItem('admin_token') || '');
+                const isAuthenticated = ref(false);
+                const adminUser = ref(null);
+                const currentPage = ref('dashboard');
+                const showMobileMenu = ref(false);
+                const toasts = ref([]);
+
+                // Login
+                const loginForm = reactive({ username: '', password: '' });
+                const loginError = ref('');
+                const loginLoading = ref(false);
+
+                // Stats
+                const stats = ref({});
+
+                // Cards
+                const cardData = ref({ cards: [], total: 0, totalPages: 0 });
+                const cardPage = ref(1);
+                const cardSearch = ref('');
+                const cardStatusFilter = ref('');
+
+                // Comments
+                const commentData = ref({ comments: [], total: 0, totalPages: 0 });
+                const commentPage = ref(1);
+
+                // Users
+                const userData = ref({ users: [], total: 0, totalPages: 0 });
+                const userPage = ref(1);
+                const userSearch = ref('');
+                const userDrafts = reactive({});
+
+                // New API redemptions
+                const redemptionData = ref({ redemptions: [], total: 0, totalPages: 0, summary: {} });
+                const redemptionPage = ref(1);
+                const redemptionSearch = ref('');
+                const redemptionStatusFilter = ref('');
+
+                // Logs
+                const logData = ref({ logs: [], total: 0, totalPages: 0 });
+                const logPage = ref(1);
+                const logActionFilter = ref('');
+                const logSearch = ref('');
+
+                // IP bans
+                const ipBanData = ref({ bans: [], current_ip: '' });
+                const ipBanForm = reactive({ ip_pattern: '', reason: '' });
+                const ipBanSaving = ref(false);
+
+                // Chart
+                const chartData = computed(() => {
+                    if (!stats.value.dailyActivity) return [];
+                    const activity = stats.value.dailyActivity ?? [];
+                    const comments = stats.value.dailyComments ?? [];
+                    const visits = stats.value.dailyVisits ?? [];
+                    const days = [];
+                    for (let i = 6; i >= 0; i--) {
+                        const d = new Date(); d.setDate(d.getDate() - i);
+                        const dateStr = d.toISOString().slice(0, 10);
+                        const label = (d.getMonth()+1) + '/' + d.getDate();
+                        const a = activity.find(x => x.day === dateStr);
+                        const c = comments.find(x => x.day === dateStr);
+                        const v = visits.find(x => x.day === dateStr);
+                        days.push({
+                            date: dateStr, label,
+                            uploads: a ? (a.uploads || 0) : 0,
+                            downloads: a ? (a.downloads || 0) : 0,
+                            comments: c ? (c.comments || 0) : 0,
+                            visits: v ? (v.visits || 0) : 0
+                        });
+                    }
+                    return days;
+                });
+                const chartMax = computed(() => {
+                    if (!chartData.value.length) return 1;
+                    const max = Math.max(...chartData.value.flatMap(d => [d.uploads, d.downloads, d.comments, d.visits]));
+                    return max || 1;
+                });
+
+                // Settings
+                const siteSettings = reactive({
+                    site_name: '',
+                    site_description: '',
+                    allow_anonymous_upload: 'true',
+                    allow_anonymous_comment: 'true',
+                    popular_tags: '',
+                    tag_library: '',
+                    hidden_popular_tags: '',
+                    hidden_tag_library: ''
+                });
+                const emailSettings = reactive({
+                    configured: false,
+                    api_key_configured: false,
+                    api_key_masked: '',
+                    api_key_source: 'none',
+                    api_key: '',
+                    clear_api_key: false,
+                    from: '',
+                    endpoint: 'https://api.zeabur.com/api/v1/zsend/emails',
+                    public_base_url: '',
+                    admin_emails: '',
+                    admin_emails_source: 'none',
+                    comment_block_words: '已严肃\n严肃\n12345'
+                });
+                const emailSettingsSaving = ref(false);
+                const newApiSettings = reactive({
+                    configured: false,
+                    base_url: '',
+                    admin_user_id: '',
+                    admin_token: '',
+                    clear_admin_token: false,
+                    admin_token_configured: false,
+                    admin_token_masked: '',
+                    admin_token_source: 'none',
+                    heat_per_cookie: 8
+                });
+                const newApiSettingsSaving = ref(false);
+                const tagPreviewCards = ref([]);
+                const tagEditor = reactive({
+                    popular: [],
+                    library: []
+                });
+                const hiddenTagState = reactive({
+                    popular: [],
+                    library: []
+                });
+                const savedTagSnapshot = reactive({
+                    popular: '',
+                    library: '',
+                    hiddenPopular: '',
+                    hiddenLibrary: ''
+                });
+                const tagInput = reactive({
+                    popular: '',
+                    library: ''
+                });
+                const tagEditing = reactive({
+                    popular: { index: -1, value: '' },
+                    library: { index: -1, value: '' }
+                });
+                const batchDraft = reactive({
+                    popular: { open: false, action: 'append', text: '' },
+                    library: { open: false, action: 'append', text: '' }
+                });
+                const batchActionOptions = [
+                    { value: 'append', label: '批量追加' },
+                    { value: 'replace', label: '整组替换' },
+                    { value: 'hide', label: '批量隐藏' },
+                    { value: 'restore', label: '批量恢复' }
+                ];
+                const settingsSaving = ref(false);
+                const tagPreviewCounts = computed(() => {
+                    const counts = {};
+                    for (const card of tagPreviewCards.value) {
+                        for (const tag of extractCardTags(card)) {
+                            counts[tag] = (counts[tag] || 0) + 1;
+                        }
+                    }
+                    return counts;
+                });
+                const popularTagPreview = computed(() => {
+                    const hiddenSet = new Set(hiddenTagState.popular);
+                    const configured = tagEditor.popular.filter(tag => !hiddenSet.has(tag));
+                    if (configured.length > 0) {
+                        return configured;
+                    }
+                    return Object.entries(tagPreviewCounts.value)
+                        .filter(([tag]) => !hiddenSet.has(tag))
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 20)
+                        .map(([tag]) => tag);
+                });
+                const tagLibraryPreview = computed(() => {
+                    const hiddenSet = new Set(hiddenTagState.library);
+                    const configured = tagEditor.library.filter(tag => !hiddenSet.has(tag));
+                    const ranked = Object.entries(tagPreviewCounts.value)
+                        .filter(([tag]) => !hiddenSet.has(tag))
+                        .sort((a, b) => b[1] - a[1]);
+                    if (configured.length === 0) {
+                        return ranked.map(([tag, count]) => ({ tag, count }));
+                    }
+                    const configuredSet = new Set(configured);
+                    return [
+                        ...configured.map(tag => ({ tag, count: tagPreviewCounts.value[tag] || 0 })),
+                        ...ranked.filter(([tag]) => !configuredSet.has(tag)).map(([tag, count]) => ({ tag, count }))
+                    ];
+                });
+                const tagSettingsDirty = computed(() => {
+                    return savedTagSnapshot.popular !== tagEditor.popular.join('\n')
+                        || savedTagSnapshot.library !== tagEditor.library.join('\n')
+                        || savedTagSnapshot.hiddenPopular !== hiddenTagState.popular.join('\n')
+                        || savedTagSnapshot.hiddenLibrary !== hiddenTagState.library.join('\n');
+                });
+
+                function authHeaders() {
+                    return { 'Authorization': 'Bearer ' + token.value, 'Content-Type': 'application/json' };
+                }
+
+                function showToast(message, type = 'info') {
+                    const id = Date.now();
+                    toasts.value.push({ id, message, type });
+                    setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id); }, 3000);
+                }
+
+                function formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    return new Date(dateStr).toLocaleString('zh-CN');
+                }
+
+                function formatCookieAmount(value) {
+                    const num = Number(value || 0);
+                    if (!Number.isFinite(num)) return '0';
+                    return num.toFixed(2).replace(/\.?0+$/, '');
+                }
+
+                function parseTagSettingInput(value) {
+                    return String(value || '')
+                        .split(/[\n,，]/)
+                        .map(item => item.trim())
+                        .filter(Boolean)
+                        .filter((item, index, array) => array.indexOf(item) === index);
+                }
+
+                function syncTagEditorFromSettings() {
+                    tagEditor.popular = parseTagSettingInput(siteSettings.popular_tags);
+                    tagEditor.library = parseTagSettingInput(siteSettings.tag_library);
+                    hiddenTagState.popular = parseTagSettingInput(siteSettings.hidden_popular_tags);
+                    hiddenTagState.library = parseTagSettingInput(siteSettings.hidden_tag_library);
+                    resetTagInteractionState();
+                }
+
+                function captureSavedTagSnapshot() {
+                    savedTagSnapshot.popular = tagEditor.popular.join('\n');
+                    savedTagSnapshot.library = tagEditor.library.join('\n');
+                    savedTagSnapshot.hiddenPopular = hiddenTagState.popular.join('\n');
+                    savedTagSnapshot.hiddenLibrary = hiddenTagState.library.join('\n');
+                }
+
+                function restoreSavedTagSnapshot() {
+                    tagEditor.popular = parseTagSettingInput(savedTagSnapshot.popular);
+                    tagEditor.library = parseTagSettingInput(savedTagSnapshot.library);
+                    hiddenTagState.popular = parseTagSettingInput(savedTagSnapshot.hiddenPopular);
+                    hiddenTagState.library = parseTagSettingInput(savedTagSnapshot.hiddenLibrary);
+                    resetTagInteractionState();
+                    syncSettingsFromTagEditor();
+                }
+
+                function resetTagInteractionState() {
+                    tagInput.popular = '';
+                    tagInput.library = '';
+                    cancelTagEdit('popular');
+                    cancelTagEdit('library');
+                    clearBatchDraft('popular');
+                    clearBatchDraft('library');
+                }
+
+                function syncSettingsFromTagEditor() {
+                    siteSettings.popular_tags = tagEditor.popular.join('\n');
+                    siteSettings.tag_library = tagEditor.library.join('\n');
+                    siteSettings.hidden_popular_tags = hiddenTagState.popular.join('\n');
+                    siteSettings.hidden_tag_library = hiddenTagState.library.join('\n');
+                }
+
+                function removeHiddenTag(type, tag) {
+                    hiddenTagState[type] = hiddenTagState[type].filter(item => item !== tag);
+                }
+
+                function addHiddenTag(type, tag) {
+                    if (!tag) return;
+                    if (hiddenTagState[type].includes(tag)) return;
+                    hiddenTagState[type] = [...hiddenTagState[type], tag];
+                }
+
+                function normalizeTagBatch(value) {
+                    return parseTagSettingInput(value);
+                }
+
+                function addTags(type) {
+                    const incoming = normalizeTagBatch(tagInput[type]);
+                    if (!incoming.length) return;
+                    incoming.forEach(tag => removeHiddenTag(type, tag));
+                    const merged = [...tagEditor[type], ...incoming];
+                    tagEditor[type] = merged.filter((item, index, array) => item && array.indexOf(item) === index);
+                    tagInput[type] = '';
+                    syncSettingsFromTagEditor();
+                }
+
+                function appendTagToBatchDraft(type, tag) {
+                    const incoming = normalizeTagBatch(tag);
+                    if (!incoming.length) return;
+                    const merged = [...normalizeTagBatch(batchDraft[type].text), ...incoming]
+                        .filter((item, index, array) => item && array.indexOf(item) === index);
+                    batchDraft[type].text = merged.join('\n');
+                }
+
+                function isTagEditorOpen(type) {
+                    return tagEditing[type].index >= 0;
+                }
+
+                function closeTagEditor(type) {
+                    cancelTagEdit(type);
+                }
+
+                function adoptPreviewTag(type, tag) {
+                    const normalized = normalizeTagBatch(tag);
+                    if (!normalized.length) return;
+                    const nextTag = normalized[0];
+                    removeHiddenTag(type, nextTag);
+                    if (tagEditor[type].includes(nextTag)) {
+                        startTagEdit(type, tagEditor[type].indexOf(nextTag));
+                        syncSettingsFromTagEditor();
+                        return;
+                    }
+                    tagEditor[type] = [...tagEditor[type], nextTag];
+                    syncSettingsFromTagEditor();
+                }
+
+                function removeTag(type, index) {
+                    const removedTag = tagEditor[type][index];
+                    tagEditor[type] = tagEditor[type].filter((_, itemIndex) => itemIndex !== index);
+                    addHiddenTag(type, removedTag);
+                    if (tagEditing[type].index === index) {
+                        cancelTagEdit(type);
+                    }
+                    syncSettingsFromTagEditor();
+                }
+
+                function startTagEdit(type, index) {
+                    batchDraft[type].open = false;
+                    tagEditing[type].index = index;
+                    tagEditing[type].value = tagEditor[type][index] || '';
+                }
+
+                function cancelTagEdit(type) {
+                    tagEditing[type].index = -1;
+                    tagEditing[type].value = '';
+                }
+
+                function isEditingTag(type, index) {
+                    return tagEditing[type].index === index;
+                }
+
+                function confirmTagEdit(type) {
+                    const index = tagEditing[type].index;
+                    if (index < 0) return;
+                    const nextValue = String(tagEditing[type].value || '').trim();
+                    const previousValue = tagEditor[type][index] || '';
+                    if (!nextValue) {
+                        removeTag(type, index);
+                        return;
+                    }
+                    if (tagEditor[type].some((item, itemIndex) => item === nextValue && itemIndex !== index)) {
+                        showToast('标签已存在，无需重复添加', 'warning');
+                        return;
+                    }
+                    if (previousValue && previousValue !== nextValue) {
+                        addHiddenTag(type, previousValue);
+                    }
+                    removeHiddenTag(type, nextValue);
+                    tagEditor[type] = tagEditor[type].map((item, itemIndex) => itemIndex === index ? nextValue : item);
+                    cancelTagEdit(type);
+                    syncSettingsFromTagEditor();
+                }
+
+                function deleteEditingTag(type) {
+                    const index = tagEditing[type].index;
+                    if (index < 0) return;
+                    removeTag(type, index);
+                }
+
+                function toggleBatchPanel(type) {
+                    batchDraft[type].open = !batchDraft[type].open;
+                    if (batchDraft[type].open) {
+                        cancelTagEdit(type);
+                    }
+                }
+
+                function handleConfiguredTagClick(type, index) {
+                    const tag = tagEditor[type][index];
+                    if (!tag) return;
+                    if (batchDraft[type].open) {
+                        appendTagToBatchDraft(type, tag);
+                        return;
+                    }
+                    startTagEdit(type, index);
+                }
+
+                function handleHiddenTagClick(type, tag) {
+                    if (batchDraft[type].open) {
+                        appendTagToBatchDraft(type, tag);
+                        return;
+                    }
+                    restoreHiddenTag(type, tag);
+                }
+
+                function handlePreviewTagClick(type, tag) {
+                    if (batchDraft[type].open) {
+                        appendTagToBatchDraft(type, tag);
+                        return;
+                    }
+                    adoptPreviewTag(type, tag);
+                }
+
+                function clearBatchDraft(type) {
+                    batchDraft[type].open = false;
+                    batchDraft[type].action = 'append';
+                    batchDraft[type].text = '';
+                }
+
+                function clearConfiguredTags(type) {
+                    tagEditor[type] = [];
+                    cancelTagEdit(type);
+                    syncSettingsFromTagEditor();
+                    showToast(type === 'popular' ? '热门标签配置已清空' : '标签库配置已清空', 'info');
+                }
+
+                function restoreHiddenTag(type, tag) {
+                    removeHiddenTag(type, tag);
+                    syncSettingsFromTagEditor();
+                }
+
+                function clearHiddenTags(type) {
+                    hiddenTagState[type] = [];
+                    syncSettingsFromTagEditor();
+                    showToast(type === 'popular' ? '热门标签隐藏列表已清空' : '标签库隐藏列表已清空', 'info');
+                }
+
+                function applyBatchTags(type) {
+                    const action = batchDraft[type].action;
+                    const incoming = normalizeTagBatch(batchDraft[type].text);
+                    if (!incoming.length) {
+                        showToast('请先输入要批量处理的标签', 'warning');
+                        return;
+                    }
+
+                    if (action === 'append') {
+                        incoming.forEach(tag => removeHiddenTag(type, tag));
+                        tagEditor[type] = [...tagEditor[type], ...incoming].filter((item, index, array) => item && array.indexOf(item) === index);
+                    }
+
+                    if (action === 'replace') {
+                        incoming.forEach(tag => removeHiddenTag(type, tag));
+                        tagEditor[type] = incoming;
+                        cancelTagEdit(type);
+                    }
+
+                    if (action === 'hide') {
+                        incoming.forEach(tag => {
+                            tagEditor[type] = tagEditor[type].filter(item => item !== tag);
+                            addHiddenTag(type, tag);
+                        });
+                        cancelTagEdit(type);
+                    }
+
+                    if (action === 'restore') {
+                        incoming.forEach(tag => removeHiddenTag(type, tag));
+                    }
+
+                    syncSettingsFromTagEditor();
+                    batchDraft[type].text = '';
+                    showToast('批量操作已应用到当前草稿', 'success');
+                }
+
+                function extractCardTags(card) {
+                    if (!card) return [];
+                    if (Array.isArray(card.tags)) {
+                        return card.tags.map(item => String(item || '').trim()).filter(Boolean);
+                    }
+                    const text = String(card.creator_notes || '');
+                    const tags = [];
+                    const regex = /#([^#\s]+)/g;
+                    let match;
+                    while ((match = regex.exec(text)) !== null) {
+                        if (match[1]) tags.push(match[1].trim());
+                    }
+                    return tags.filter((item, index, array) => item && array.indexOf(item) === index);
+                }
+
+                async function loadTagPreviewCards() {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/cards');
+                        if (!resp.ok) return;
+                        const data = await resp.json();
+                        tagPreviewCards.value = Array.isArray(data) ? data : [];
+                    } catch (err) {
+                        console.error('Tag preview cards error:', err);
+                    }
+                }
+
+                function userDraft(user) {
+                    if (!userDrafts[user.id]) {
+                        userDrafts[user.id] = {
+                            download_credits: user.download_credits,
+                            saving: false,
+                            banning: false,
+                            moderating: false
+                        };
+                    }
+                    return userDrafts[user.id];
+                }
+
+                function syncUserDrafts(users) {
+                    for (const user of users || []) {
+                        const draft = userDraft(user);
+                        draft.download_credits = user.download_credits;
+                    }
+                }
+
+                async function handleLogin() {
+                    loginError.value = '';
+                    loginLoading.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok) {
+                            loginError.value = data.error || '登录失败';
+                            return;
+                        }
+                        token.value = data.token;
+                        adminUser.value = data.user;
+                        isAuthenticated.value = true;
+                        localStorage.setItem('admin_token', data.token);
+                        loadDashboard();
+                    } catch (err) {
+                        loginError.value = '网络错误，请重试';
+                    } finally {
+                        loginLoading.value = false;
+                    }
+                }
+
+                function handleLogout() {
+                    token.value = '';
+                    isAuthenticated.value = false;
+                    adminUser.value = null;
+                    showMobileMenu.value = false;
+                    localStorage.removeItem('admin_token');
+                }
+
+                async function checkAuth() {
+                    if (!token.value) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/auth/me', { headers: authHeaders() });
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            adminUser.value = data.user;
+                            isAuthenticated.value = true;
+                            loadDashboard();
+                        } else {
+                            handleLogout();
+                        }
+                    } catch (err) {
+                        handleLogout();
+                    }
+                }
+
+                async function loadDashboard() {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/stats', { headers: authHeaders() });
+                        if (resp.ok) stats.value = await resp.json();
+                    } catch (err) {
+                        console.error('Stats error:', err);
+                    }
+                }
+
+                async function loadAdminCards() {
+                    try {
+                        let url = API_BASE + `/api/admin/cards?page=${cardPage.value}&search=${encodeURIComponent(cardSearch.value)}`;
+                        if (cardStatusFilter.value) url += `&status=${encodeURIComponent(cardStatusFilter.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        if (resp.ok) cardData.value = await resp.json();
+                    } catch (err) {
+                        console.error('Cards error:', err);
+                    }
+                }
+
+                function getReviewStatusLabel(status) {
+                    return ({ pending: '待审核', approved: '已通过', rejected: '已拒绝' })[status] || '已通过';
+                }
+
+                async function reviewAdminCard(card, status) {
+                    let reason = '';
+                    if (status === 'rejected') {
+                        reason = prompt('请输入拒绝原因（可留空）：') || '';
+                    }
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id + '/review', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ status, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '审核失败');
+                        showToast(status === 'approved' ? '已通过审核' : '已拒绝该卡片', status === 'approved' ? 'success' : 'warning');
+                        loadAdminCards();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '审核失败', 'error');
+                    }
+                }
+
+                async function downloadAdminCard(card) {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/download', {
+                            method: 'POST',
+                            headers: authHeaders()
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '下载失败');
+                        if (!data.download_url) throw new Error('下载链接生成失败');
+                        const a = document.createElement('a');
+                        a.href = API_BASE + data.download_url;
+                        a.download = '';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        showToast('卡片下载已开始', 'success');
+                    } catch (err) {
+                        showToast(err.message || '下载失败', 'error');
+                    }
+                }
+
+                async function deleteAdminCard(card) {
+                    if (!confirm(`确定删除卡片 "${card.name}" 吗？`)) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id, { method: 'DELETE', headers: authHeaders() });
+                        if (resp.ok) {
+                            showToast('卡片已删除', 'success');
+                            loadAdminCards();
+                            loadDashboard();
+                        }
+                    } catch (err) {
+                        showToast('删除失败', 'error');
+                    }
+                }
+
+                async function loadAdminComments() {
+                    try {
+                        const resp = await fetch(API_BASE + `/api/admin/comments?page=${commentPage.value}`, { headers: authHeaders() });
+                        if (resp.ok) commentData.value = await resp.json();
+                    } catch (err) {
+                        console.error('Comments error:', err);
+                    }
+                }
+
+                async function deleteAdminComment(comment) {
+                    if (!confirm('确定删除这条评论吗？')) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/comments/' + comment.id, { method: 'DELETE', headers: authHeaders() });
+                        if (resp.ok) {
+                            showToast('评论已删除', 'success');
+                            loadAdminComments();
+                            loadDashboard();
+                        }
+                    } catch (err) {
+                        showToast('删除失败', 'error');
+                    }
+                }
+
+                async function loadAdminUsers() {
+                    try {
+                        const resp = await fetch(API_BASE + `/api/admin/users?page=${userPage.value}&search=${encodeURIComponent(userSearch.value)}`, { headers: authHeaders() });
+                        if (resp.ok) {
+                            userData.value = await resp.json();
+                            syncUserDrafts(userData.value.users);
+                        }
+                    } catch (err) {
+                        console.error('Users error:', err);
+                    }
+                }
+
+                async function saveUserCredits(user) {
+                    const draft = userDraft(user);
+                    draft.saving = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/users/' + user.id + '/credits', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ download_credits: Number(draft.download_credits) })
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok) {
+                            throw new Error(data.error || '保存失败');
+                        }
+                        Object.assign(user, data.user);
+                        draft.download_credits = data.user.download_credits;
+                        showToast('下载次数已更新', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存失败', 'error');
+                    } finally {
+                        draft.saving = false;
+                    }
+                }
+
+                async function toggleUserModerator(user) {
+                    const draft = userDraft(user);
+                    const nextModerator = !user.is_moderator;
+                    const actionText = nextModerator ? '设为前台审核员' : '取消前台审核员';
+                    if (!confirm(`确定要将用户「${user.username}」${actionText}吗？`)) return;
+                    draft.moderating = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/users/' + user.id + '/moderator', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ is_moderator: nextModerator })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '更新审核员状态失败');
+                        Object.assign(user, data.user);
+                        showToast(nextModerator ? '已设为前台审核员' : '已取消前台审核员', 'success');
+                    } catch (err) {
+                        showToast(err.message || '更新审核员状态失败', 'error');
+                    } finally {
+                        draft.moderating = false;
+                    }
+                }
+
+                async function toggleUserBan(user) {
+                    const draft = userDraft(user);
+                    const nextBanned = !user.is_banned;
+                    let reason = '';
+                    if (nextBanned) {
+                        reason = prompt(`请输入封禁用户「${user.username}」的原因（可留空）：`) || '';
+                    } else if (!confirm(`确定解除用户「${user.username}」的封禁吗？`)) {
+                        return;
+                    }
+                    draft.banning = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/users/' + user.id + '/ban', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({ banned: nextBanned, reason })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '更新封禁状态失败');
+                        Object.assign(user, data.user);
+                        showToast(nextBanned ? '用户已封禁' : '用户已解封', 'success');
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '更新封禁状态失败', 'error');
+                    } finally {
+                        draft.banning = false;
+                    }
+                }
+
+                async function loadRedemptions() {
+                    try {
+                        let url = API_BASE + `/api/admin/newapi-redemptions?page=${redemptionPage.value}`;
+                        if (redemptionStatusFilter.value) url += `&status=${encodeURIComponent(redemptionStatusFilter.value)}`;
+                        if (redemptionSearch.value) url += `&search=${encodeURIComponent(redemptionSearch.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '加载提现记录失败');
+                        redemptionData.value = data;
+                    } catch (err) {
+                        showToast(err.message || '加载提现记录失败', 'error');
+                    }
+                }
+
+                function getRedemptionStatusLabel(status) {
+                    const labels = {
+                        success: '成功',
+                        pending: '处理中',
+                        failed: '失败'
+                    };
+                    return labels[status] || status || '-';
+                }
+
+                function getRedemptionStatusClass(status) {
+                    if (status === 'success') return 'bg-green-100 text-green-700';
+                    if (status === 'failed') return 'bg-red-100 text-red-700';
+                    return 'bg-amber-100 text-amber-700';
+                }
+
+                async function loadLogs() {
+                    try {
+                        let url = API_BASE + `/api/admin/logs?page=${logPage.value}`;
+                        if (logActionFilter.value) url += `&action=${encodeURIComponent(logActionFilter.value)}`;
+                        if (logSearch.value) url += `&search=${encodeURIComponent(logSearch.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        if (resp.ok) logData.value = await resp.json();
+                    } catch (err) {
+                        console.error('Logs error:', err);
+                    }
+                }
+
+                async function loadIpBans() {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans', { headers: authHeaders() });
+                        if (resp.ok) ipBanData.value = await resp.json();
+                    } catch (err) {
+                        console.error('IP bans error:', err);
+                    }
+                }
+
+                async function createIpBan() {
+                    ipBanSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans', {
+                            method: 'POST',
+                            headers: authHeaders(),
+                            body: JSON.stringify(ipBanForm)
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '封禁失败');
+                        ipBanForm.ip_pattern = '';
+                        ipBanForm.reason = '';
+                        showToast('IP 已封禁', 'success');
+                        loadIpBans();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '封禁失败', 'error');
+                    } finally {
+                        ipBanSaving.value = false;
+                    }
+                }
+
+                async function removeIpBan(ban) {
+                    if (!confirm(`确定解除 ${ban.ip_pattern} 的封禁吗？`)) return;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ip-bans/' + ban.id, {
+                            method: 'DELETE',
+                            headers: authHeaders()
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '解除封禁失败');
+                        showToast('已解除封禁', 'success');
+                        loadIpBans();
+                        loadDashboard();
+                    } catch (err) {
+                        showToast(err.message || '解除封禁失败', 'error');
+                    }
+                }
+
+                function getActionLabel(action) {
+                    const labels = {
+                        login: '登录', register: '注册', upload: '上传',
+                        upload_pending: '上传待审核',
+                        download: '下载', edit: '编辑', delete: '删除',
+                        admin_login: '管理员登录', admin_delete_card: '管理员删卡',
+                        admin_delete_comment: '管理员删评论',
+                        admin_approve_card: '审核通过',
+                        admin_reject_card: '审核拒绝',
+                        moderator_approve_card: '前台审核员通过',
+                        moderator_reject_card: '前台审核员拒绝',
+                        moderator_delete_card: '前台审核员删卡',
+                        admin_approve_ui_template: '模板审核通过',
+                        admin_reject_ui_template: '模板审核拒绝',
+                        moderator_approve_ui_template: '前台审核员通过模板',
+                        moderator_reject_ui_template: '前台审核员拒绝模板',
+                        admin_ban_ip: '封禁 IP',
+                        admin_unban_ip: '解除 IP 封禁',
+                        admin_ban_user: '封禁用户',
+                        admin_unban_user: '解除用户封禁',
+                        admin_grant_moderator: '设为前台审核员',
+                        admin_revoke_moderator: '取消前台审核员',
+                        admin_update_user_credits: '调整下载次数',
+                        admin_update_tag_settings: '更新标签配置',
+                        admin_update_email_settings: '更新邮件配置',
+                        admin_update_newapi_settings: '更新 STA1N API 配置',
+                        bind_newapi_user: '绑定 STA1N API 用户',
+                        unbind_newapi_user: '解绑 STA1N API 用户',
+                        newapi_redeem: '提现',
+                        admin_adjust_heat: '调整角色卡热度',
+                        admin_adjust_ui_template_heat: '调整模板热度'
+                    };
+                    return labels[action] || action;
+                }
+
+                function formatLogTarget(log) {
+                    if (!log || !log.target_type) return '-';
+                    if (log.target_label) return log.target_label;
+                    const names = {
+                        card: '角色卡',
+                        ui_template: 'UI模板',
+                        user: '用户',
+                        comment: '评论',
+                        ip: 'IP',
+                        settings: '设置'
+                    };
+                    const prefix = names[log.target_type] || log.target_type;
+                    return log.target_id ? `${prefix} ${log.target_id}` : prefix;
+                }
+
+                async function loadSettings() {
+                    try {
+                        const [settingsResp, emailResp, newApiResp] = await Promise.all([
+                            fetch(API_BASE + '/api/admin/settings', { headers: authHeaders() }),
+                            fetch(API_BASE + '/api/admin/email-settings', { headers: authHeaders() }),
+                            fetch(API_BASE + '/api/admin/newapi-settings', { headers: authHeaders() }),
+                            loadTagPreviewCards()
+                        ]);
+                        if (settingsResp.ok) {
+                            const data = await settingsResp.json();
+                            Object.assign(siteSettings, data);
+                            syncTagEditorFromSettings();
+                            captureSavedTagSnapshot();
+                        }
+                        if (emailResp.ok) {
+                            const data = await emailResp.json();
+                            Object.assign(emailSettings, data, { api_key: '', clear_api_key: false });
+                        }
+                        if (newApiResp.ok) {
+                            const data = await newApiResp.json();
+                            Object.assign(newApiSettings, data, { admin_token: '', clear_admin_token: false });
+                        }
+                    } catch (err) {
+                        console.error('Settings error:', err);
+                    }
+                }
+
+                async function saveSettings() {
+                    settingsSaving.value = true;
+                    try {
+                        syncSettingsFromTagEditor();
+                        const resp = await fetch(API_BASE + '/api/admin/settings', {
+                            method: 'PUT', headers: authHeaders(),
+                            body: JSON.stringify(siteSettings)
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) {
+                            throw new Error(data.error || '保存失败');
+                        }
+                        captureSavedTagSnapshot();
+                        resetTagInteractionState();
+                        showToast('设置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存失败', 'error');
+                    } finally {
+                        settingsSaving.value = false;
+                    }
+                }
+
+                async function saveEmailSettings() {
+                    emailSettingsSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/email-settings', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({
+                                api_key: emailSettings.api_key,
+                                clear_api_key: emailSettings.clear_api_key,
+                                from: emailSettings.from,
+                                endpoint: emailSettings.endpoint,
+                                public_base_url: emailSettings.public_base_url,
+                                admin_emails: emailSettings.admin_emails,
+                                comment_block_words: emailSettings.comment_block_words
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存邮箱配置失败');
+                        Object.assign(emailSettings, data, { api_key: '', clear_api_key: false });
+                        showToast('邮箱配置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存邮箱配置失败', 'error');
+                    } finally {
+                        emailSettingsSaving.value = false;
+                    }
+                }
+
+                async function saveNewApiSettings() {
+                    newApiSettingsSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/newapi-settings', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({
+                                base_url: newApiSettings.base_url,
+                                admin_user_id: newApiSettings.admin_user_id,
+                                admin_token: newApiSettings.admin_token,
+                                clear_admin_token: newApiSettings.clear_admin_token
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存 STA1N API 配置失败');
+                        Object.assign(newApiSettings, data, { admin_token: '', clear_admin_token: false });
+                        showToast('STA1N API 配置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存 STA1N API 配置失败', 'error');
+                    } finally {
+                        newApiSettingsSaving.value = false;
+                    }
+                }
+
+                // ============== Data Export/Import (SQLite DB File) ==============
+                const dataExporting = ref(false);
+                const dataImporting = ref(false);
+                const importResult = ref(null);
+
+                async function exportData() {
+                    dataExporting.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/export', { headers: authHeaders() });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            throw new Error(err.error || '导出失败');
+                        }
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `rph-forum-backup-${new Date().toISOString().slice(0,10)}.db`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                        showToast('数据库导出成功', 'success');
+                    } catch (err) {
+                        showToast(err.message || '导出失败', 'error');
+                    } finally {
+                        dataExporting.value = false;
+                    }
+                }
+
+                async function importData(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    e.target.value = '';
+
+                    if (!file.name.endsWith('.db')) {
+                        showToast('请选择 .db 格式的数据库备份文件', 'warning');
+                        return;
+                    }
+
+                    if (!confirm('警告：导入将替换当前所有数据，服务会自动重启以加载新数据。\n\n建议先导出当前数据作为保险。\n\n确定要继续吗？')) {
+                        return;
+                    }
+
+                    dataImporting.value = true;
+                    importResult.value = null;
+                    try {
+                        const buffer = await file.arrayBuffer();
+
+                        const resp = await fetch(API_BASE + '/api/admin/import', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Bearer ' + token.value,
+                                'Content-Type': 'application/octet-stream'
+                            },
+                            body: buffer
+                        });
+                        const result = await resp.json();
+                        if (!resp.ok) {
+                            throw new Error(result.error || '导入失败');
+                        }
+
+                        importResult.value = {
+                            success: true,
+                            message: `导入成功！用户 ${result.stats.users} 个，角色卡 ${result.stats.cards} 张，评论 ${result.stats.comments} 条。服务正在重启...`
+                        };
+                        showToast('数据库导入成功，服务重启中...', 'success');
+
+                        // Wait for server restart then reload
+                        if (result.restart) {
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 3000);
+                        }
+                    } catch (err) {
+                        importResult.value = { success: false, message: err.message || '导入失败' };
+                        showToast(err.message || '导入失败', 'error');
+                    } finally {
+                        dataImporting.value = false;
+                    }
+                }
+
+                onMounted(() => {
+                    checkAuth();
+                });
+
+                return {
+                    isAuthenticated, adminUser, currentPage, showMobileMenu, toasts,
+                    loginForm, loginError, loginLoading, handleLogin, handleLogout,
+                    stats, formatDate, formatCookieAmount, chartData, chartMax,
+                    cardData, cardPage, cardSearch, cardStatusFilter, loadAdminCards, deleteAdminCard,
+                    getReviewStatusLabel, reviewAdminCard, downloadAdminCard,
+                    commentData, commentPage, loadAdminComments, deleteAdminComment,
+                    userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, toggleUserBan, toggleUserModerator,
+                    redemptionData, redemptionPage, redemptionSearch, redemptionStatusFilter, loadRedemptions, getRedemptionStatusLabel, getRedemptionStatusClass,
+                    logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogTarget,
+                    ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
+                    siteSettings, emailSettings, emailSettingsSaving, newApiSettings, newApiSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
+                    settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
+                    addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,
+                    handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
+                    toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
+                    restoreSavedTagSnapshot, loadSettings, saveSettings, saveEmailSettings, saveNewApiSettings,
+                    dataExporting, dataImporting, importResult, exportData, importData
+                };
+            }
+        }).mount('#admin-app');
+    </script>
+</body>
 </html>
