@@ -3342,8 +3342,55 @@ function buildCardMetadataChunk(cardData) {
     return Buffer.concat([chunkLength, chunkType, chunkData, chunkCrc]);
 }
 
-function injectCardMetadataIntoPng(pngBuffer, cardData) {
+const CARD_METADATA_CHUNK_KEYS = new Set([
+    'chara',
+    'ccv2',
+    'ccv3',
+    'character',
+    'character_card',
+    'character-card'
+]);
+
+function getPngTextChunkKeyword(type, chunkData) {
+    if (!['tEXt', 'zTXt', 'iTXt'].includes(type)) return '';
+    const splitIndex = chunkData.indexOf(0);
+    if (splitIndex < 0) return '';
+    return chunkData.subarray(0, splitIndex).toString('latin1').trim().toLowerCase();
+}
+
+function stripExistingCardMetadataChunks(pngBuffer) {
     const source = Buffer.isBuffer(pngBuffer) ? pngBuffer : Buffer.from(pngBuffer);
+    if (source.length < PNG_IHDR_END_OFFSET || !source.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+        throw new Error('下载图片不是有效的 PNG 文件');
+    }
+
+    const parts = [source.subarray(0, PNG_SIGNATURE.length)];
+    let offset = PNG_SIGNATURE.length;
+    while (offset + 8 <= source.length) {
+        const length = source.readUInt32BE(offset);
+        const type = source.subarray(offset + 4, offset + 8).toString('ascii');
+        const chunkStart = offset;
+        const chunkEnd = offset + 12 + length;
+        if (chunkEnd > source.length) {
+            throw new Error('PNG 文件结构不完整');
+        }
+
+        const chunkData = source.subarray(offset + 8, offset + 8 + length);
+        const keyword = getPngTextChunkKeyword(type, chunkData);
+        const shouldStrip = keyword && CARD_METADATA_CHUNK_KEYS.has(keyword);
+        if (!shouldStrip) {
+            parts.push(source.subarray(chunkStart, chunkEnd));
+        }
+
+        offset = chunkEnd;
+        if (type === 'IEND') break;
+    }
+
+    return Buffer.concat(parts);
+}
+
+function injectCardMetadataIntoPng(pngBuffer, cardData) {
+    const source = stripExistingCardMetadataChunks(pngBuffer);
     if (source.length < PNG_IHDR_END_OFFSET || !source.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
         throw new Error('下载图片不是有效的 PNG 文件');
     }
@@ -3369,10 +3416,10 @@ async function buildCardDownloadFile(card) {
     } else {
         const asset = await resolveAvatarAsset(safeAvatarUrl);
         const contentType = String(asset.contentType || '').toLowerCase();
-        if (sharp) {
-            pngBuffer = await sharp(asset.buffer).png().toBuffer();
-        } else if (contentType.includes('png')) {
+        if (contentType.includes('png') && Buffer.from(asset.buffer).subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
             pngBuffer = Buffer.from(asset.buffer);
+        } else if (sharp) {
+            pngBuffer = await sharp(asset.buffer).png().toBuffer();
         } else {
             throw new Error('sharp 不可用，无法转换下载卡图片');
         }
