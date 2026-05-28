@@ -57,6 +57,7 @@ const PERF_LOG_ALL_API = process.env.PERF_LOG_ALL_API !== 'false';
 const PERF_SLOW_REQUEST_MS = Math.max(50, parseInt(process.env.PERF_SLOW_REQUEST_MS || '300', 10) || 300);
 const CARD_UI_SUMMARY_BACKFILL = process.env.CARD_UI_SUMMARY_BACKFILL !== 'false';
 const CARD_DETAIL_PREVIEW_BACKFILL = process.env.CARD_DETAIL_PREVIEW_BACKFILL !== 'false';
+const CARD_DATA_AVATAR_CLEANUP = process.env.CARD_DATA_AVATAR_CLEANUP !== 'false';
 
 if (!JWT_SECRET) {
     throw new Error('[FATAL] JWT_SECRET must be set in production');
@@ -1796,6 +1797,41 @@ function clonePlainObject(value) {
     }
 }
 
+function isEmbeddedAvatarPayload(value) {
+    if (typeof value !== 'string') return false;
+    const normalized = value.trim();
+    if (!normalized) return false;
+    if (/^data:/i.test(normalized)) return true;
+    if (/^(blob|file):/i.test(normalized)) return true;
+    return /\/api\/cards\/[^/?#]+\/(?:avatar|thumbnail|preview-image)(?:[?#].*)?$/i.test(normalized);
+}
+
+function stripEmbeddedAvatarPayloadsFromContent(content) {
+    if (!content || typeof content !== 'object') return false;
+    let changed = false;
+    for (const key of ['avatar', 'avatar_url']) {
+        if (isEmbeddedAvatarPayload(content[key])) {
+            delete content[key];
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+function sanitizeCardDataForStorage(rawData) {
+    const parsed = parseStoredCardData(rawData);
+    if (!parsed || typeof parsed !== 'object') {
+        return { value: parsed ?? rawData ?? null, changed: false };
+    }
+
+    const cloned = clonePlainObject(parsed);
+    const content = cloned.data && typeof cloned.data === 'object' && !Array.isArray(cloned.data)
+        ? cloned.data
+        : cloned;
+    const changed = stripEmbeddedAvatarPayloadsFromContent(content);
+    return { value: cloned, changed };
+}
+
 function getCharacterDisplayName(content = {}) {
     return content.name || content.char_name || 'Character';
 }
@@ -2061,10 +2097,12 @@ function syncCardEditableFieldsIntoData(rawData, updates = {}) {
     if (
         Object.prototype.hasOwnProperty.call(updates, 'avatar_url')
         && updates.avatar_url
-        && (Object.prototype.hasOwnProperty.call(content, 'avatar') || String(updates.avatar_url).startsWith('data:'))
+        && !isEmbeddedAvatarPayload(updates.avatar_url)
+        && Object.prototype.hasOwnProperty.call(content, 'avatar')
     ) {
         content.avatar = String(updates.avatar_url);
     }
+    stripEmbeddedAvatarPayloadsFromContent(content);
 
     return JSON.stringify(cloned);
 }
@@ -2389,6 +2427,94 @@ function scheduleCardDetailPreviewBackfill() {
     };
 
     setTimeout(runNext, 5000);
+}
+
+function updateCardDataAfterAvatarCleanup(row, sanitizedValue) {
+    const dataStr = JSON.stringify(sanitizedValue);
+    const summary = buildCardUiTemplateSummary(dataStr);
+    const detailPreview = buildCardDetailPreviewJson(dataStr, {
+        name: row.name,
+        description: row.description || ''
+    });
+    const dataHash = hashCardData(sanitizedValue);
+    try {
+        db.prepare(
+            `UPDATE character_cards
+             SET data = ?,
+                 data_hash = ?,
+                 detail_preview = ?,
+                 has_ui_templates = ?,
+                 ui_template_count = ?,
+                 ui_template_variable_count = ?
+             WHERE id = ?`
+        ).run(
+            dataStr, dataHash, detailPreview,
+            summary.has_ui_templates, summary.ui_template_count, summary.ui_template_variable_count,
+            row.id
+        );
+    } catch (err) {
+        if (!String(err.message || '').includes('UNIQUE constraint failed')) throw err;
+        db.prepare(
+            `UPDATE character_cards
+             SET data = ?,
+                 data_hash = NULL,
+                 detail_preview = ?,
+                 has_ui_templates = ?,
+                 ui_template_count = ?,
+                 ui_template_variable_count = ?
+             WHERE id = ?`
+        ).run(
+            dataStr, detailPreview,
+            summary.has_ui_templates, summary.ui_template_count, summary.ui_template_variable_count,
+            row.id
+        );
+    }
+}
+
+function scheduleCardDataAvatarCleanup() {
+    if (!CARD_DATA_AVATAR_CLEANUP) return;
+    let processed = 0;
+    let cleaned = 0;
+    let lastId = '';
+    const started = performance.now();
+
+    const runNext = () => {
+        try {
+            const row = db.prepare(
+                `SELECT id, name, description, data
+                 FROM character_cards
+                 WHERE id > ?
+                   AND data LIKE '%"avatar%'
+                   AND (data LIKE '%data:%' OR data LIKE '%/api/cards/%')
+                 ORDER BY id ASC
+                 LIMIT 1`
+            ).get(lastId);
+
+            if (!row) {
+                if (processed > 0) {
+                    console.info(`[CardDataCleanup] complete processed=${processed} cleaned=${cleaned} total=${formatDuration(performance.now() - started)}`);
+                }
+                return;
+            }
+
+            lastId = row.id;
+            processed += 1;
+            const sanitized = sanitizeCardDataForStorage(row.data);
+            if (sanitized.changed && sanitized.value && typeof sanitized.value === 'object') {
+                updateCardDataAfterAvatarCleanup(row, sanitized.value);
+                cleaned += 1;
+                if (cleaned % 50 === 0) {
+                    console.info(`[CardDataCleanup] cleaned ${cleaned} card(s), processed=${processed}`);
+                }
+            }
+        } catch (err) {
+            console.warn('[CardDataCleanup] failed:', err.message);
+        }
+
+        setTimeout(runNext, 25);
+    };
+
+    setTimeout(runNext, 7000);
 }
 
 function sanitizeUiTemplateFileName(fileName) {
@@ -3202,7 +3328,8 @@ function createUiTemplateDownloadToken(templateId, fileName) {
 }
 
 function buildCardMetadataChunk(cardData) {
-    const payload = Buffer.from(JSON.stringify(cardData ?? null), 'utf8').toString('base64');
+    const sanitized = sanitizeCardDataForStorage(cardData).value;
+    const payload = Buffer.from(JSON.stringify(sanitized ?? null), 'utf8').toString('base64');
     const chunkData = Buffer.concat([
         Buffer.from('chara\0', 'latin1'),
         Buffer.from(payload, 'utf8')
@@ -3792,8 +3919,10 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             recordUpload(rateKey);
         }
 
+        const sanitizedCardData = sanitizeCardDataForStorage(data).value;
+
         // Duplicate detection via stable hash of card data (atomic via UNIQUE index)
-        const dataHash = hashCardData(data);
+        const dataHash = hashCardData(sanitizedCardData);
         if (dataHash) {
             const existing = db.prepare('SELECT id, name FROM character_cards WHERE data_hash = ?').get(dataHash);
             if (existing) {
@@ -3803,7 +3932,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         const id = generateId();
         const now = new Date().toISOString();
-        const dataStr = data ? JSON.stringify(data) : null;
+        const dataStr = sanitizedCardData ? JSON.stringify(sanitizedCardData) : null;
         const uiSummary = buildCardUiTemplateSummary(dataStr);
         const detailPreview = buildCardDetailPreviewJson(dataStr, {
             name,
@@ -4004,15 +4133,18 @@ app.put('/api/cards/:id', (req, res) => {
         }
         if (hasDataUpdate) {
             let serializedData;
+            let parsedData;
             try {
                 serializedData = typeof data === 'string' ? data : JSON.stringify(data);
-                JSON.parse(serializedData);
+                parsedData = JSON.parse(serializedData);
             } catch (parseError) {
                 return res.status(400).json({ error: '卡片数据格式无效' });
             }
-            if (decoded.role === 'user' && !hasRpHubWatermark(serializedData)) {
+            if (decoded.role === 'user' && !hasRpHubWatermark(parsedData)) {
                 return res.status(400).json({ error: NON_RPH_CARD_UPLOAD_MESSAGE });
             }
+            const sanitizedData = sanitizeCardDataForStorage(parsedData).value;
+            serializedData = sanitizedData ? JSON.stringify(sanitizedData) : serializedData;
             fields.push('data = ?');
             values.push(serializedData);
             detailPreviewDataSource = serializedData;
@@ -6314,6 +6446,7 @@ logDatabaseHealth();
 cleanupOutdatedImageCaches();
 scheduleCardUiSummaryBackfill();
 scheduleCardDetailPreviewBackfill();
+scheduleCardDataAvatarCleanup();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);
