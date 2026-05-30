@@ -44,7 +44,7 @@ const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_
 const EMAIL_SEND_TIMEOUT_MS = Math.max(5000, parseInt(process.env.EMAIL_SEND_TIMEOUT_MS || '15000', 10) || 15000);
 const EMAIL_SEND_RETRIES = Math.max(0, parseInt(process.env.EMAIL_SEND_RETRIES || '1', 10) || 1);
 const HEAT_EMAIL_STEP = 500;
-const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '8', 10));
+const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '7', 10));
 const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
 const VIEW_HEAT_WEIGHT = 1.0;
 const COMMENT_HEAT_WEIGHT = 2;
@@ -2137,6 +2137,24 @@ function attachCardDetailPreview(card, { keepPreviewColumn = false } = {}) {
     return card;
 }
 
+function sanitizeCharacterCardForClient(card, { viewer = {} } = {}) {
+    if (!card) return card;
+    const result = { ...card };
+    delete result.data;
+    delete result.data_hash;
+    delete result.avatar_url;
+    delete result.detail_preview;
+    delete result.heat_email_milestone;
+    delete result.reviewed_by_admin_id;
+
+    const canSeeModerationMeta = Boolean(viewer.admin || isModeratorUser(viewer.user));
+    if (!canSeeModerationMeta) {
+        delete result.uploader_ip_address;
+    }
+
+    return result;
+}
+
 const NON_RPH_CARD_UPLOAD_MESSAGE = '非本站卡片，多次尝试将被封禁';
 
 function hasRpHubWatermark(data) {
@@ -2668,7 +2686,10 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
              ORDER BY ${orderByClause}`
         ).all(...params);
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
-        const cards = rawCards.map(card => attachUiTemplateSummary(card));
+        const cards = rawCards.map(card => sanitizeCharacterCardForClient(
+            attachUiTemplateSummary(card),
+            { viewer: { admin: req.admin, user: req.user } }
+        ));
         markPerf(req, 'cards-normalize-summary', { rows: cards.length });
         res.json(cards);
         markPerf(req, 'cards-response-json', { rows: cards.length });
@@ -3273,6 +3294,8 @@ async function resolveAvatarAsset(avatarUrl) {
 }
 
 const DOWNLOAD_LINK_TTL_SECONDS = 60;
+const CARD_DOWNLOAD_LINK_TTL_MS = DOWNLOAD_LINK_TTL_SECONDS * 1000;
+const cardDownloadLinks = new Map(); // jti -> { cardId, ip, expiresAt }
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_IHDR_END_OFFSET = 33;
 const crc32Table = new Uint32Array(256);
@@ -3311,9 +3334,25 @@ function createAttachmentDisposition(filename) {
     return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
-function createCardDownloadToken(cardId, fileName) {
+function cleanupExpiredCardDownloadLinks() {
+    const now = Date.now();
+    for (const [jti, record] of cardDownloadLinks) {
+        if (!record || record.expiresAt <= now) {
+            cardDownloadLinks.delete(jti);
+        }
+    }
+}
+
+function createCardDownloadToken(cardId, fileName, req) {
+    cleanupExpiredCardDownloadLinks();
+    const jti = crypto.randomUUID();
+    cardDownloadLinks.set(jti, {
+        cardId: String(cardId),
+        ip: getRequestIp(req),
+        expiresAt: Date.now() + CARD_DOWNLOAD_LINK_TTL_MS
+    });
     return jwt.sign(
-        { role: 'card-download', cardId, fileName },
+        { role: 'card-download', cardId, fileName, jti },
         JWT_SECRET,
         { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
     );
@@ -3326,6 +3365,8 @@ function createUiTemplateDownloadToken(templateId, fileName) {
         { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
     );
 }
+
+setInterval(cleanupExpiredCardDownloadLinks, 5 * 60 * 1000);
 
 function buildCardMetadataChunk(cardData) {
     const sanitized = sanitizeCardDataForStorage(cardData).value;
@@ -3693,11 +3734,11 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
             }
 
             if (!sharp) {
-                const asset = await resolveAvatarAsset(safeAvatarUrl);
+                const svg = buildPlaceholderSvg(row.name, cardId, 800, 1067, 320);
                 return {
-                    body: asset.buffer,
-                    contentType: asset.contentType,
-                    cacheControl: asset.cacheControl
+                    body: Buffer.from(svg),
+                    contentType: 'image/svg+xml',
+                    cacheControl: 'public, max-age=86400'
                 };
             }
 
@@ -3817,11 +3858,11 @@ app.get('/api/cards/:id/preview-image', async (req, res) => {
             }
 
             if (!sharp) {
-                const asset = await resolveAvatarAsset(safeAvatarUrl);
+                const svg = buildPlaceholderSvg(row.name, cardId, 800, 1067, 320);
                 return {
-                    body: asset.buffer,
-                    contentType: asset.contentType,
-                    cacheControl: asset.cacheControl
+                    body: Buffer.from(svg),
+                    contentType: 'image/svg+xml',
+                    cacheControl: 'public, max-age=86400'
                 };
             }
 
@@ -3889,7 +3930,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
     try {
         markPerf(req, 'card-detail-start', { id: req.params.id });
         const card = db.prepare(
-            `SELECT cc.id, cc.name, cc.description, cc.avatar_url, cc.detail_preview,
+            `SELECT cc.id, cc.name, cc.description, cc.detail_preview,
                     cc.has_ui_templates, cc.ui_template_count, cc.ui_template_variable_count,
                     cc.creator_notes, cc.downloads_count, cc.comment_count_override,
                     cc.uploader_user_id, cc.review_status, cc.reviewed_by_admin_id,
@@ -3929,7 +3970,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
         markPerf(req, 'card-detail-preview-attached');
         attachUiTemplateSummary(card, { preferStoredSummary: true });
         markPerf(req, 'card-detail-summary');
-        res.json(card);
+        res.json(sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }));
         markPerf(req, 'card-detail-response-json');
     } catch (err) {
         console.error('Fetch card detail error:', err);
@@ -4047,7 +4088,10 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             });
         }
 
-        res.json([card, { pending_review: reviewStatus === 'pending' }]);
+        res.json([
+            sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }),
+            { pending_review: reviewStatus === 'pending' }
+        ]);
     } catch (err) {
         console.error('Create card error:', err);
         res.status(500).json({ error: '创建卡片失败' });
@@ -4250,7 +4294,7 @@ app.put('/api/cards/:id', (req, res) => {
         const updated = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
         attachCardDetailPreview(updated);
         attachUiTemplateSummary(updated, { preferStoredSummary: true });
-        res.json([updated]);
+        res.json([sanitizeCharacterCardForClient(updated, { viewer: { admin: req.admin, user: req.user } })]);
     } catch (err) {
         if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
             return res.status(401).json({ error: '令牌无效或已过期' });
@@ -4474,7 +4518,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
         const fileName = sanitizeDownloadFilename(card.name);
-        const downloadToken = createCardDownloadToken(id, fileName);
+        const downloadToken = createCardDownloadToken(id, fileName, req);
         res.json({
             success: true,
             new_credits: newCredits,
@@ -4502,6 +4546,15 @@ app.get('/api/cards/:id/download/file', async (req, res) => {
         if (decoded.role !== 'card-download' || decoded.cardId !== req.params.id) {
             return res.status(403).json({ error: '下载链接无效或已过期' });
         }
+        const linkRecord = decoded.jti ? cardDownloadLinks.get(decoded.jti) : null;
+        if (!linkRecord || linkRecord.cardId !== String(req.params.id) || linkRecord.expiresAt <= Date.now()) {
+            if (decoded.jti) cardDownloadLinks.delete(decoded.jti);
+            return res.status(401).json({ error: '下载链接无效或已过期' });
+        }
+        if (linkRecord.ip && linkRecord.ip !== getRequestIp(req)) {
+            return res.status(403).json({ error: '下载链接无效或已过期' });
+        }
+        cardDownloadLinks.delete(decoded.jti);
 
         const card = db.prepare('SELECT id, name, avatar_url, data FROM character_cards WHERE id = ?').get(req.params.id);
         if (!card) {
@@ -5291,7 +5344,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
 
         clearCardImageCaches(id);
         const updated = db.prepare(
-            'SELECT id, name, description, creator_notes, data, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at FROM character_cards WHERE id = ?'
+            'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at, updated_at FROM character_cards WHERE id = ?'
         ).get(id);
         attachUiTemplateSummary(updated);
 
@@ -5317,8 +5370,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
                 reason: status === 'rejected' ? reason : ''
             });
         }
-
-        res.json({ success: true, card: updated });
+        res.json({ success: true, card: sanitizeCharacterCardForClient(updated, { viewer: { admin: req.admin, user: req.user } }) });
     } catch (err) {
         console.error('Admin review card error:', err);
         res.status(500).json({ error: '审核失败' });
@@ -5696,6 +5748,7 @@ const PUBLIC_SETTINGS_KEYS = new Set([
     'tag_library',
     'hidden_popular_tags',
     'hidden_tag_library',
+    'announcement_title',
     'announcement_content',
     'announcement_enabled',
     'announcement_version'
@@ -5726,7 +5779,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
     'allow_anonymous_comment', 'max_upload_size_mb',
     'popular_tags', 'tag_library',
     'hidden_popular_tags', 'hidden_tag_library',
-    'announcement_content', 'announcement_enabled', 'announcement_version'
+    'announcement_title', 'announcement_content', 'announcement_enabled', 'announcement_version'
 ]);
 
 const TAG_SETTING_KEYS = new Set([
@@ -5739,6 +5792,8 @@ const TAG_SETTING_KEYS = new Set([
 const MAX_TAG_SETTING_LENGTH = 5000;
 const MAX_TAG_COUNT = 300;
 const MAX_TAG_LENGTH = 40;
+const MAX_ANNOUNCEMENT_TITLE_LENGTH = 80;
+const MAX_ANNOUNCEMENT_CONTENT_LENGTH = 5000;
 
 function parseTagSettingValue(value) {
     return String(value || '')
@@ -5774,25 +5829,42 @@ app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
                 return res.status(400).json({ error });
             }
         }
+        if (Object.prototype.hasOwnProperty.call(updates, 'announcement_title')
+            && String(updates.announcement_title || '').length > MAX_ANNOUNCEMENT_TITLE_LENGTH) {
+            return res.status(400).json({ error: `公告标题最多 ${MAX_ANNOUNCEMENT_TITLE_LENGTH} 个字` });
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'announcement_content')
+            && String(updates.announcement_content || '').length > MAX_ANNOUNCEMENT_CONTENT_LENGTH) {
+            return res.status(400).json({ error: `公告内容最多 ${MAX_ANNOUNCEMENT_CONTENT_LENGTH} 个字` });
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'announcement_enabled')) {
+            updates.announcement_enabled = updates.announcement_enabled === true || String(updates.announcement_enabled) === 'true' ? 'true' : 'false';
+        }
         const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
         const now = new Date().toISOString();
         for (const [key, value] of Object.entries(updates)) {
             if (!ALLOWED_SETTINGS_KEYS.has(key)) continue;
             stmt.run(key, String(value), now);
         }
+        const hasAnnouncementUpdate = Object.prototype.hasOwnProperty.call(updates, 'announcement_title')
+            || Object.prototype.hasOwnProperty.call(updates, 'announcement_content')
+            || Object.prototype.hasOwnProperty.call(updates, 'announcement_enabled')
+            || Object.prototype.hasOwnProperty.call(updates, 'announcement_version');
         logOperation({
             userType: 'admin',
             userId: req.admin.id,
             username: req.admin.username,
-            action: 'admin_update_tag_settings',
+            action: hasAnnouncementUpdate ? 'admin_update_announcement' : 'admin_update_tag_settings',
             targetType: 'settings',
-            targetId: 'tag-management',
+            targetId: hasAnnouncementUpdate ? 'announcement' : 'tag-management',
             ip: getRequestIp(req),
             details: {
                 popular_tags_count: parseTagSettingValue(updates.popular_tags).length,
                 tag_library_count: parseTagSettingValue(updates.tag_library).length,
                 hidden_popular_tags_count: parseTagSettingValue(updates.hidden_popular_tags).length,
-                hidden_tag_library_count: parseTagSettingValue(updates.hidden_tag_library).length
+                hidden_tag_library_count: parseTagSettingValue(updates.hidden_tag_library).length,
+                announcement_enabled: updates.announcement_enabled,
+                announcement_version: updates.announcement_version || ''
             }
         });
         res.json({ success: true });

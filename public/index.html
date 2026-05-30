@@ -255,6 +255,71 @@
         .prose h2 { font-size: 1.25em; }
         .prose h3 { font-size: 1.125em; }
 
+        .announcement-markdown {
+            color: #374151;
+        }
+        .announcement-markdown > *:first-child {
+            margin-top: 0;
+        }
+        .announcement-markdown > *:last-child {
+            margin-bottom: 0;
+        }
+        .announcement-markdown p {
+            margin: 0.85em 0;
+        }
+        .announcement-markdown strong {
+            color: #111827;
+            font-weight: 800;
+        }
+        .announcement-markdown ul,
+        .announcement-markdown ol {
+            margin: 0.9em 0;
+            padding-left: 1.35em;
+        }
+        .announcement-markdown ul {
+            list-style: disc;
+        }
+        .announcement-markdown ol {
+            list-style: decimal;
+        }
+        .announcement-markdown li {
+            margin: 0.35em 0;
+        }
+        .announcement-markdown blockquote {
+            margin: 1em 0;
+            border-left: 4px solid #bfdbfe;
+            background: #eff6ff;
+            color: #1f2937;
+            padding: 0.7em 1em;
+            border-radius: 0 0.8rem 0.8rem 0;
+        }
+        .announcement-markdown code {
+            background: #f3f4f6;
+            border-radius: 0.45rem;
+            color: #111827;
+            font-size: 0.92em;
+            padding: 0.12em 0.35em;
+        }
+        .announcement-markdown pre {
+            background: #111827;
+            border-radius: 1rem;
+            color: #f9fafb;
+            margin: 1em 0;
+            overflow-x: auto;
+            padding: 1em;
+        }
+        .announcement-markdown pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+        .announcement-markdown a {
+            color: #2563eb;
+            font-weight: 700;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
         /* HTML Card Container Styles */
         .html-card-container {
             width: 100%;
@@ -1993,6 +2058,27 @@
             </div>
         </div>
 
+        <!-- Site Announcement Modal -->
+        <div v-if="showAnnouncementModal" class="fixed inset-0 z-[130] flex items-center justify-center bg-gray-900/70 backdrop-blur-md p-4 animate-fade-in">
+            <div class="w-full max-w-2xl overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-black/5 animate-scale-in">
+                <div class="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 sm:px-7 sm:py-5">
+                    <div class="min-w-0">
+                        <div class="mb-2 inline-flex items-center rounded-full bg-primary-50 px-3 py-1 text-xs font-black text-primary-600">公告</div>
+                        <h3 class="min-w-0 break-words text-2xl font-black leading-snug text-gray-900 sm:text-3xl">{{ announcement.title || '网站公告' }}</h3>
+                    </div>
+                </div>
+                <div class="px-5 py-5 sm:px-7 sm:py-6">
+                    <div class="max-h-[56vh] overflow-y-auto pr-1 text-base leading-8 text-gray-700 sm:text-lg announcement-markdown" v-html="renderAnnouncementMarkdown(announcement.content)"></div>
+                    <div class="mt-6 flex justify-end">
+                        <button @click="closeAnnouncement" :disabled="announcementConfirmCountdown > 0"
+                                class="min-w-32 rounded-2xl bg-primary-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-primary-100 transition-all hover:bg-primary-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none sm:text-base">
+                            {{ announcementConfirmCountdown > 0 ? '我知道了 ' + announcementConfirmCountdown + 's' : '我知道了' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -2036,6 +2122,18 @@
                 const configuredTagLibrary = ref([]);
                 const hiddenPopularTags = ref([]);
                 const hiddenTagLibrary = ref([]);
+                const ANNOUNCEMENT_SEEN_KEY = 'rph_announcement_seen_version';
+                const announcement = reactive({
+                    enabled: false,
+                    title: '网站公告',
+                    content: '',
+                    version: ''
+                });
+                const showAnnouncementModal = ref(false);
+                const announcementConfirmCountdown = ref(0);
+                let announcementPollTimer = null;
+                let announcementConfirmTimer = null;
+                let announcementCountdownVersion = '';
                 const downloadCredits = computed(() => currentUser.value ? currentUser.value.download_credits : parseInt(safeStorage.getItem('download_credits') || '0'));
                 const showUploadModal = ref(false);
                 const showSearchModal = ref(false);
@@ -2230,7 +2328,7 @@
                     redeemed_cookies: 0,
                     available_cookies: 0,
                     available_quota: 0,
-                    heat_per_cookie: 8,
+                    heat_per_cookie: 7,
                     quota_per_cookie: 50000,
                     min_redeem_cookies: 1,
                     newapi_configured: false
@@ -2811,11 +2909,67 @@
                     return [...new Set(raw.split(/[\n,，]/).map(item => item.trim()).filter(Boolean))];
                 };
 
+                const clearAnnouncementConfirmDelay = () => {
+                    if (announcementConfirmTimer) {
+                        clearInterval(announcementConfirmTimer);
+                        announcementConfirmTimer = null;
+                    }
+                    announcementConfirmCountdown.value = 0;
+                    announcementCountdownVersion = '';
+                };
+
+                const startAnnouncementConfirmDelay = (version) => {
+                    if (announcementConfirmTimer) clearInterval(announcementConfirmTimer);
+                    announcementCountdownVersion = version || '';
+                    announcementConfirmCountdown.value = 3;
+                    announcementConfirmTimer = setInterval(() => {
+                        announcementConfirmCountdown.value = Math.max(0, announcementConfirmCountdown.value - 1);
+                        if (announcementConfirmCountdown.value <= 0) {
+                            clearInterval(announcementConfirmTimer);
+                            announcementConfirmTimer = null;
+                        }
+                    }, 1000);
+                };
+
+                const applyAnnouncementSettings = (settings = {}) => {
+                    const enabled = String(settings.announcement_enabled || 'false') === 'true';
+                    const title = String(settings.announcement_title || '').trim() || '网站公告';
+                    const content = String(settings.announcement_content || '').trim();
+                    const version = String(settings.announcement_version || '').trim();
+                    announcement.enabled = enabled;
+                    announcement.title = title;
+                    announcement.content = content;
+                    announcement.version = version;
+
+                    if (!enabled || !content || !version) {
+                        showAnnouncementModal.value = false;
+                        clearAnnouncementConfirmDelay();
+                        return;
+                    }
+
+                    if (safeStorage.getItem(ANNOUNCEMENT_SEEN_KEY) !== version) {
+                        if (!showAnnouncementModal.value || announcementCountdownVersion !== version) {
+                            startAnnouncementConfirmDelay(version);
+                        }
+                        showAnnouncementModal.value = true;
+                    }
+                };
+
+                const closeAnnouncement = () => {
+                    if (announcementConfirmCountdown.value > 0) return;
+                    if (announcement.version) {
+                        safeStorage.setItem(ANNOUNCEMENT_SEEN_KEY, announcement.version);
+                    }
+                    showAnnouncementModal.value = false;
+                    clearAnnouncementConfirmDelay();
+                };
+
                 const applyPublicSettings = (settings) => {
                     configuredPopularTags.value = parseTagSetting(settings.popular_tags);
                     configuredTagLibrary.value = parseTagSetting(settings.tag_library);
                     hiddenPopularTags.value = parseTagSetting(settings.hidden_popular_tags);
                     hiddenTagLibrary.value = parseTagSetting(settings.hidden_tag_library);
+                    applyAnnouncementSettings(settings || {});
                 };
 
                 const loadPublicSettings = async () => {
@@ -5238,6 +5392,29 @@
                     return html;
                 };
 
+                const renderAnnouncementMarkdown = (text) => {
+                    const source = String(text || '').trim();
+                    if (!source) return '';
+                    const cleanConfig = {
+                        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'hr', 'span'],
+                        ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+                        FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+                        FORBID_ATTR: ['style', 'onclick', 'onerror', 'onload']
+                    };
+                    const html = DOMPurify.sanitize(marked.parse(source), cleanConfig);
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        doc.querySelectorAll('a').forEach(link => {
+                            link.setAttribute('target', '_blank');
+                            link.setAttribute('rel', 'noopener noreferrer');
+                        });
+                        return doc.body.innerHTML;
+                    } catch {
+                        return html;
+                    }
+                };
+
                 const renderCardPreview = (text) => {
                     if (!text) return '暂无描述';
                     const trimmed = String(text).trim();
@@ -5582,6 +5759,7 @@
                     checkUserToken();
                     trackVisit();
                     fetchVisits();
+                    announcementPollTimer = setInterval(loadPublicSettings, 30000);
                     window.addEventListener('resize', handleWindowResize);
                     window.addEventListener('focus', handleWindowFocus);
                     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -5594,6 +5772,11 @@
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
                     window.removeEventListener('message', handleWindowMessage);
+                    if (announcementPollTimer) {
+                        clearInterval(announcementPollTimer);
+                        announcementPollTimer = null;
+                    }
+                    clearAnnouncementConfirmDelay();
                     for (const timer of cooldownTimers.values()) clearInterval(timer);
                     cooldownTimers.clear();
                 });
@@ -5611,7 +5794,7 @@
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
                     formatTemplateVariableBadge, formatCardUiVariableBadge,
                     handleMobileScroll,
-                    isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderCardPreview, renderUiTemplatePreview,
+                    isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderAnnouncementMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
                     comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
@@ -5620,6 +5803,7 @@
                     previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi, selectedCardDetailLoading, selectedCardDetailError,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
+                    announcement, showAnnouncementModal, announcementConfirmCountdown, closeAnnouncement,
                     authTitle, authSubtitle, emailCodeSending, emailCodeCooldown, emailCodeMessage,
                     handleUserAuth, handleUserLogout, sendAuthEmailCode,
                     showEmailBindModal, bindEmailForm, bindEmailError, bindEmailMessage, bindEmailSending, bindEmailCooldown, sendBindEmailCode, handleBindEmail,

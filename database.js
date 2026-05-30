@@ -514,7 +514,11 @@ function initDatabase() {
         tag_library: '',
         hidden_popular_tags: '',
         hidden_tag_library: '',
-        comment_email_block_words: '已严肃\n严肃\n12345'
+        comment_email_block_words: '已严肃\n严肃\n12345',
+        announcement_enabled: 'false',
+        announcement_title: '网站公告',
+        announcement_content: '',
+        announcement_version: ''
     };
     const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [key, value] of Object.entries(defaultSettings)) {
