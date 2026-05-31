@@ -4132,6 +4132,32 @@
                     return quoted ? quoted[1] : fallback;
                 };
 
+                const triggerDirectDownload = (url, fallbackName) => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    if (fallbackName) a.download = fallbackName;
+                    a.rel = 'noopener';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                };
+
+                const fetchAndSaveDownload = async (url, headers, fallbackName) => {
+                    const resp = await fetch(API_BASE + url, { headers });
+                    if (!resp.ok) {
+                        const data = await resp.json().catch(() => ({}));
+                        throw new Error(data.error || '下载文件失败');
+                    }
+                    const blob = await resp.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+                    try {
+                        triggerDirectDownload(objectUrl, getDownloadFileName(resp.headers.get('Content-Disposition'), fallbackName));
+                    } finally {
+                        setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+                    }
+                };
+
                 const downloadTemplate = async (template) => {
                     if (!template) return;
                     try {
@@ -4149,14 +4175,13 @@
                         if (!data.download_url) {
                             throw new Error('下载链接生成失败');
                         }
-                        const a = document.createElement('a');
-                        a.href = data.download_url;
-                        a.download = template.file_name || `${template.title || 'ui-template'}.ui`;
-                        a.rel = 'noopener';
-                        a.style.display = 'none';
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
+                        const fallbackName = template.file_name || `${template.title || 'ui-template'}.ui`;
+                        const needsAuthDownload = isAdmin.value || canModerate.value || isTemplateOwnedByCurrentUser(template) || String(template.review_status || 'approved') !== 'approved';
+                        if (needsAuthDownload) {
+                            await fetchAndSaveDownload(data.download_url, headers, fallbackName);
+                        } else {
+                            triggerDirectDownload(data.download_url, fallbackName);
+                        }
 
                         const shouldIncrementVisibleCount = !isAdmin.value && !isTemplateOwnedByCurrentUser(template) && canViewTemplateDownloads(template);
                         if (shouldIncrementVisibleCount) {
@@ -5488,13 +5513,13 @@
                             throw new Error('下载链接生成失败');
                         }
 
-                        const a = document.createElement('a');
-                        a.href = data.download_url;
-                        a.rel = 'noopener';
-                        a.style.display = 'none';
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
+                        const fallbackName = `${card.name || 'character-card'}.png`;
+                        const needsAuthDownload = isAdmin.value || canModerate.value || isCardOwnedByCurrentUser(card) || String(card.review_status || 'approved') !== 'approved';
+                        if (needsAuthDownload) {
+                            await fetchAndSaveDownload(data.download_url, headers, fallbackName);
+                        } else {
+                            triggerDirectDownload(data.download_url, fallbackName);
+                        }
                         showToast('下载已开始', 'success');
                     } catch (err) {
                         console.error('Download error:', err);

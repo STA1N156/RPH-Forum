@@ -3129,11 +3129,15 @@ app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
     }
 });
 
-app.get('/api/ui-templates/:id/download/file', (req, res) => {
+app.get('/api/ui-templates/:id/download/file', optionalUserAuth, (req, res) => {
     try {
-        const template = db.prepare('SELECT id, title, file_name, mime_type, content, review_status FROM ui_templates WHERE id = ?').get(req.params.id);
+        const template = db.prepare('SELECT id, title, file_name, mime_type, content, review_status, uploader_user_id FROM ui_templates WHERE id = ?').get(req.params.id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
-        if (template.review_status !== 'approved') {
+        const canView = template.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
+            || (req.user && template.uploader_user_id === req.user.id);
+        if (!canView) {
             return res.status(404).json({ error: '模板不存在' });
         }
 
@@ -4501,13 +4505,17 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
     }
 });
 
-app.get('/api/cards/:id/download/file', async (req, res) => {
+app.get('/api/cards/:id/download/file', optionalUserAuth, async (req, res) => {
     try {
-        const card = db.prepare('SELECT id, name, avatar_url, data, review_status FROM character_cards WHERE id = ?').get(req.params.id);
+        const card = db.prepare('SELECT id, name, avatar_url, data, review_status, uploader_user_id FROM character_cards WHERE id = ?').get(req.params.id);
         if (!card) {
             return res.status(404).json({ error: '卡片不存在' });
         }
-        if (card.review_status !== 'approved') {
+        const canView = card.review_status === 'approved'
+            || (req.admin && req.admin.id)
+            || isModeratorUser(req.user)
+            || (req.user && card.uploader_user_id === req.user.id);
+        if (!canView) {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
