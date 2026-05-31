@@ -55,6 +55,7 @@ const NEWAPI_USER_STATUS_ENABLED = 1;
 const DEFAULT_COMMENT_EMAIL_BLOCK_WORDS = ['已严肃', '严肃', '12345'];
 const PERF_LOG_ALL_API = process.env.PERF_LOG_ALL_API !== 'false';
 const PERF_SLOW_REQUEST_MS = Math.max(50, parseInt(process.env.PERF_SLOW_REQUEST_MS || '300', 10) || 300);
+const DB_HEALTH_QUICK_CHECK = process.env.DB_HEALTH_QUICK_CHECK === 'true';
 const CARD_UI_SUMMARY_BACKFILL = process.env.CARD_UI_SUMMARY_BACKFILL !== 'false';
 const CARD_DETAIL_PREVIEW_BACKFILL = process.env.CARD_DETAIL_PREVIEW_BACKFILL !== 'false';
 const CARD_DATA_AVATAR_CLEANUP = process.env.CARD_DATA_AVATAR_CLEANUP !== 'false';
@@ -3118,11 +3119,9 @@ app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
             ip: getRequestIp(req)
         });
 
-        const fileName = sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
-        const downloadToken = createUiTemplateDownloadToken(req.params.id, fileName);
         res.json({
             success: true,
-            download_url: `/api/ui-templates/${req.params.id}/download/file?token=${encodeURIComponent(downloadToken)}`
+            download_url: `/api/ui-templates/${encodeURIComponent(req.params.id)}/download/file`
         });
     } catch (err) {
         console.error('Prepare UI template download error:', err);
@@ -3132,30 +3131,18 @@ app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
 
 app.get('/api/ui-templates/:id/download/file', (req, res) => {
     try {
-        const token = typeof req.query.token === 'string' ? req.query.token : '';
-        if (!token) {
-            return res.status(401).json({ error: '下载链接无效或已过期' });
-        }
-
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'ui-template-download' || decoded.templateId !== req.params.id) {
-            return res.status(403).json({ error: '下载链接无效或已过期' });
-        }
-
-        const template = db.prepare('SELECT id, title, file_name, mime_type, content FROM ui_templates WHERE id = ?').get(req.params.id);
+        const template = db.prepare('SELECT id, title, file_name, mime_type, content, review_status FROM ui_templates WHERE id = ?').get(req.params.id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
+        if (template.review_status !== 'approved') {
+            return res.status(404).json({ error: '模板不存在' });
+        }
 
-        const fileName = typeof decoded.fileName === 'string' && decoded.fileName.trim()
-            ? sanitizeUiTemplateFileName(decoded.fileName)
-            : sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
+        const fileName = sanitizeUiTemplateFileName(template.file_name || `${template.title}.ui`);
         res.set('Content-Type', template.mime_type || 'text/plain; charset=utf-8');
         res.set('Cache-Control', 'no-store');
         res.set('Content-Disposition', createAttachmentDisposition(fileName));
         res.send(template.content);
     } catch (err) {
-        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-            return res.status(401).json({ error: '下载链接无效或已过期' });
-        }
         console.error('Download UI template file error:', err);
         res.status(500).json({ error: '下载模板失败' });
     }
@@ -3293,9 +3280,6 @@ async function resolveAvatarAsset(avatarUrl) {
     return fetchRemoteAvatarAsset(avatarUrl);
 }
 
-const DOWNLOAD_LINK_TTL_SECONDS = 60;
-const CARD_DOWNLOAD_LINK_TTL_MS = DOWNLOAD_LINK_TTL_SECONDS * 1000;
-const cardDownloadLinks = new Map(); // jti -> { cardId, ip, expiresAt }
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_IHDR_END_OFFSET = 33;
 const crc32Table = new Uint32Array(256);
@@ -3333,40 +3317,6 @@ function createAttachmentDisposition(filename) {
         .replace(/["]/g, '_') || 'character-card.png';
     return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
-
-function cleanupExpiredCardDownloadLinks() {
-    const now = Date.now();
-    for (const [jti, record] of cardDownloadLinks) {
-        if (!record || record.expiresAt <= now) {
-            cardDownloadLinks.delete(jti);
-        }
-    }
-}
-
-function createCardDownloadToken(cardId, fileName, req) {
-    cleanupExpiredCardDownloadLinks();
-    const jti = crypto.randomUUID();
-    cardDownloadLinks.set(jti, {
-        cardId: String(cardId),
-        ip: getRequestIp(req),
-        expiresAt: Date.now() + CARD_DOWNLOAD_LINK_TTL_MS
-    });
-    return jwt.sign(
-        { role: 'card-download', cardId, fileName, jti },
-        JWT_SECRET,
-        { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
-    );
-}
-
-function createUiTemplateDownloadToken(templateId, fileName) {
-    return jwt.sign(
-        { role: 'ui-template-download', templateId, fileName },
-        JWT_SECRET,
-        { expiresIn: `${DOWNLOAD_LINK_TTL_SECONDS}s` }
-    );
-}
-
-setInterval(cleanupExpiredCardDownloadLinks, 5 * 60 * 1000);
 
 function buildCardMetadataChunk(cardData) {
     const sanitized = sanitizeCardDataForStorage(cardData).value;
@@ -3534,14 +3484,32 @@ function ensureImageCacheVersion(cacheDir, version, label) {
         const currentVersion = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf8').trim() : '';
         if (currentVersion === version) return;
 
-        let removed = 0;
-        for (const entry of fs.readdirSync(cacheDir, { withFileTypes: true })) {
-            if (entry.name === '.cache-version') continue;
-            fs.rmSync(path.join(cacheDir, entry.name), { recursive: true, force: true });
-            removed += 1;
-        }
         fs.writeFileSync(markerPath, version);
-        console.info(`[ImageCache] ${label} cache version ${currentVersion || 'none'} -> ${version}, removed=${removed}`);
+        console.info(`[ImageCache] ${label} cache version ${currentVersion || 'none'} -> ${version}, cleanup scheduled`);
+
+        fs.promises.readdir(cacheDir, { withFileTypes: true })
+            .then((entries) => {
+                const targets = entries.filter(entry => entry.name !== '.cache-version');
+                let index = 0;
+                let removed = 0;
+                const removeNextBatch = () => {
+                    const batch = targets.slice(index, index + 25);
+                    index += batch.length;
+                    Promise.all(batch.map(entry => (
+                        fs.promises.rm(path.join(cacheDir, entry.name), { recursive: true, force: true })
+                            .then(() => { removed += 1; })
+                            .catch(() => {})
+                    ))).finally(() => {
+                        if (index < targets.length) {
+                            setTimeout(removeNextBatch, 20);
+                        } else {
+                            console.info(`[ImageCache] ${label} old cache cleanup complete removed=${removed}`);
+                        }
+                    });
+                };
+                removeNextBatch();
+            })
+            .catch((err) => console.warn(`[ImageCache] failed to list ${label} cache for cleanup:`, err.message));
     } catch (err) {
         console.warn(`[ImageCache] failed to prepare ${label} cache:`, err.message);
     }
@@ -4517,14 +4485,12 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         if (downloadCounted) maybeSendCardHeatMilestoneEmail(id, req);
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
-        const fileName = sanitizeDownloadFilename(card.name);
-        const downloadToken = createCardDownloadToken(id, fileName, req);
         res.json({
             success: true,
             new_credits: newCredits,
             download_counted: downloadCounted,
             downloads_count: latestDownloads,
-            download_url: `/api/cards/${id}/download/file?token=${encodeURIComponent(downloadToken)}`
+            download_url: `/api/cards/${encodeURIComponent(id)}/download/file`
         });
     } catch (err) {
         if (err.statusCode) {
@@ -4537,27 +4503,11 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
 
 app.get('/api/cards/:id/download/file', async (req, res) => {
     try {
-        const token = typeof req.query.token === 'string' ? req.query.token : '';
-        if (!token) {
-            return res.status(401).json({ error: '下载链接无效或已过期' });
-        }
-
-        const decoded = jwt.verify(token, JWT_SECRET);
-        if (decoded.role !== 'card-download' || decoded.cardId !== req.params.id) {
-            return res.status(403).json({ error: '下载链接无效或已过期' });
-        }
-        const linkRecord = decoded.jti ? cardDownloadLinks.get(decoded.jti) : null;
-        if (!linkRecord || linkRecord.cardId !== String(req.params.id) || linkRecord.expiresAt <= Date.now()) {
-            if (decoded.jti) cardDownloadLinks.delete(decoded.jti);
-            return res.status(401).json({ error: '下载链接无效或已过期' });
-        }
-        if (linkRecord.ip && linkRecord.ip !== getRequestIp(req)) {
-            return res.status(403).json({ error: '下载链接无效或已过期' });
-        }
-        cardDownloadLinks.delete(decoded.jti);
-
-        const card = db.prepare('SELECT id, name, avatar_url, data FROM character_cards WHERE id = ?').get(req.params.id);
+        const card = db.prepare('SELECT id, name, avatar_url, data, review_status FROM character_cards WHERE id = ?').get(req.params.id);
         if (!card) {
+            return res.status(404).json({ error: '卡片不存在' });
+        }
+        if (card.review_status !== 'approved') {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
@@ -4568,17 +4518,12 @@ app.get('/api/cards/:id/download/file', async (req, res) => {
         }
 
         const fileBuffer = await buildCardDownloadFile(card);
-        const fileName = typeof decoded.fileName === 'string' && decoded.fileName.trim()
-            ? sanitizeDownloadFilename(decoded.fileName)
-            : sanitizeDownloadFilename(card.name);
+        const fileName = sanitizeDownloadFilename(card.name);
         res.set('Content-Type', 'image/png');
         res.set('Cache-Control', 'no-store');
         res.set('Content-Disposition', createAttachmentDisposition(fileName));
         res.send(fileBuffer);
     } catch (err) {
-        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-            return res.status(401).json({ error: '下载链接无效或已过期' });
-        }
         console.error('Download file error:', err);
         res.status(500).json({ error: '生成下载文件失败' });
     }
@@ -6546,26 +6491,24 @@ function logDatabaseHealth() {
         }
     }
 
-    let quickCheck = 'skipped';
-    const quickStart = performance.now();
-    try {
-        const row = db.prepare('PRAGMA quick_check').get();
-        quickCheck = row ? Object.values(row)[0] : 'empty';
-    } catch (err) {
-        quickCheck = `ERR:${err.message}`;
+    let quickCheck = DB_HEALTH_QUICK_CHECK ? 'pending' : 'disabled';
+    let quickMs = 0;
+    if (DB_HEALTH_QUICK_CHECK) {
+        const quickStart = performance.now();
+        try {
+            const row = db.prepare('PRAGMA quick_check').get();
+            quickCheck = row ? Object.values(row)[0] : 'empty';
+        } catch (err) {
+            quickCheck = `ERR:${err.message}`;
+        }
+        quickMs = performance.now() - quickStart;
     }
-    const quickMs = performance.now() - quickStart;
 
     console.info(`[DB] health total=${formatDuration(performance.now() - started)} dbSize=${getFileSizeSafe(dbPath)} walSize=${getFileSizeSafe(`${dbPath}-wal`)} shmSize=${getFileSizeSafe(`${dbPath}-shm`)} quickCheck=${quickCheck} quickCheckTime=${formatDuration(quickMs)} counts=${JSON.stringify(counts)} countTimes=${JSON.stringify(tableTimings)}`);
 }
 
 // ============== Initialize & Start ==============
 initDatabase();
-logDatabaseHealth();
-cleanupOutdatedImageCaches();
-scheduleCardUiSummaryBackfill();
-scheduleCardDetailPreviewBackfill();
-scheduleCardDataAvatarCleanup();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);
@@ -6575,6 +6518,13 @@ setInterval(cleanupOldLogs, 24 * 60 * 60 * 1000);
 const server = app.listen(PORT, HOST, () => {
     console.log(`[Server] RP Forum running at http://${HOST}:${PORT}`);
     console.log(`[Server] Admin panel at http://${HOST}:${PORT}/admin`);
+    setTimeout(() => {
+        logDatabaseHealth();
+        cleanupOutdatedImageCaches();
+        scheduleCardUiSummaryBackfill();
+        scheduleCardDetailPreviewBackfill();
+        scheduleCardDataAvatarCleanup();
+    }, 1000);
 });
 
 // Graceful shutdown for Docker
