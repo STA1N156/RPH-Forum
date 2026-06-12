@@ -1026,6 +1026,15 @@ function sendReviewResultEmail({ to, username, itemType, title, status, reason }
     });
 }
 
+function sendFeaturedNotificationEmail({ to, username, itemType, title }) {
+    sendZeaburEmailQuietly({
+        to,
+        subject: `恭喜，你的${itemType}被设为精选`,
+        html: `<p>${escapeHtml(username || '你好')}，恭喜！你的${escapeHtml(itemType)}「${escapeHtml(title)}」已经被设为精选。</p><p>它会获得更多展示机会，感谢你的优质创作。</p>`,
+        text: `${username || '你好'}，恭喜！你的${itemType}「${title}」已经被设为精选。\n它会获得更多展示机会，感谢你的优质创作。`
+    });
+}
+
 function sendAdminReviewPendingEmail({ itemType, title, uploader, ip }) {
     const recipients = getAdminNotificationEmails();
     if (recipients.length === 0) return;
@@ -2915,7 +2924,13 @@ app.put('/api/admin/ui-templates/:id/review', requireModeration, (req, res) => {
 app.put('/api/ui-templates/:id/feature', authenticateAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const template = db.prepare('SELECT id, title, is_featured FROM ui_templates WHERE id = ?').get(id);
+        const template = db.prepare(
+            `SELECT ut.id, ut.title, ut.is_featured,
+                    u.username, u.email, u.email_verified
+             FROM ui_templates ut
+             LEFT JOIN users u ON ut.uploader_user_id = u.id
+             WHERE ut.id = ?`
+        ).get(id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
 
         const newFeatured = template.is_featured ? 0 : 1;
@@ -2931,6 +2946,14 @@ app.put('/api/ui-templates/:id/feature', authenticateAdmin, (req, res) => {
             ip: getRequestIp(req),
             details: { title: template.title }
         });
+        if (newFeatured && userEmailBound(template)) {
+            sendFeaturedNotificationEmail({
+                to: template.email,
+                username: template.username,
+                itemType: 'UI模板',
+                title: template.title
+            });
+        }
 
         res.json({ id, is_featured: newFeatured });
     } catch (err) {
@@ -4377,7 +4400,13 @@ app.put('/api/cards/:id', (req, res) => {
 app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
     try {
         const { id } = req.params;
-        const card = db.prepare('SELECT id, name, is_featured FROM character_cards WHERE id = ?').get(id);
+        const card = db.prepare(
+            `SELECT cc.id, cc.name, cc.is_featured,
+                    u.username, u.email, u.email_verified
+             FROM character_cards cc
+             LEFT JOIN users u ON cc.uploader_user_id = u.id
+             WHERE cc.id = ?`
+        ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
         const newFeatured = card.is_featured ? 0 : 1;
@@ -4389,6 +4418,14 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
             targetType: 'card', targetId: id, ip: getRequestIp(req),
             details: { name: card.name }
         });
+        if (newFeatured && userEmailBound(card)) {
+            sendFeaturedNotificationEmail({
+                to: card.email,
+                username: card.username,
+                itemType: '角色卡',
+                title: card.name
+            });
+        }
 
         res.json({ id, is_featured: newFeatured });
     } catch (err) {
