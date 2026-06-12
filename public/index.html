@@ -2161,7 +2161,6 @@
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
                 const cards = ref([]);
-                const cardsPagination = reactive({ total: 0, page: 1, limit: 10, total_pages: 0 });
                 const uiTemplates = ref([]);
                 const cardSort = ref('latest');
                 const showSortDropdown = ref(false);
@@ -3197,7 +3196,56 @@
                 };
 
                 const filteredCards = computed(() => {
-                    return [...cards.value];
+                    let result = [...cards.value];
+
+                    // Tab filter
+                    if (currentTab.value === 'mine') {
+                        if (canModerate.value) {
+                            result = result.filter(c => c.review_status === 'pending');
+                        } else {
+                            result = result.filter(c => isCardOwnedByCurrentUser(c));
+                        }
+                    }
+
+                    if (searchQuery.value) {
+                        const q = searchQuery.value.trim().toLowerCase();
+                        // Strip a leading hash prefix before matching against tag text.
+                        const tagQ = q.startsWith('#') ? q.slice(1) : q;
+                        result = result.filter(c =>
+                            String(c.name || '').toLowerCase().includes(q) ||
+                            (c.description && c.description.toLowerCase().includes(q)) ||
+                            (c.tags && c.tags.some(t => t.toLowerCase().includes(tagQ)))
+                        );
+                    }
+
+                    // Sorting & filtering by time range
+                    const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + getCommentHeatCount(c) * 2 + (c.downloads_count || 0) * 2.5;
+                    const latestRankTime = (c) => new Date(c.latest_rank_at || c.created_at || 0).getTime();
+                    const sortMode = cardSort.value;
+
+                    if (sortMode === 'featured') {
+                        result = result.filter(c => c.is_featured);
+                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    } else if (sortMode === 'daily') {
+                        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                        result = result.filter(c => new Date(c.created_at) >= oneDayAgo);
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'weekly') {
+                        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        result = result.filter(c => new Date(c.created_at) >= oneWeekAgo);
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'hot') {
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'updated') {
+                        result.sort((a, b) => latestRankTime(b) - latestRankTime(a));
+                    } else {
+                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    }
+                    if (searchQuery.value && sortMode === 'latest') {
+                        result.sort((a, b) => searchTitleRank(b.name, searchQuery.value) - searchTitleRank(a.name, searchQuery.value));
+                    }
+
+                    return result;
                 });
 
                 const filteredUiTemplates = computed(() => {
@@ -3277,35 +3325,18 @@
                     card.clean_notes = text.replace(regex, '').trim();
                 };
 
-                let cardsFetchSeq = 0;
-                let cardsFetchTimer = null;
-
                 const fetchCards = async () => {
-                    const requestId = ++cardsFetchSeq;
-                    loading.value = true;
+                    const showFullLoading = cards.value.length === 0 && contentSection.value !== 'uitemplates';
+                    if (showFullLoading) loading.value = true;
                     try {
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const params = new URLSearchParams();
-                        params.set('page', String(currentPage.value || 1));
-                        params.set('limit', String(PAGE_SIZE));
-                        params.set('sort', cardSort.value || 'latest');
-                        if (searchQuery.value.trim()) params.set('q', searchQuery.value.trim());
-                        if (currentTab.value) params.set('tab', currentTab.value);
-                        const resp = await fetch(API_BASE + '/api/cards?' + params.toString(), { headers });
+                        const resp = await fetch(API_BASE + '/api/cards', { headers });
                         if (resp.status === 304) return;
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
-                        if (requestId !== cardsFetchSeq) return;
                         const items = Array.isArray(data) ? data : (data.items || []);
-                        cardsPagination.total = Number(Array.isArray(data) ? items.length : data.total || 0);
-                        cardsPagination.page = Number(Array.isArray(data) ? currentPage.value : data.page || currentPage.value || 1);
-                        cardsPagination.limit = Number(Array.isArray(data) ? PAGE_SIZE : data.limit || PAGE_SIZE);
-                        cardsPagination.total_pages = Number(Array.isArray(data) ? Math.ceil(items.length / PAGE_SIZE) : data.total_pages || 0);
-                        if (!Array.isArray(data) && data.page && data.page !== currentPage.value) {
-                            currentPage.value = Number(data.page);
-                        }
                         
                         // Process tags for each card
                         cards.value = items.map(card => {
@@ -3323,16 +3354,8 @@
                         console.error('Fetch error:', err);
                         showToast('加载失败，请检查服务器连接', 'error');
                     } finally {
-                        if (requestId === cardsFetchSeq) loading.value = false;
+                        if (showFullLoading) loading.value = false;
                     }
-                };
-
-                const scheduleFetchCards = (delay = 80) => {
-                    if (cardsFetchTimer) clearTimeout(cardsFetchTimer);
-                    cardsFetchTimer = setTimeout(() => {
-                        cardsFetchTimer = null;
-                        fetchCards();
-                    }, delay);
                 };
 
                 const fetchUiTemplates = async () => {
@@ -5768,13 +5791,14 @@
                 const currentListLength = computed(() => {
                     return contentSection.value === 'uitemplates'
                         ? filteredUiTemplates.value.length
-                        : cardsPagination.total;
+                        : filteredCards.value.length;
                 });
 
                 const totalPages = computed(() => Math.ceil(currentListLength.value / PAGE_SIZE));
 
                 const pagedCards = computed(() => {
-                    return filteredCards.value;
+                    const start = (currentPage.value - 1) * PAGE_SIZE;
+                    return filteredCards.value.slice(start, start + PAGE_SIZE);
                 });
 
                 const pagedUiTemplates = computed(() => {
@@ -5806,19 +5830,7 @@
                 };
 
                 // Reset to page 1 when filters change
-                watch([searchQuery, cardSort, currentTab], () => {
-                    currentPage.value = 1;
-                    if (contentSection.value !== 'uitemplates') {
-                        scheduleFetchCards(searchQuery.value.trim() ? 180 : 60);
-                    }
-                });
-                watch(contentSection, () => {
-                    currentPage.value = 1;
-                    if (contentSection.value !== 'uitemplates') scheduleFetchCards(60);
-                });
-                watch(currentPage, () => {
-                    if (contentSection.value !== 'uitemplates') scheduleFetchCards(40);
-                });
+                watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value !== 'login') resetCaptcha();
                 });

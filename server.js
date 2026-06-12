@@ -1182,27 +1182,58 @@ function computeTemplateHeatFromRow(row) {
     return computeContentHeatFromRow(row);
 }
 
-function parsePageNumber(value, fallback = 1) {
-    const parsed = parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+const CARD_LIST_CACHE_TTL_MS = Math.max(1000, parseInt(process.env.CARD_LIST_CACHE_TTL_MS || '15000', 10) || 15000);
+const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_CACHE_MAX_ENTRIES || '30', 10) || 30);
+const cardListCache = new Map();
+let cardListCacheRevision = 1;
+
+function getCardListCacheKey(req, sortMode) {
+    if (req.admin) return `admin:${req.admin.id}:${sortMode}`;
+    if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${sortMode}`;
+    if (req.user) return `user:${req.user.id}:${sortMode}`;
+    return `guest:${sortMode}`;
 }
 
-function parsePageLimit(value, fallback = 10, max = 60) {
-    const parsed = parseInt(value, 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-    return Math.min(parsed, max);
-}
-
-function makeHttpEtag(prefix, payload) {
-    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 24);
-    return `"${prefix}-${hash}"`;
-}
-
-function requestHasEtag(req, etag) {
+function hasRequestEtag(req, etag) {
     return String(req.headers['if-none-match'] || '')
         .split(',')
         .map(value => value.trim())
         .includes(etag);
+}
+
+function getFreshCardListCache(key) {
+    const cached = cardListCache.get(key);
+    if (!cached) return null;
+    if (cached.revision !== cardListCacheRevision || Date.now() - cached.createdAt > CARD_LIST_CACHE_TTL_MS) {
+        cardListCache.delete(key);
+        return null;
+    }
+    cardListCache.delete(key);
+    cardListCache.set(key, cached);
+    return cached;
+}
+
+function setCardListCache(key, cards) {
+    while (cardListCache.size >= CARD_LIST_CACHE_MAX_ENTRIES) {
+        const firstKey = cardListCache.keys().next().value;
+        cardListCache.delete(firstKey);
+    }
+    const body = JSON.stringify(cards);
+    const etagHash = crypto.createHash('sha1').update(`${key}:${cardListCacheRevision}:${body}`).digest('hex').slice(0, 16);
+    const cached = {
+        body,
+        etag: `"cards-${cardListCacheRevision}-${etagHash}"`,
+        revision: cardListCacheRevision,
+        createdAt: Date.now()
+    };
+    cardListCache.set(key, cached);
+    return cached;
+}
+
+function clearCardListCache(reason = '') {
+    cardListCacheRevision += 1;
+    cardListCache.clear();
+    if (reason) console.info(`[CardsCache] cleared reason=${reason} revision=${cardListCacheRevision}`);
 }
 
 function floorToTwoDecimals(value) {
@@ -2749,46 +2780,35 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        const pageLimit = parsePageLimit(req.query.limit, 10, 60);
-        let page = parsePageNumber(req.query.page, 1);
-        const searchText = String(req.query.q || '').trim().slice(0, 80);
-        const tabMode = String(req.query.tab || 'all');
-        markPerf(req, 'cards-start', { sortMode, page, limit: pageLimit, hasSearch: Boolean(searchText), tab: tabMode });
+        markPerf(req, 'cards-start', { sortMode });
+        const cacheKey = getCardListCacheKey(req, sortMode);
+        const cached = getFreshCardListCache(cacheKey);
+        if (cached) {
+            res.set('ETag', cached.etag);
+            res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+            markPerf(req, 'cards-cache-hit', { bytes: cached.body.length });
+            if (hasRequestEtag(req, cached.etag)) {
+                markPerf(req, 'cards-cache-not-modified');
+                return res.status(304).end();
+            }
+            res.type('application/json');
+            return res.send(cached.body);
+        }
+
         const commentCountSql = cardCommentCountExpr('cc');
         const commentHeatCountSql = cardCommentHeatCountExpr('cc');
         const heatExpr = `((IFNULL(cc.views_count, 0) * ${VIEW_HEAT_WEIGHT}) + (IFNULL(${commentHeatCountSql}, 0) * ${COMMENT_HEAT_WEIGHT}) + (IFNULL(cc.downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
         const whereParts = [];
         const params = [];
-        const orderParams = [];
         let orderByClause = 'cc.created_at DESC';
 
-        if (tabMode === 'mine') {
-            if (req.admin || isModeratorUser(req.user)) {
-                whereParts.push("cc.review_status = 'pending'");
-            } else if (req.user) {
-                whereParts.push('cc.uploader_user_id = ?');
-                params.push(req.user.id);
-            } else {
-                whereParts.push('1 = 0');
-            }
-        } else if (req.admin || isModeratorUser(req.user)) {
+        if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
-        }
-
-        if (searchText) {
-            const q = searchText.toLowerCase();
-            const tagQ = q.startsWith('#') ? q.slice(1) : q;
-            whereParts.push(`(
-                LOWER(cc.name) LIKE ?
-                OR LOWER(IFNULL(cc.description, '')) LIKE ?
-                OR LOWER(IFNULL(cc.creator_notes, '')) LIKE ?
-            )`);
-            params.push(`%${q}%`, `%${q}%`, `%${tagQ}%`);
         }
 
         if (sortMode === 'featured') {
@@ -2805,46 +2825,9 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push("cc.created_at >= datetime('now', '-7 days')");
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         }
-        if (searchText && sortMode === 'latest') {
-            orderByClause = `(CASE WHEN LOWER(cc.name) LIKE ? THEN 1 ELSE 0 END) DESC, ${orderByClause}`;
-            orderParams.push(`%${searchText.toLowerCase().replace(/^#/, '')}%`);
-        }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length, orderParams: orderParams.length });
-        const versionRow = db.prepare(
-            `SELECT COUNT(*) AS total,
-                    COALESCE(MAX(cc.updated_at), '') AS max_updated_at,
-                    COALESCE(MAX(cc.latest_rank_at), '') AS max_latest_rank_at,
-                    COALESCE(MAX(cc.reviewed_at), '') AS max_reviewed_at,
-                    COALESCE(SUM(IFNULL(cc.views_count, 0)), 0) AS views_sum,
-                    COALESCE(SUM(IFNULL(cc.downloads_count, 0)), 0) AS downloads_sum,
-                    COALESCE(SUM(IFNULL(cc.comment_count_override, 0)), 0) AS comment_override_sum
-             FROM character_cards cc
-             ${whereClause}`
-        ).get(...params);
-        const commentsVersion = db.prepare('SELECT COUNT(*) AS count FROM character_comments').get();
-        const total = Number(versionRow?.total || 0);
-        const totalPages = Math.max(1, Math.ceil(total / pageLimit));
-        page = total > 0 ? Math.min(page, totalPages) : 1;
-        const offset = (page - 1) * pageLimit;
-        const etag = makeHttpEtag('cards', {
-            viewer: req.admin ? `admin:${req.admin.id}` : (req.user ? `user:${req.user.id}:${req.user.is_moderator ? 1 : 0}` : 'guest'),
-            sortMode,
-            tabMode,
-            searchText,
-            page,
-            pageLimit,
-            versionRow,
-            commentsCount: commentsVersion?.count || 0
-        });
-        res.set('ETag', etag);
-        res.set('Cache-Control', 'private, max-age=0, must-revalidate');
-        markPerf(req, 'cards-version-read', { total, page, limit: pageLimit });
-        if (requestHasEtag(req, etag)) {
-            markPerf(req, 'cards-etag-not-modified', { total });
-            return res.status(304).end();
-        }
+        markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
         const rawCards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
@@ -2857,17 +2840,21 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     ${commentHeatCountSql} AS comment_heat_count
              FROM character_cards cc
              ${whereClause}
-             ORDER BY ${orderByClause}
-             LIMIT ? OFFSET ?`
-        ).all(...params, ...orderParams, pageLimit, offset);
+             ORDER BY ${orderByClause}`
+        ).all(...params);
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
         const cards = rawCards.map(card => sanitizeCharacterCardForClient(
             attachUiTemplateSummary(card),
             { viewer: { admin: req.admin, user: req.user } }
         ));
         markPerf(req, 'cards-normalize-summary', { rows: cards.length });
-        res.json({ items: cards, total, page, limit: pageLimit, total_pages: totalPages });
-        markPerf(req, 'cards-response-json', { rows: cards.length, total });
+        const newCache = setCardListCache(cacheKey, cards);
+        markPerf(req, 'cards-cache-store', { rows: cards.length, bytes: newCache.body.length });
+        res.set('ETag', newCache.etag);
+        res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+        res.type('application/json');
+        res.send(newCache.body);
+        markPerf(req, 'cards-response-json', { rows: cards.length });
     } catch (err) {
         console.error('Fetch cards error:', err);
         res.status(500).json({ error: '获取卡片失败' });
@@ -4316,6 +4303,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
         attachCardDetailPreview(card);
         attachUiTemplateSummary(card, { preferStoredSummary: true });
+        clearCardListCache('card-upload');
         logOperation({
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
@@ -4407,6 +4395,7 @@ app.delete('/api/cards/:id', (req, res) => {
         });
         deleteAndReclaim();
         clearCardImageCaches(id);
+        clearCardListCache('card-delete');
 
         logOperation({
             userType: isAdmin ? 'admin' : 'user',
@@ -4541,6 +4530,7 @@ app.put('/api/cards/:id', (req, res) => {
         });
         updateCard();
         clearCardImageCaches(req.params.id);
+        clearCardListCache('card-edit');
 
         logOperation({
             userType,
@@ -4584,6 +4574,7 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
 
         const newFeatured = card.is_featured ? 0 : 1;
         db.prepare('UPDATE character_cards SET is_featured = ? WHERE id = ?').run(newFeatured, id);
+        clearCardListCache('card-feature');
 
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
@@ -4647,6 +4638,7 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
 
         values.push(id);
         db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+        clearCardListCache('card-heat');
 
         logOperation({
             userType: 'admin', userId: req.admin.id, username: req.admin.username,
@@ -4790,7 +4782,10 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
 
         recordDownload();
         const latestDownloads = db.prepare('SELECT downloads_count FROM character_cards WHERE id = ?').get(id)?.downloads_count ?? card.downloads_count ?? 0;
-        if (downloadCounted) maybeSendCardHeatMilestoneEmail(id, req);
+        if (downloadCounted) {
+            clearCardListCache('card-download');
+            maybeSendCardHeatMilestoneEmail(id, req);
+        }
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
 
         res.json({
@@ -5031,6 +5026,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             }
         });
         insertComment();
+        clearCardListCache('card-comment');
 
         const comment = db.prepare('SELECT * FROM character_comments WHERE id = ?').get(id);
         comment.author_name = user.username;
@@ -5322,6 +5318,7 @@ app.delete('/api/ui-template-comments/:id', requireUserOrAdmin, (req, res) => {
         if (result.changes === 0) {
             return res.status(404).json({ error: '评论不存在' });
         }
+        clearCardListCache('card-comment-delete');
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
@@ -5601,6 +5598,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         reviewAndReward();
 
         clearCardImageCaches(id);
+        clearCardListCache('card-review');
         const updated = db.prepare(
             'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at FROM character_cards WHERE id = ?'
         ).get(id);
@@ -5664,6 +5662,7 @@ app.delete('/api/admin/cards/:id', authenticateAdmin, (req, res) => {
         });
         deleteAndReclaim();
         clearCardImageCaches(req.params.id);
+        clearCardListCache('admin-card-delete');
         logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name, cookie_penalty: cookiePenalty } });
         res.json({ success: true });
     } catch (err) {
@@ -5717,6 +5716,7 @@ app.delete('/api/admin/comments/:id', authenticateAdmin, (req, res) => {
         });
         const result = deleteComment();
         if (result.changes === 0) return res.status(404).json({ error: '评论不存在' });
+        clearCardListCache('admin-card-comment-delete');
         logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_comment', targetType: 'comment', targetId: req.params.id, ip: getRequestIp(req), details: { content: comment?.content?.substring(0, 50) } });
         res.json({ success: true });
     } catch (err) {
