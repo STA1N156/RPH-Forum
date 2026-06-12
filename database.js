@@ -71,6 +71,7 @@ function initDatabase() {
             uploader_ip_address TEXT,
             heat_email_milestone INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            latest_rank_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL
         );
@@ -82,6 +83,16 @@ function initDatabase() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(card_id, user_id),
             FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS ui_template_downloads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(template_id, user_id),
+            FOREIGN KEY (template_id) REFERENCES ui_templates(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
@@ -161,6 +172,8 @@ function initDatabase() {
             rejection_reason TEXT,
             uploader_ip_address TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            latest_rank_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (uploader_user_id) REFERENCES users(id) ON DELETE SET NULL,
             FOREIGN KEY (reviewed_by_admin_id) REFERENCES admin_users(id) ON DELETE SET NULL
         );
@@ -280,6 +293,7 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
@@ -336,16 +350,24 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN heat_email_milestone INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN updated_at DATETIME'); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"); } catch (e) { /* ignore */ }
+    try { db.exec('ALTER TABLE character_cards ADD COLUMN latest_rank_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec("UPDATE character_cards SET latest_rank_at = COALESCE(latest_rank_at, created_at, updated_at, CURRENT_TIMESTAMP) WHERE latest_rank_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_latest_rank ON character_cards(review_status, latest_rank_at DESC, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status)'); } catch (e) { /* index exists */ }
     try { db.exec("UPDATE ui_templates SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('ALTER TABLE ui_templates ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE ui_templates ADD COLUMN comment_count_override INTEGER'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE ui_templates ADD COLUMN latest_rank_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE ui_templates ADD COLUMN updated_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec("UPDATE ui_templates SET latest_rank_at = COALESCE(latest_rank_at, created_at, updated_at, CURRENT_TIMESTAMP) WHERE latest_rank_at IS NULL"); } catch (e) { /* ignore */ }
+    try { db.exec("UPDATE ui_templates SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_review_status ON ui_templates(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_uploader_review ON ui_templates(uploader_user_id, review_status)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_featured ON ui_templates(is_featured, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_latest_rank ON ui_templates(review_status, latest_rank_at DESC, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC)'); } catch (e) { /* index exists */ }
@@ -362,6 +384,18 @@ function initDatabase() {
         )
     `); } catch (e) { /* table exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec(`
+        CREATE TABLE IF NOT EXISTS ui_template_downloads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(template_id, user_id),
+            FOREIGN KEY (template_id) REFERENCES ui_templates(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    `); } catch (e) { /* table exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
 
     try {
         db.exec(`

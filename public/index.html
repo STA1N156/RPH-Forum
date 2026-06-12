@@ -508,19 +508,26 @@
             <!-- Sort + Tags row -->
             <div v-if="!loading" class="mb-5 animate-fade-in">
                 <div class="flex items-start gap-2">
-                    <!-- Sort dropdown (outside overflow container) -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap" :class="tagsExpanded || showSortDropdown ? '' : 'max-h-[2.25rem] overflow-hidden'">
+                    <!-- Sort dropdown -->
                     <div class="relative flex-shrink-0">
                         <button @click.stop="showSortDropdown = !showSortDropdown" class="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 rounded-xl text-xs font-bold transition-all hover:bg-gray-200">
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <svg v-else-if="cardSort === 'updated'" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
                             <svg v-else-if="cardSort === 'featured'" class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
-                            <span class="text-gray-700">{{ {latest: '最新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行'}[cardSort] }}</span>
+                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行'}[cardSort] }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
                         <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[6rem]">
                             <button @click="cardSort = 'latest'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'latest' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                最新
+                                最新上传
+                            </button>
+                            <button @click="cardSort = 'updated'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'updated' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
+                                最近更新
                             </button>
                             <button @click="cardSort = 'featured'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'featured' ? 'text-amber-500' : 'text-gray-500'">
                                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -540,8 +547,6 @@
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 min-w-0 overflow-hidden">
-                        <div class="flex items-center gap-2 flex-wrap overflow-hidden" :class="tagsExpanded ? '' : 'max-h-[2.25rem]'">
                             <!-- Tags (only on non-mine tab) -->
                             <template v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && visiblePopularTags.length > 0">
                                 <button v-for="tag in visiblePopularTags" :key="tag"
@@ -550,7 +555,7 @@
                                 :class="searchQuery === tag
                                     ? 'bg-primary-500 text-white border-primary-500 shadow-md shadow-primary-200'
                                     : 'bg-white text-gray-500 border-gray-200 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50'">
-                            #{{ tag }}
+                            {{ tag }}
                         </button>
                             </template>
                         </div>
@@ -657,7 +662,7 @@
                                                 title="编辑">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                                         </button>
-                                        <button v-if="isAdmin || isTemplateOwnedByCurrentUser(template)"
+                                        <button v-if="canModerate || isTemplateOwnedByCurrentUser(template)"
                                                 @click.stop="deleteTemplate(template)"
                                                 class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                                                 title="删除">
@@ -850,6 +855,19 @@
                 </div>
                 <!-- Total count below page buttons -->
                 <span class="text-xs font-bold text-gray-400">共 {{ currentListLength }} {{ contentSection === 'uitemplates' ? '个模板' : '张' }} · 第 {{ currentPage }} / {{ totalPages }} 页</span>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-bold text-gray-400">跳到</span>
+                    <input v-model="jumpPageInput"
+                           @blur="jumpToPage"
+                           @keyup.enter="jumpToPage"
+                           type="text"
+                           min="1"
+                           :max="totalPages"
+                           inputmode="numeric"
+                           pattern="[0-9]*"
+                           class="h-6 w-9 rounded-md border border-gray-200 bg-white px-1 text-center text-[11px] font-bold text-gray-700 outline-none transition-all focus:border-primary-400 focus:ring-2 focus:ring-primary-100">
+                    <span class="text-xs font-bold text-gray-400">页</span>
+                </div>
             </div>
         </main>
         <!-- Search Modal -->
@@ -877,7 +895,7 @@
                                     :class="searchQuery === tag
                                         ? 'bg-primary-500 text-white border-primary-500 shadow-md shadow-primary-200'
                                         : 'bg-white text-gray-500 border-gray-200 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50'">
-                                #{{ tag }}
+                                {{ tag }}
                             </button>
                         </div>
                     </div>
@@ -911,7 +929,7 @@
                             :class="searchQuery === item.tag
                                 ? 'bg-primary-500 text-white border-primary-500'
                                 : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50'">
-                        #{{ item.tag }}
+                        {{ item.tag }}
                         <span class="text-[10px] font-bold opacity-60">{{ item.count }}</span>
                     </button>
                 </div>
@@ -1057,7 +1075,7 @@
                     <button v-if="isTemplateOwnedByCurrentUser(selectedTemplate) || isAdmin" @click="startEditTemplate(selectedTemplate)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     </button>
-                    <button v-if="isTemplateOwnedByCurrentUser(selectedTemplate) || isAdmin" @click="deleteTemplate(selectedTemplate); closeTemplateDetail()" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors" title="删除">
+                    <button v-if="isTemplateOwnedByCurrentUser(selectedTemplate) || canModerate" @click="deleteTemplate(selectedTemplate); closeTemplateDetail()" class="w-14 bg-red-50 hover:bg-red-100 text-red-500 rounded-2xl flex items-center justify-center transition-colors" title="删除">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
@@ -1324,13 +1342,11 @@
                             <div v-if="selectedCard.creator_notes" class="mt-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 text-blue-800 text-sm leading-relaxed">
                                 <div class="flex flex-col gap-2">
                                     <div v-if="selectedCard.clean_notes">{{ selectedCard.clean_notes }}</div>
-                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="rounded-2xl border border-blue-100/80 bg-white/70 p-3">
-                                        <div class="flex flex-wrap gap-2">
-                                            <span v-for="tag in selectedCard.tags" :key="tag"
-                                                  class="max-w-full break-all px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
-                                                {{ tag }}
-                                            </span>
-                                        </div>
+                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="flex flex-wrap gap-2">
+                                        <span v-for="tag in selectedCard.tags" :key="tag"
+                                              class="max-w-full break-all px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
+                                            {{ tag }}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -1489,21 +1505,22 @@
                     </div>
                 </div>
 
-                <!-- Fixed Footer Actions (Mobile) -->
-                <div class="fixed bottom-0 left-0 w-full p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-50 flex gap-3 safe-area-pb">
-                     <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
-                             class="flex-1 py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
-                             :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white active:scale-[0.98]' : 'bg-gray-200 text-gray-500 cursor-not-allowed'">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        {{ downloadButtonLabel }}
-                    </button>
-                    <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
-                        <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                    </button>
-                    <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                </div>
+            </div>
+
+            <!-- Fixed Footer Actions (Mobile) -->
+            <div v-if="!previewAsset.loading" class="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[60] flex gap-3 safe-area-pb">
+                 <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
+                         class="flex-1 py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
+                         :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white active:scale-[0.98]' : 'bg-gray-200 text-gray-500 cursor-not-allowed'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    {{ downloadButtonLabel }}
+                </button>
+                <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                    <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                </button>
+                <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
             </div>
 
             <!-- Desktop Container (Unchanged) -->
@@ -2027,7 +2044,7 @@
                                 <label class="block text-sm font-bold text-gray-700">STA1N API 用户 ID</label>
                             </div>
                             <div v-if="newApiReward.newapi_user_id" class="flex items-center gap-2">
-                                <div class="flex-1 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 text-sm font-mono break-all">{{ newApiReward.newapi_user_id }}</div>
+                                <div class="flex-1 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 text-sm font-mono break-all">{{ newApiReward.newapi_user_id }}</div>
                                 <button @click="unbindNewApiUser" :disabled="newApiUnbinding" class="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition-colors disabled:opacity-60">
                                     {{ newApiUnbinding ? '解绑中' : '解绑' }}
                                 </button>
@@ -2328,7 +2345,7 @@
                     redeemed_cookies: 0,
                     available_cookies: 0,
                     available_quota: 0,
-                    heat_per_cookie: 7,
+                    heat_per_cookie: 6,
                     quota_per_cookie: 50000,
                     min_redeem_cookies: 1,
                     newapi_configured: false
@@ -3127,6 +3144,11 @@
                 };
 
                 const getCommentHeatCount = (item) => Number(item?.comment_heat_count ?? item?.comment_count ?? 0);
+                const searchTitleRank = (title, query) => {
+                    const q = String(query || '').trim().toLowerCase().replace(/^#/, '');
+                    if (!q) return 0;
+                    return String(title || '').toLowerCase().includes(q) ? 1 : 0;
+                };
 
                 const calculateTemplateHeatFromCounts = (template) => {
                     if (!template) return 0;
@@ -3152,11 +3174,11 @@
                     }
 
                     if (searchQuery.value) {
-                        const q = searchQuery.value.toLowerCase();
+                        const q = searchQuery.value.trim().toLowerCase();
                         // Strip a leading hash prefix before matching against tag text.
                         const tagQ = q.startsWith('#') ? q.slice(1) : q;
                         result = result.filter(c =>
-                            c.name.toLowerCase().includes(q) ||
+                            String(c.name || '').toLowerCase().includes(q) ||
                             (c.description && c.description.toLowerCase().includes(q)) ||
                             (c.tags && c.tags.some(t => t.toLowerCase().includes(tagQ)))
                         );
@@ -3164,6 +3186,7 @@
 
                     // Sorting & filtering by time range
                     const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + getCommentHeatCount(c) * 2 + (c.downloads_count || 0) * 2.5;
+                    const latestRankTime = (c) => new Date(c.latest_rank_at || c.created_at || 0).getTime();
                     const sortMode = cardSort.value;
 
                     if (sortMode === 'featured') {
@@ -3179,8 +3202,13 @@
                         result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'updated') {
+                        result.sort((a, b) => latestRankTime(b) - latestRankTime(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    }
+                    if (searchQuery.value) {
+                        result.sort((a, b) => searchTitleRank(b.name, searchQuery.value) - searchTitleRank(a.name, searchQuery.value));
                     }
 
                     return result;
@@ -3198,7 +3226,7 @@
                     }
 
                     if (searchQuery.value) {
-                        const q = searchQuery.value.toLowerCase();
+                        const q = searchQuery.value.trim().toLowerCase();
                         result = result.filter(item =>
                             String(item.title || '').toLowerCase().includes(q) ||
                             String(item.description || '').toLowerCase().includes(q) ||
@@ -3208,6 +3236,7 @@
                     }
 
                     const heatScore = (item) => computeTemplateHeat(item);
+                    const latestRankTime = (item) => new Date(item.latest_rank_at || item.created_at || 0).getTime();
                     const sortMode = cardSort.value;
                     if (sortMode === 'featured') {
                         result = result.filter(item => item.is_featured);
@@ -3222,8 +3251,13 @@
                         result.sort((a, b) => heatScore(b) - heatScore(a));
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => heatScore(b) - heatScore(a));
+                    } else if (sortMode === 'updated') {
+                        result.sort((a, b) => latestRankTime(b) - latestRankTime(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    }
+                    if (searchQuery.value) {
+                        result.sort((a, b) => searchTitleRank(b.title, searchQuery.value) - searchTitleRank(a.title, searchQuery.value));
                     }
                     return result;
                 });
@@ -4000,12 +4034,13 @@
                     }
                     isTemplateEditSaving.value = true;
                     try {
+                        const templateFileChanged = editingTemplate.value.file_changed === true;
                         const headers = isAdmin.value ? adminAuthHeaders() : userAuthHeaders();
                         const payload = {
                             title: editingTemplate.value.title,
                             description: editingTemplate.value.description
                         };
-                        if (editingTemplate.value.file_changed) {
+                        if (templateFileChanged) {
                             payload.content = editingTemplate.value.content;
                             payload.file_name = editingTemplate.value.file_name;
                             payload.mime_type = editingTemplate.value.mime_type;
@@ -4026,7 +4061,7 @@
                         }
                         showTemplateEditModal.value = false;
                         editingTemplate.value = null;
-                        showToast(isAdmin.value ? '模板已更新' : '模板已更新，等待审核', 'success');
+                        showToast(isAdmin.value || !templateFileChanged ? '模板已更新' : '模板已更新，等待审核', 'success');
                     } catch (err) {
                         showToast('保存失败: ' + err.message, 'error');
                     } finally {
@@ -4160,6 +4195,18 @@
 
                 const downloadTemplate = async (template) => {
                     if (!template) return;
+                    const isOwner = isTemplateOwnedByCurrentUser(template);
+                    if (!canModerate.value && !isOwner && !isLoggedIn.value) {
+                        showUserAuthModal.value = true;
+                        userAuthMode.value = 'login';
+                        showToast('请先登录后再下载', 'warning', 4000);
+                        return;
+                    }
+                    if (!canModerate.value && !isOwner && downloadCredits.value <= 0) {
+                        showToast('下载次数不足！评论可获得更多下载次数', 'warning', 4000);
+                        return;
+                    }
+
                     try {
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
@@ -4183,13 +4230,19 @@
                             triggerDirectDownload(data.download_url, fallbackName);
                         }
 
-                        const shouldIncrementVisibleCount = !isAdmin.value && !isTemplateOwnedByCurrentUser(template) && canViewTemplateDownloads(template);
-                        if (shouldIncrementVisibleCount) {
-                            template.downloads_count = (template.downloads_count || 0) + 1;
+                        if (data.download_counted && !isOwner && !canModerate.value) {
+                            const nextDownloads = data.downloads_count ?? ((template.downloads_count || 0) + 1);
+                            template.downloads_count = nextDownloads;
                             const listTemplate = uiTemplates.value.find(item => item.id === template.id);
                             if (listTemplate && listTemplate !== template) {
-                                listTemplate.downloads_count = (listTemplate.downloads_count || 0) + 1;
+                                listTemplate.downloads_count = nextDownloads;
                             }
+                            if (selectedTemplate.value && selectedTemplate.value.id === template.id) {
+                                selectedTemplate.value.downloads_count = nextDownloads;
+                            }
+                        }
+                        if (data.new_credits !== undefined && currentUser.value) {
+                            currentUser.value = { ...currentUser.value, download_credits: data.new_credits };
                         }
                         showToast('模板下载已开始', 'success');
                     } catch (err) {
@@ -5695,6 +5748,7 @@
                 // ============== Pagination ==============
                 const PAGE_SIZE = 10;
                 const currentPage = ref(1);
+                const jumpPageInput = ref('');
 
                 const currentListLength = computed(() => {
                     return contentSection.value === 'uitemplates'
@@ -5726,6 +5780,16 @@
                     pages.push(total);
                     return pages;
                 });
+
+                const jumpToPage = () => {
+                    const target = parseInt(jumpPageInput.value, 10);
+                    if (!Number.isFinite(target)) {
+                        jumpPageInput.value = '';
+                        return;
+                    }
+                    currentPage.value = Math.min(Math.max(target, 1), Math.max(totalPages.value, 1));
+                    jumpPageInput.value = '';
+                };
 
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
@@ -5843,7 +5907,7 @@
                     // Visit Tracking
                     totalVisits,
                     tagsExpanded, showTagLibrary, allTags,
-                    currentPage, totalPages, pageNumbers, currentListLength
+                    currentPage, totalPages, pageNumbers, currentListLength, jumpPageInput, jumpToPage
                 };
             }
         }).mount('#app');

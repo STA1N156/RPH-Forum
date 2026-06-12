@@ -44,7 +44,7 @@ const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_
 const EMAIL_SEND_TIMEOUT_MS = Math.max(5000, parseInt(process.env.EMAIL_SEND_TIMEOUT_MS || '15000', 10) || 15000);
 const EMAIL_SEND_RETRIES = Math.max(0, parseInt(process.env.EMAIL_SEND_RETRIES || '1', 10) || 1);
 const HEAT_EMAIL_STEP = 500;
-const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '7', 10));
+const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '6', 10));
 const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
 const VIEW_HEAT_WEIGHT = 1.0;
 const COMMENT_HEAT_WEIGHT = 2;
@@ -2660,7 +2660,9 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push("cc.review_status = 'approved'");
         }
 
-        if (sortMode === 'hot') {
+        if (sortMode === 'updated') {
+            orderByClause = 'COALESCE(cc.latest_rank_at, cc.created_at) DESC, cc.created_at DESC';
+        } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         } else if (sortMode === 'daily') {
             whereParts.push("cc.created_at >= datetime('now', '-1 day')");
@@ -2674,7 +2676,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
         const rawCards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
-                    cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.updated_at,
+                    cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     COALESCE(cc.has_ui_templates, 0) AS has_ui_templates,
@@ -2726,6 +2728,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         if (sortMode === 'featured') {
             whereParts.push('is_featured = 1');
             orderByClause = 'created_at DESC';
+        } else if (sortMode === 'updated') {
+            orderByClause = 'COALESCE(latest_rank_at, created_at) DESC, created_at DESC';
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
         } else if (sortMode === 'daily') {
@@ -2741,7 +2745,7 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         const rawTemplates = db.prepare(
             `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
-                    rejection_reason, uploader_ip_address, created_at,
+                    rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
                     ${templateCommentCountSql} AS comment_count,
                     ${templateCommentHeatCountSql} AS comment_heat_count
              FROM ui_templates
@@ -2801,12 +2805,12 @@ app.post('/api/ui-templates', requireUserOrAdmin, (req, res) => {
         db.prepare(
             `INSERT INTO ui_templates
              (id, title, description, file_name, file_ext, mime_type, content, file_size,
-              uploader_user_id, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              uploader_user_id, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
             id, normalizedTitle, String(description || '').trim().slice(0, 1000), safeFileName,
             fileExt, String(mime_type || 'application/json').slice(0, 120), normalizedContent, fileSize,
-            uploaderUserId, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now
+            uploaderUserId, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now
         );
 
         const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(id);
@@ -2853,11 +2857,21 @@ app.put('/api/admin/ui-templates/:id/review', requireModeration, (req, res) => {
         ).get(req.params.id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const now = new Date().toISOString();
-        db.prepare(
-            `UPDATE ui_templates
-             SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
-             WHERE id = ?`
-        ).run(status, req.admin?.id || null, now, status === 'rejected' ? reason : null, req.params.id);
+        const reviewAndReward = db.transaction(() => {
+            db.prepare(
+                `UPDATE ui_templates
+                 SET review_status = ?, reviewed_by_admin_id = ?, reviewed_at = ?, rejection_reason = ?
+                 WHERE id = ?`
+            ).run(status, req.admin?.id || null, now, status === 'rejected' ? reason : null, req.params.id);
+
+            if (status === 'approved' && template.review_status !== 'approved' && template.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = download_credits + 3 WHERE id = ?').run(template.uploader_user_id);
+            }
+            if (status !== 'approved' && template.review_status === 'approved' && template.uploader_user_id) {
+                db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(template.uploader_user_id);
+            }
+        });
+        reviewAndReward();
 
         const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
         logOperation({
@@ -2933,6 +2947,7 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
         const hasContentUpdate = Object.prototype.hasOwnProperty.call(req.body, 'content');
         const hasFileNameUpdate = Object.prototype.hasOwnProperty.call(req.body, 'file_name');
         const hasMimeTypeUpdate = Object.prototype.hasOwnProperty.call(req.body, 'mime_type');
+        const shouldRefreshLatestRank = hasContentUpdate;
 
         if (Object.prototype.hasOwnProperty.call(req.body, 'title')) {
             const title = String(req.body.title || '').trim().slice(0, 120);
@@ -2974,7 +2989,7 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
             setField('mime_type', String(req.body.mime_type || template.mime_type || 'application/json').slice(0, 120));
         }
 
-        if (!req.admin && fields.length > 0) {
+        if (!req.admin && hasContentUpdate) {
             setField('review_status', 'pending');
             setField('reviewed_by_admin_id', null);
             setField('reviewed_at', null);
@@ -2982,6 +2997,11 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
         }
 
         if (fields.length === 0) return res.status(400).json({ error: '无更新内容' });
+        const editTime = new Date().toISOString();
+        setField('updated_at', editTime);
+        if (shouldRefreshLatestRank) {
+            setField('latest_rank_at', editTime);
+        }
         values.push(req.params.id);
         db.prepare(`UPDATE ui_templates SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
@@ -2995,7 +3015,7 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
             targetType: 'ui_template',
             targetId: req.params.id,
             ip: getRequestIp(req),
-            details: { title: updated.title }
+            details: { title: updated.title, refreshed_latest_rank: shouldRefreshLatestRank }
         });
         res.json({ template: sanitizeUiTemplateRow(updated, { viewer: { admin: req.admin, user: req.user }, includeContent: true }) });
     } catch (err) {
@@ -3006,21 +3026,38 @@ app.put('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
 
 app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
     try {
-        const template = db.prepare('SELECT id, title, uploader_user_id FROM ui_templates WHERE id = ?').get(req.params.id);
+        const template = db.prepare(
+            `SELECT id, title, uploader_user_id, review_status, views_count, downloads_count,
+                    ${templateCommentHeatCountExpr('ui_templates')} AS comment_heat_count
+             FROM ui_templates WHERE id = ?`
+        ).get(req.params.id);
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const isOwner = req.user && template.uploader_user_id === req.user.id;
-        if (!req.admin && !isOwner) return res.status(403).json({ error: '无权删除此模板' });
+        const isModerator = isModeratorUser(req.user);
+        if (!req.admin && !isModerator && !isOwner) return res.status(403).json({ error: '无权删除此模板' });
+        const isOwnerDelete = Boolean(!req.admin && !isModerator && isOwner);
+        const shouldPenaltyCookies = Boolean(template.uploader_user_id && template.review_status === 'approved' && !isOwnerDelete && (req.admin || isModerator));
+        const cookiePenalty = shouldPenaltyCookies ? getContentCookieValueFromHeatRow(template) : 0;
 
-        db.prepare('DELETE FROM ui_templates WHERE id = ?').run(req.params.id);
+        const deleteAndReclaim = db.transaction(() => {
+            db.prepare('DELETE FROM ui_templates WHERE id = ?').run(req.params.id);
+            if (template.uploader_user_id && template.review_status === 'approved') {
+                db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(template.uploader_user_id);
+            }
+            if (cookiePenalty > 0) {
+                addNewApiCookiePenalty(template.uploader_user_id, cookiePenalty);
+            }
+        });
+        deleteAndReclaim();
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
             username: req.admin?.username || req.user?.username,
-            action: 'delete_ui_template',
+            action: req.admin ? 'admin_delete_ui_template' : (isModerator ? 'moderator_delete_ui_template' : 'delete_ui_template'),
             targetType: 'ui_template',
             targetId: req.params.id,
             ip: getRequestIp(req),
-            details: { title: template.title }
+            details: { title: template.title, cookie_penalty: cookiePenalty }
         });
         res.json([{ id: req.params.id }]);
     } catch (err) {
@@ -3061,22 +3098,58 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
     }
 });
 
-app.get('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
-    try {
-        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
-        if (!template) return res.status(404).json({ error: '模板不存在' });
-        const canView = template.review_status === 'approved'
-            || (req.admin && req.admin.id)
-            || isModeratorUser(req.user)
-            || (req.user && template.uploader_user_id === req.user.id);
-        if (!canView) return res.status(404).json({ error: '模板不存在' });
+function prepareUiTemplateDownload(req, templateId) {
+    const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(templateId);
+    if (!template) {
+        const error = new Error('模板不存在');
+        error.statusCode = 404;
+        throw error;
+    }
+    const isOwner = req.user && template.uploader_user_id === req.user.id;
+    const isModerator = isModeratorUser(req.user);
+    if (template.review_status !== 'approved' && !req.admin && !isModerator && !isOwner) {
+        const error = new Error('模板不存在');
+        error.statusCode = 404;
+        throw error;
+    }
 
-        const isOwner = req.user && template.uploader_user_id === req.user.id;
-        if (!req.admin && !isModeratorUser(req.user) && !isOwner) {
-            db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
+    let newCredits = null;
+    let downloadCounted = false;
+    const recordDownload = db.transaction(() => {
+        if (!req.admin && !isModerator) {
+            if (!isOwner) {
+                const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
+                if (result.changes === 0) {
+                    const error = new Error('下载次数不足');
+                    error.statusCode = 403;
+                    throw error;
+                }
+            }
+            newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
         }
+
+        if (!isOwner && !req.admin && !isModerator) {
+            const inserted = db.prepare(
+                `INSERT OR IGNORE INTO ui_template_downloads (template_id, user_id)
+                 VALUES (?, ?)`
+            ).run(templateId, req.user.id);
+            if (inserted.changes > 0) {
+                db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(templateId);
+                downloadCounted = true;
+            }
+        }
+    });
+    recordDownload();
+
+    const latestDownloads = db.prepare('SELECT downloads_count FROM ui_templates WHERE id = ?').get(templateId)?.downloads_count ?? template.downloads_count ?? 0;
+    return { template, newCredits, downloadCounted, downloadsCount: latestDownloads };
+}
+
+app.get('/api/ui-templates/:id/download', requireUserOrAdmin, (req, res) => {
+    try {
+        const { template } = prepareUiTemplateDownload(req, req.params.id);
         logOperation({
-            userType: req.admin ? 'admin' : (req.user ? 'user' : 'anonymous'),
+            userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
             username: req.admin?.username || req.user?.username,
             action: 'download_ui_template',
@@ -3090,27 +3163,19 @@ app.get('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
         res.setHeader('Content-Disposition', createAttachmentDisposition(fileName));
         res.send(template.content);
     } catch (err) {
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ error: err.message });
+        }
         console.error('Download UI template error:', err);
         res.status(500).json({ error: '下载模板失败' });
     }
 });
 
-app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
+app.post('/api/ui-templates/:id/download', requireUserOrAdmin, (req, res) => {
     try {
-        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
-        if (!template) return res.status(404).json({ error: '模板不存在' });
-        const canView = template.review_status === 'approved'
-            || (req.admin && req.admin.id)
-            || isModeratorUser(req.user)
-            || (req.user && template.uploader_user_id === req.user.id);
-        if (!canView) return res.status(404).json({ error: '模板不存在' });
-
-        const isOwner = req.user && template.uploader_user_id === req.user.id;
-        if (!req.admin && !isModeratorUser(req.user) && !isOwner) {
-            db.prepare('UPDATE ui_templates SET downloads_count = downloads_count + 1 WHERE id = ?').run(req.params.id);
-        }
+        const result = prepareUiTemplateDownload(req, req.params.id);
         logOperation({
-            userType: req.admin ? 'admin' : (req.user ? 'user' : 'anonymous'),
+            userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
             username: req.admin?.username || req.user?.username,
             action: 'download_ui_template',
@@ -3121,9 +3186,15 @@ app.post('/api/ui-templates/:id/download', optionalUserAuth, (req, res) => {
 
         res.json({
             success: true,
+            new_credits: result.newCredits,
+            download_counted: result.downloadCounted,
+            downloads_count: result.downloadsCount,
             download_url: `/api/ui-templates/${encodeURIComponent(req.params.id)}/download/file`
         });
     } catch (err) {
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ error: err.message });
+        }
         console.error('Prepare UI template download error:', err);
         res.status(500).json({ error: '下载模板失败' });
     }
@@ -3907,7 +3978,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
                     cc.creator_notes, cc.downloads_count, cc.comment_count_override,
                     cc.uploader_user_id, cc.review_status, cc.reviewed_by_admin_id,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
-                    cc.heat_email_milestone, cc.created_at, cc.updated_at,
+                    cc.heat_email_milestone, cc.created_at, cc.latest_rank_at, cc.updated_at,
                     cc.views_count, cc.is_featured
              FROM character_cards cc
              WHERE cc.id = ?`
@@ -4009,12 +4080,12 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             db.prepare(
                 `INSERT INTO character_cards
                  (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
-                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
                 id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                 uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
+                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now
             );
         } catch (insertErr) {
             if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed')) {
@@ -4026,12 +4097,12 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 db.prepare(
                     `INSERT INTO character_cards
                       (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
-                       creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, updated_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                       creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).run(
                     id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                     uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now
+                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now
                 );
             } else {
                 throw insertErr;
@@ -4181,6 +4252,7 @@ app.put('/api/cards/:id', (req, res) => {
         const fields = [];
         const values = [];
         const hasDataUpdate = data !== undefined && data !== null;
+        const shouldRefreshLatestRank = reupload_replace === true && hasDataUpdate;
         const nextName = name !== undefined ? name : card.name;
         const nextDescription = description !== undefined ? description : card.description;
         const nextCreatorNotes = creator_notes !== undefined ? creator_notes : card.creator_notes;
@@ -4218,7 +4290,7 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
-        if (decoded.role === 'user') {
+        if (decoded.role === 'user' && hasDataUpdate) {
             fields.push("review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
             fields.push('reviewed_at = NULL');
@@ -4252,8 +4324,13 @@ app.put('/api/cards/:id', (req, res) => {
             name: nextName,
             description: nextDescription || ''
         }));
+        const editTime = new Date().toISOString();
         fields.push('updated_at = ?');
-        values.push(new Date().toISOString());
+        values.push(editTime);
+        if (shouldRefreshLatestRank) {
+            fields.push('latest_rank_at = ?');
+            values.push(editTime);
+        }
         values.push(req.params.id);
         const updateCard = db.transaction(() => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
@@ -4261,7 +4338,16 @@ app.put('/api/cards/:id', (req, res) => {
         updateCard();
         clearCardImageCaches(req.params.id);
 
-        logOperation({ userType, userId, username, action: 'edit', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card.name } });
+        logOperation({
+            userType,
+            userId,
+            username,
+            action: 'edit',
+            targetType: 'card',
+            targetId: req.params.id,
+            ip: getRequestIp(req),
+            details: { name: card.name, refreshed_latest_rank: shouldRefreshLatestRank }
+        });
 
         const updated = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
         attachCardDetailPreview(updated);
@@ -5218,7 +5304,8 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
 
         let query = `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.downloads_count,
                             cc.uploader_user_id, u.username AS uploader_username,
-                            cc.review_status, cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address, cc.created_at
+                            cc.review_status, cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
+                            cc.created_at, cc.latest_rank_at, cc.updated_at
                      FROM character_cards cc
                      LEFT JOIN users u ON cc.uploader_user_id = u.id`;
         let countQuery = 'SELECT COUNT(*) as count FROM character_cards cc LEFT JOIN users u ON cc.uploader_user_id = u.id';
@@ -5297,7 +5384,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
 
         clearCardImageCaches(id);
         const updated = db.prepare(
-            'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at, updated_at FROM character_cards WHERE id = ?'
+            'SELECT id, name, description, creator_notes, downloads_count, uploader_user_id, review_status, reviewed_at, rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at FROM character_cards WHERE id = ?'
         ).get(id);
         attachUiTemplateSummary(updated);
 
@@ -6482,6 +6569,7 @@ function logDatabaseHealth() {
         'operation_logs',
         'account_view_limits',
         'card_downloads',
+        'ui_template_downloads',
         'newapi_redemptions',
         'ip_bans'
     ];
