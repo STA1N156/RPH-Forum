@@ -533,6 +533,23 @@ function logOperation({ userType, userId, username, action, targetType, targetId
     }
 }
 
+function getModerationActor(req) {
+    if (req.admin) {
+        return {
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username || 'admin',
+            reviewerType: 'admin'
+        };
+    }
+    return {
+        userType: 'user',
+        userId: req.user.id,
+        username: req.user.username,
+        reviewerType: 'moderator'
+    };
+}
+
 // ============== Brute Force Protection ==============
 function checkBruteForce(ip, username) {
     const cutoff = new Date(Date.now() - LOGIN_WINDOW_MINUTES * 60 * 1000).toISOString();
@@ -2891,17 +2908,24 @@ app.put('/api/admin/ui-templates/:id/review', requireModeration, (req, res) => {
         reviewAndReward();
 
         const updated = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        const actor = getModerationActor(req);
         logOperation({
-            userType: req.admin ? 'admin' : 'user',
-            userId: req.admin?.id || req.user.id,
-            username: req.admin?.username || req.user.username,
+            userType: actor.userType,
+            userId: actor.userId,
+            username: actor.username,
             action: req.admin
                 ? (status === 'approved' ? 'admin_approve_ui_template' : 'admin_reject_ui_template')
                 : (status === 'approved' ? 'moderator_approve_ui_template' : 'moderator_reject_ui_template'),
             targetType: 'ui_template',
             targetId: req.params.id,
             ip: getRequestIp(req),
-            details: { title: template.title, reason: status === 'rejected' ? reason : undefined }
+            details: {
+                title: template.title,
+                reason: status === 'rejected' ? reason : undefined,
+                reviewer_type: actor.reviewerType,
+                reviewer_id: actor.userId,
+                reviewer_username: actor.username
+            }
         });
         if (userEmailBound(template)) {
             sendReviewResultEmail({
@@ -5433,17 +5457,24 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         ).get(id);
         attachUiTemplateSummary(updated);
 
+        const actor = getModerationActor(req);
         logOperation({
-            userType: req.admin ? 'admin' : 'user',
-            userId: req.admin?.id || req.user.id,
-            username: req.admin?.username || req.user.username,
+            userType: actor.userType,
+            userId: actor.userId,
+            username: actor.username,
             action: req.admin
                 ? (status === 'approved' ? 'admin_approve_card' : 'admin_reject_card')
                 : (status === 'approved' ? 'moderator_approve_card' : 'moderator_reject_card'),
             targetType: 'card',
             targetId: id,
             ip: getRequestIp(req),
-            details: { name: card.name, reason: status === 'rejected' ? reason : undefined }
+            details: {
+                name: card.name,
+                reason: status === 'rejected' ? reason : undefined,
+                reviewer_type: actor.reviewerType,
+                reviewer_id: actor.userId,
+                reviewer_username: actor.username
+            }
         });
         if (userEmailBound(card)) {
             sendReviewResultEmail({
@@ -6015,9 +6046,16 @@ app.get('/api/admin/logs', authenticateAdmin, (req, res) => {
             } else if (log.target_type === 'comment') {
                 targetLabel = details.content || '';
             }
+            const reviewerType = details.reviewer_type || '';
+            const reviewerName = details.reviewer_username || '';
+            const reviewerId = details.reviewer_id || '';
+            const actorLabel = reviewerName
+                ? `${reviewerType === 'moderator' ? '审核员' : '管理员'}：${reviewerName}${reviewerId ? ` (#${reviewerId})` : ''}`
+                : (log.username || '');
             return {
                 ...log,
                 details_json: details,
+                actor_label: actorLabel,
                 target_label: targetLabel || ''
             };
         });
