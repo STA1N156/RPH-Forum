@@ -1182,6 +1182,29 @@ function computeTemplateHeatFromRow(row) {
     return computeContentHeatFromRow(row);
 }
 
+function parsePageNumber(value, fallback = 1) {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parsePageLimit(value, fallback = 10, max = 60) {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.min(parsed, max);
+}
+
+function makeHttpEtag(prefix, payload) {
+    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 24);
+    return `"${prefix}-${hash}"`;
+}
+
+function requestHasEtag(req, etag) {
+    return String(req.headers['if-none-match'] || '')
+        .split(',')
+        .map(value => value.trim())
+        .includes(etag);
+}
+
 function floorToTwoDecimals(value) {
     const number = Number(value || 0);
     if (!Number.isFinite(number)) return 0;
@@ -2726,15 +2749,29 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        markPerf(req, 'cards-start', { sortMode });
+        const pageLimit = parsePageLimit(req.query.limit, 10, 60);
+        let page = parsePageNumber(req.query.page, 1);
+        const searchText = String(req.query.q || '').trim().slice(0, 80);
+        const tabMode = String(req.query.tab || 'all');
+        markPerf(req, 'cards-start', { sortMode, page, limit: pageLimit, hasSearch: Boolean(searchText), tab: tabMode });
         const commentCountSql = cardCommentCountExpr('cc');
         const commentHeatCountSql = cardCommentHeatCountExpr('cc');
         const heatExpr = `((IFNULL(cc.views_count, 0) * ${VIEW_HEAT_WEIGHT}) + (IFNULL(${commentHeatCountSql}, 0) * ${COMMENT_HEAT_WEIGHT}) + (IFNULL(cc.downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
         const whereParts = [];
         const params = [];
+        const orderParams = [];
         let orderByClause = 'cc.created_at DESC';
 
-        if (req.admin || isModeratorUser(req.user)) {
+        if (tabMode === 'mine') {
+            if (req.admin || isModeratorUser(req.user)) {
+                whereParts.push("cc.review_status = 'pending'");
+            } else if (req.user) {
+                whereParts.push('cc.uploader_user_id = ?');
+                params.push(req.user.id);
+            } else {
+                whereParts.push('1 = 0');
+            }
+        } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
@@ -2743,7 +2780,21 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push("cc.review_status = 'approved'");
         }
 
-        if (sortMode === 'updated') {
+        if (searchText) {
+            const q = searchText.toLowerCase();
+            const tagQ = q.startsWith('#') ? q.slice(1) : q;
+            whereParts.push(`(
+                LOWER(cc.name) LIKE ?
+                OR LOWER(IFNULL(cc.description, '')) LIKE ?
+                OR LOWER(IFNULL(cc.creator_notes, '')) LIKE ?
+            )`);
+            params.push(`%${q}%`, `%${q}%`, `%${tagQ}%`);
+        }
+
+        if (sortMode === 'featured') {
+            whereParts.push('cc.is_featured = 1');
+            orderByClause = 'cc.created_at DESC';
+        } else if (sortMode === 'updated') {
             orderByClause = 'COALESCE(cc.latest_rank_at, cc.created_at) DESC, cc.created_at DESC';
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
@@ -2754,9 +2805,46 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push("cc.created_at >= datetime('now', '-7 days')");
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         }
+        if (searchText && sortMode === 'latest') {
+            orderByClause = `(CASE WHEN LOWER(cc.name) LIKE ? THEN 1 ELSE 0 END) DESC, ${orderByClause}`;
+            orderParams.push(`%${searchText.toLowerCase().replace(/^#/, '')}%`);
+        }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
+        markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length, orderParams: orderParams.length });
+        const versionRow = db.prepare(
+            `SELECT COUNT(*) AS total,
+                    COALESCE(MAX(cc.updated_at), '') AS max_updated_at,
+                    COALESCE(MAX(cc.latest_rank_at), '') AS max_latest_rank_at,
+                    COALESCE(MAX(cc.reviewed_at), '') AS max_reviewed_at,
+                    COALESCE(SUM(IFNULL(cc.views_count, 0)), 0) AS views_sum,
+                    COALESCE(SUM(IFNULL(cc.downloads_count, 0)), 0) AS downloads_sum,
+                    COALESCE(SUM(IFNULL(cc.comment_count_override, 0)), 0) AS comment_override_sum
+             FROM character_cards cc
+             ${whereClause}`
+        ).get(...params);
+        const commentsVersion = db.prepare('SELECT COUNT(*) AS count FROM character_comments').get();
+        const total = Number(versionRow?.total || 0);
+        const totalPages = Math.max(1, Math.ceil(total / pageLimit));
+        page = total > 0 ? Math.min(page, totalPages) : 1;
+        const offset = (page - 1) * pageLimit;
+        const etag = makeHttpEtag('cards', {
+            viewer: req.admin ? `admin:${req.admin.id}` : (req.user ? `user:${req.user.id}:${req.user.is_moderator ? 1 : 0}` : 'guest'),
+            sortMode,
+            tabMode,
+            searchText,
+            page,
+            pageLimit,
+            versionRow,
+            commentsCount: commentsVersion?.count || 0
+        });
+        res.set('ETag', etag);
+        res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+        markPerf(req, 'cards-version-read', { total, page, limit: pageLimit });
+        if (requestHasEtag(req, etag)) {
+            markPerf(req, 'cards-etag-not-modified', { total });
+            return res.status(304).end();
+        }
         const rawCards = db.prepare(
             `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
@@ -2769,16 +2857,17 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     ${commentHeatCountSql} AS comment_heat_count
              FROM character_cards cc
              ${whereClause}
-             ORDER BY ${orderByClause}`
-        ).all(...params);
+             ORDER BY ${orderByClause}
+             LIMIT ? OFFSET ?`
+        ).all(...params, ...orderParams, pageLimit, offset);
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
         const cards = rawCards.map(card => sanitizeCharacterCardForClient(
             attachUiTemplateSummary(card),
             { viewer: { admin: req.admin, user: req.user } }
         ));
         markPerf(req, 'cards-normalize-summary', { rows: cards.length });
-        res.json(cards);
-        markPerf(req, 'cards-response-json', { rows: cards.length });
+        res.json({ items: cards, total, page, limit: pageLimit, total_pages: totalPages });
+        markPerf(req, 'cards-response-json', { rows: cards.length, total });
     } catch (err) {
         console.error('Fetch cards error:', err);
         res.status(500).json({ error: '获取卡片失败' });
