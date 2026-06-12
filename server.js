@@ -75,6 +75,10 @@ app.set('trust proxy', TRUST_PROXY_SETTING);
 const LOGIN_WINDOW_MINUTES = 1;
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 1;
+const USER_LOGIN_RATE_WINDOW_MS = Math.max(10 * 1000, parseInt(process.env.USER_LOGIN_RATE_WINDOW_MS || String(60 * 1000), 10) || 60 * 1000);
+const USER_LOGIN_RATE_MAX_PER_IP = Math.max(3, parseInt(process.env.USER_LOGIN_RATE_MAX_PER_IP || '20', 10) || 20);
+const USER_LOGIN_RATE_MAX_PER_NAME = Math.max(3, parseInt(process.env.USER_LOGIN_RATE_MAX_PER_NAME || '6', 10) || 6);
+const userLoginRateMap = new Map();
 
 // ============== Captcha Store ==============
 const captchaTokens = new Map(); // token -> { createdAt, used }
@@ -197,9 +201,12 @@ app.use((req, res, next) => {
         const viewer = req.admin
             ? `admin:${req.admin.id}`
             : (req.user ? `user:${req.user.id}` : 'guest');
-        const marks = req.perf.marks.length
-            ? ` marks=${req.perf.marks.map((mark) => `${mark.step}+${formatDuration(mark.delta)}@${formatDuration(mark.total)}${formatPerfExtra(mark.extra)}`).join(' | ')}`
-            : '';
+        const renderedMarks = req.perf.marks.map((mark) => `${mark.step}+${formatDuration(mark.delta)}@${formatDuration(mark.total)}${formatPerfExtra(mark.extra)}`);
+        const responseFinishGap = total - req.perf.last;
+        if (responseFinishGap >= 50) {
+            renderedMarks.push(`response-finish+${formatDuration(responseFinishGap)}@${formatDuration(total)}`);
+        }
+        const marks = renderedMarks.length ? ` marks=${renderedMarks.join(' | ')}` : '';
         console.info(`[Perf] ${req.method} ${req.originalUrl} status=${res.statusCode} total=${formatDuration(total)} viewer=${viewer} ip=${req.realIp || '-'}${marks}`);
     });
     next();
@@ -580,6 +587,41 @@ function recordLoginAttempt(ip, username, success) {
         'INSERT INTO login_attempts (ip_address, username, attempt_time, success) VALUES (?, ?, ?, ?)'
     ).run(ip, username, new Date().toISOString(), success ? 1 : 0);
 }
+
+function touchUserLoginRate(key, now) {
+    const timestamps = (userLoginRateMap.get(key) || [])
+        .filter(time => now - time < USER_LOGIN_RATE_WINDOW_MS);
+    timestamps.push(now);
+    userLoginRateMap.set(key, timestamps);
+    return timestamps.length;
+}
+
+function checkUserLoginRate(ip, username) {
+    const now = Date.now();
+    const safeIp = ip || 'unknown';
+    const safeName = String(username || '').trim().toLowerCase();
+    const ipKey = `ip:${safeIp}`;
+    const nameKey = safeName ? `name:${safeName}` : '';
+    const ipCount = touchUserLoginRate(ipKey, now);
+    const nameCount = nameKey ? touchUserLoginRate(nameKey, now) : 0;
+    if (ipCount > USER_LOGIN_RATE_MAX_PER_IP || nameCount > USER_LOGIN_RATE_MAX_PER_NAME) {
+        return {
+            blocked: true,
+            retryAfter: Math.ceil(USER_LOGIN_RATE_WINDOW_MS / 1000),
+            reason: '登录太频繁，请稍后再试'
+        };
+    }
+    return { blocked: false };
+}
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamps] of userLoginRateMap) {
+        const active = timestamps.filter(time => now - time < USER_LOGIN_RATE_WINDOW_MS);
+        if (active.length === 0) userLoginRateMap.delete(key);
+        else userLoginRateMap.set(key, active);
+    }
+}, 5 * 60 * 1000);
 
 // ============== Email Helpers ==============
 function normalizeEmail(email) {
@@ -1516,6 +1558,11 @@ app.post('/api/user/login', async (req, res) => {
     }
 
     const ip = getRequestIp(req);
+    const loginRate = checkUserLoginRate(ip, username);
+    if (loginRate.blocked) {
+        res.set('Retry-After', String(loginRate.retryAfter));
+        return res.status(429).json({ error: loginRate.reason });
+    }
 
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user) {
@@ -2606,18 +2653,20 @@ function getUiTemplateCommentCounts(templateId) {
 function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}) {
     if (!row) return row;
     const result = { ...row };
+    const contentSource = String(row.content ?? row.content_preview_source ?? row.content_preview ?? '');
     const commentCount = Number(row.comment_count || 0);
     const commentHeatCount = getCommentHeatCount(row);
     const downloadsCount = Number(row.downloads_count || 0);
     const viewsCount = Number(row.views_count || 0);
     const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
-    result.content_preview = String(row.content || '').slice(0, 600);
-    result.variable_count = getUiTemplateVariableCount(row.content);
+    result.content_preview = contentSource.slice(0, 600);
+    result.variable_count = getUiTemplateVariableCount(contentSource);
     result.comment_count = commentCount;
     result.comment_heat_count = commentHeatCount;
     result.heat_score = computeTemplateHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount });
     result.can_view_downloads = canViewDownloads;
     if (!canViewDownloads) result.downloads_count = null;
+    delete result.content_preview_source;
     if (!includeContent) delete result.content;
     return result;
 }
@@ -2777,7 +2826,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
         const rawTemplates = db.prepare(
-            `SELECT id, title, description, file_name, file_ext, mime_type, content, file_size,
+            `SELECT id, title, description, file_name, file_ext, mime_type,
+                    substr(content, 1, 4096) AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
                     ${templateCommentCountSql} AS comment_count,
@@ -2786,8 +2836,8 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
              ${whereClause}
              ORDER BY ${orderByClause}`
         ).all(...params);
-        const contentBytes = rawTemplates.reduce((sum, row) => sum + Buffer.byteLength(row.content || '', 'utf8'), 0);
-        markPerf(req, 'ui-templates-db-read', { rows: rawTemplates.length, contentBytes });
+        const previewBytes = rawTemplates.reduce((sum, row) => sum + Buffer.byteLength(row.content_preview_source || '', 'utf8'), 0);
+        markPerf(req, 'ui-templates-db-read', { rows: rawTemplates.length, previewBytes });
         const templates = rawTemplates.map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
         markPerf(req, 'ui-templates-sanitize', { rows: templates.length });
         res.json(templates);
@@ -3557,6 +3607,18 @@ function cacheThumbnail(cardId, body, contentType, cacheControl, cacheKey = '') 
     thumbnailCache.set(cardId, { body, contentType, cacheControl, cacheKey });
 }
 
+function getCachedThumbnail(cardId, expectedCacheKey = '') {
+    const cached = thumbnailCache.get(cardId);
+    if (!cached) return null;
+    if (expectedCacheKey && cached.cacheKey !== expectedCacheKey) {
+        thumbnailCache.delete(cardId);
+        return null;
+    }
+    thumbnailCache.delete(cardId);
+    thumbnailCache.set(cardId, cached);
+    return cached;
+}
+
 function clearCardImageCaches(cardId) {
     thumbnailCache.delete(cardId);
     previewImageCache.delete(cardId);
@@ -3574,7 +3636,7 @@ app.get('/api/cards/:id/avatar', async (req, res) => {
 
 // Thumbnail endpoint - compressed preview for card listing and detail cover.
 const thumbnailCache = new Map();
-const THUMBNAIL_MAX_CACHE = 500;
+const THUMBNAIL_MAX_CACHE = Math.max(100, parseInt(process.env.THUMBNAIL_MAX_CACHE || '1200', 10) || 1200);
 const thumbnailBuildPromises = new Map();
 const THUMBNAIL_CACHE_DIR = path.join(SERVER_DATA_DIR, 'thumbnail-cache');
 const THUMBNAIL_CACHE_VERSION = 'thumbnail-v3-w800-q84';
@@ -3767,8 +3829,9 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
 
         // Hot path: edits/deletes clear this memory cache, so repeated list renders
         // should not touch SQLite or sharp at all.
-        if (thumbnailCache.has(cardId)) {
-            const cached = thumbnailCache.get(cardId);
+        const hotCached = getCachedThumbnail(cardId);
+        if (hotCached) {
+            const cached = hotCached;
             markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
             res.set('Content-Type', cached.contentType);
             res.set('Cache-Control', cached.cacheControl);
@@ -3782,15 +3845,12 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         const cacheKey = makeThumbnailCacheKey(cardId, row);
 
         // Check memory cache
-        if (thumbnailCache.has(cardId)) {
-            const cached = thumbnailCache.get(cardId);
-            if (cached.cacheKey === cacheKey) {
-                markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
-                res.set('Content-Type', cached.contentType);
-                res.set('Cache-Control', cached.cacheControl);
-                return res.send(cached.body);
-            }
-            thumbnailCache.delete(cardId);
+        const cached = getCachedThumbnail(cardId, cacheKey);
+        if (cached) {
+            markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
+            res.set('Content-Type', cached.contentType);
+            res.set('Cache-Control', cached.cacheControl);
+            return res.send(cached.body);
         }
 
         const diskCached = await readThumbnailFromDisk(cacheKey);
