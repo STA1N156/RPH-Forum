@@ -6232,7 +6232,13 @@ app.put('/api/admin/users/:id/moderator', authenticateAdmin, (req, res) => {
         const user = db.prepare('SELECT id, username, is_moderator FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(404).json({ error: '用户不存在' });
 
-        db.prepare('UPDATE users SET is_moderator = ? WHERE id = ?').run(isModerator ? 1 : 0, userId);
+        const oldModerator = Number(user.is_moderator || 0) === 1;
+        db.prepare(
+            `UPDATE users
+             SET is_moderator = ?,
+                 token_version = token_version + ?
+             WHERE id = ?`
+        ).run(isModerator ? 1 : 0, oldModerator === isModerator ? 0 : 1, userId);
         const updated = db.prepare(
             'SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, download_credits, is_moderator, is_banned, ban_reason, banned_at, created_at, last_login FROM users WHERE id = ?'
         ).get(userId);

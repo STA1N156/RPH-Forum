@@ -2136,6 +2136,25 @@
                 try { sessionStorage.removeItem(key); } catch(e) {}
             }
         };
+        const userTokenStorage = {
+            getItem(key) {
+                let value = null;
+                try { value = localStorage.getItem(key); } catch(e) {}
+                try { localStorage.removeItem(key); } catch(e) {}
+                return value;
+            },
+            setItem(key, val, user) {
+                if (user?.is_moderator) {
+                    this.removeItem(key);
+                    return;
+                }
+                try { localStorage.setItem(key, val); } catch(e) {}
+            },
+            removeItem(key) {
+                try { localStorage.removeItem(key); } catch(e) {}
+                try { sessionStorage.removeItem(key); } catch(e) {}
+            }
+        };
 
         createApp({
             setup() {
@@ -2328,7 +2347,7 @@
                 const adminLoginError = ref('');
 
                 // User Auth (regular users, separate from admin)
-                const userToken = ref(safeStorage.getItem('user_token') || '');
+                const userToken = ref(userTokenStorage.getItem('user_token') || '');
                 const currentUser = ref(null);
                 const isLoggedIn = computed(() => !!currentUser.value);
                 const canModerate = computed(() => isAdmin.value || Boolean(currentUser.value?.is_moderator));
@@ -2550,6 +2569,7 @@
                         if (resp.ok) {
                             const data = await resp.json();
                             currentUser.value = data.user;
+                            userTokenStorage.setItem('user_token', userToken.value, data.user);
                             if (data.user?.requires_email_binding) {
                                 showEmailBindModal.value = true;
                                 await resetCaptcha();
@@ -2560,12 +2580,12 @@
                         } else {
                             userToken.value = '';
                             currentUser.value = null;
-                            safeStorage.removeItem('user_token');
+                            userTokenStorage.removeItem('user_token');
                         }
                     } catch (e) {
                         userToken.value = '';
                         currentUser.value = null;
-                        safeStorage.removeItem('user_token');
+                        userTokenStorage.removeItem('user_token');
                     }
                 };
 
@@ -2692,7 +2712,7 @@
                         }
                         userToken.value = data.token;
                         currentUser.value = data.user;
-                        safeStorage.setItem('user_token', data.token);
+                        userTokenStorage.setItem('user_token', data.token, data.user);
                         showUserAuthModal.value = false;
                         userAuthForm.username = '';
                         userAuthForm.email = '';
@@ -2720,7 +2740,7 @@
                 const handleUserLogout = () => {
                     userToken.value = '';
                     currentUser.value = null;
-                    safeStorage.removeItem('user_token');
+                    userTokenStorage.removeItem('user_token');
                     r18ConfirmedRaw.value = false;
                     safeStorage.removeItem('r18_confirmed');
                     showEmailBindModal.value = false;
@@ -2745,7 +2765,7 @@
                         if (!resp.ok) throw new Error(data.error || '绑定失败');
                         userToken.value = data.token;
                         currentUser.value = data.user;
-                        safeStorage.setItem('user_token', data.token);
+                        userTokenStorage.setItem('user_token', data.token, data.user);
                         bindEmailForm.email = '';
                         bindEmailForm.emailCode = '';
                         showEmailBindModal.value = false;
