@@ -519,8 +519,8 @@ function initDatabase() {
         console.warn('[DB] Failed to repair unreviewed approved UI templates:', e.message);
     }
 
-    // Seed admin user from environment variables
-    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    // Seed internal admin user. Login only checks ADMIN_PASSWORD.
+    const adminUsername = 'admin';
     if (process.env.NODE_ENV === 'production' && (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD === '123456')) {
         throw new Error('[FATAL] ADMIN_PASSWORD must be explicitly set in production and must not use the default value');
     }
@@ -530,11 +530,22 @@ function initDatabase() {
         console.warn('[Security] Using the default admin password. Set ADMIN_PASSWORD before deploying to production.');
     }
 
-    const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(adminUsername);
+    const existing = db.prepare('SELECT id, password_hash FROM admin_users ORDER BY id LIMIT 1').get();
     if (!existing) {
         const hash = bcrypt.hashSync(adminPassword, 12);
         db.prepare('INSERT INTO admin_users (username, password_hash) VALUES (?, ?)').run(adminUsername, hash);
         console.log(`[DB] Admin user "${adminUsername}" created.`);
+    } else {
+        const passwordChanged = !bcrypt.compareSync(adminPassword, existing.password_hash);
+        const nextHash = passwordChanged ? bcrypt.hashSync(adminPassword, 12) : existing.password_hash;
+        db.prepare(`
+            UPDATE admin_users
+               SET username = ?,
+                   password_hash = ?,
+                   token_version = token_version + ?
+             WHERE id = ?
+        `).run(adminUsername, nextHash, passwordChanged ? 1 : 0, existing.id);
+        if (passwordChanged) console.log('[DB] Admin password synced from ADMIN_PASSWORD.');
     }
 
     // Seed default settings

@@ -26,6 +26,7 @@ const SERVER_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const TRUST_PROXY_SETTING = process.env.TRUST_PROXY === 'false'
     ? false
     : (process.env.TRUST_PROXY === 'true' || !process.env.TRUST_PROXY ? true : process.env.TRUST_PROXY);
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (IS_PRODUCTION ? '' : '123456');
 const EXPLICIT_JWT_SECRET = (process.env.JWT_SECRET || '').trim();
 const DERIVED_JWT_SECRET = process.env.ADMIN_PASSWORD
     ? crypto.createHash('sha256').update(`rp-forum:${process.env.ADMIN_PASSWORD}`).digest('hex')
@@ -317,6 +318,14 @@ function generateUserToken(user) {
         JWT_SECRET,
         { expiresIn: '7d' }
     );
+}
+
+function validateAdminPassword(password) {
+    const input = String(password || '');
+    if (!ADMIN_PASSWORD || !input) return false;
+    const inputBuffer = Buffer.from(input);
+    const expectedBuffer = Buffer.from(ADMIN_PASSWORD);
+    return inputBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(inputBuffer, expectedBuffer);
 }
 
 function validateAdminTokenPayload(decoded) {
@@ -1289,13 +1298,14 @@ function maybeSendCardHeatMilestoneEmail(cardId, req) {
 }
 
 // ============== Auth Routes ==============
-app.post('/api/auth/login', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: '请输入用户名和密码' });
+app.post('/api/auth/login', (req, res) => {
+    const { password } = req.body;
+    if (!password) {
+        return res.status(400).json({ error: '请输入管理员密码' });
     }
 
     const ip = getRequestIp(req);
+    const username = 'admin';
 
     // Brute force protection for admin login
     const bruteCheck = checkBruteForce(ip, username);
@@ -1303,16 +1313,14 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(429).json({ error: bruteCheck.reason });
     }
 
-    const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
-    if (!user) {
+    if (!validateAdminPassword(password)) {
         recordLoginAttempt(ip, username, false);
-        return res.status(401).json({ error: '用户名或密码错误' });
+        return res.status(401).json({ error: '管理员密码错误' });
     }
 
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-        recordLoginAttempt(ip, username, false);
-        return res.status(401).json({ error: '用户名或密码错误' });
+    const user = db.prepare('SELECT id, username, token_version FROM admin_users ORDER BY id LIMIT 1').get();
+    if (!user) {
+        return res.status(500).json({ error: '管理员账号未初始化' });
     }
 
     // Success

@@ -31,12 +31,6 @@
                 <form @submit.prevent="handleLogin">
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
-                            <input v-model="loginForm.username" type="text" required autocomplete="username"
-                                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                                placeholder="请输入管理员用户名">
-                        </div>
-                        <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
                             <input v-model="loginForm.password" type="password" required autocomplete="current-password"
                                 class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
@@ -110,7 +104,7 @@
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold">A</div>
-                            <span class="ml-3 text-sm text-gray-300">{{ adminUser?.username }}</span>
+                            <span class="ml-3 text-sm text-gray-300">管理员</span>
                         </div>
                         <button @click="handleLogout" class="text-gray-500 hover:text-red-400 transition" title="退出登录">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
@@ -1273,7 +1267,8 @@
         createApp({
             setup() {
                 const API_BASE = '';
-                const token = ref(localStorage.getItem('admin_token') || '');
+                try { localStorage.removeItem('admin_token'); } catch(e) {}
+                const token = ref(sessionStorage.getItem('admin_token') || '');
                 const isAuthenticated = ref(false);
                 const adminUser = ref(null);
                 const currentPage = ref('dashboard');
@@ -1281,7 +1276,7 @@
                 const toasts = ref([]);
 
                 // Login
-                const loginForm = reactive({ username: '', password: '' });
+                const loginForm = reactive({ password: '' });
                 const loginError = ref('');
                 const loginLoading = ref(false);
 
@@ -1792,7 +1787,7 @@
                         const resp = await fetch(API_BASE + '/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
+                            body: JSON.stringify({ password: loginForm.password })
                         });
                         const data = await resp.json();
                         if (!resp.ok) {
@@ -1802,7 +1797,8 @@
                         token.value = data.token;
                         adminUser.value = data.user;
                         isAuthenticated.value = true;
-                        localStorage.setItem('admin_token', data.token);
+                        try { localStorage.removeItem('admin_token'); } catch(e) {}
+                        sessionStorage.setItem('admin_token', data.token);
                         loadDashboard();
                     } catch (err) {
                         loginError.value = '网络错误，请重试';
@@ -1816,7 +1812,8 @@
                     isAuthenticated.value = false;
                     adminUser.value = null;
                     showMobileMenu.value = false;
-                    localStorage.removeItem('admin_token');
+                    try { localStorage.removeItem('admin_token'); } catch(e) {}
+                    sessionStorage.removeItem('admin_token');
                 }
 
                 async function checkAuth() {

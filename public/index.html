@@ -1800,8 +1800,6 @@
             <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-scale-in">
                 <h3 class="text-lg font-bold text-gray-900 mb-4 text-center">管理员登录</h3>
                 <form @submit.prevent="handleAdminLogin" class="space-y-3">
-                    <input v-model="adminLoginForm.username" type="text" placeholder="用户名" autocomplete="username"
-                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
                     <input v-model="adminLoginForm.password" type="password" placeholder="密码" autocomplete="current-password"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
                     <div v-if="adminLoginError" class="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{{ adminLoginError }}</div>
@@ -2121,6 +2119,20 @@
             setItem(key, val) { try { localStorage.setItem(key, val); } catch(e) {} },
             removeItem(key) { try { localStorage.removeItem(key); } catch(e) {} }
         };
+        const adminStorage = {
+            getItem(key) {
+                try { localStorage.removeItem(key); } catch(e) {}
+                try { return sessionStorage.getItem(key); } catch(e) { return null; }
+            },
+            setItem(key, val) {
+                try { localStorage.removeItem(key); } catch(e) {}
+                try { sessionStorage.setItem(key, val); } catch(e) {}
+            },
+            removeItem(key) {
+                try { localStorage.removeItem(key); } catch(e) {}
+                try { sessionStorage.removeItem(key); } catch(e) {}
+            }
+        };
 
         createApp({
             setup() {
@@ -2305,11 +2317,11 @@
 
                 // Admin Logic - JWT-based authentication
                 const isAdmin = ref(false);
-                const adminToken = ref(safeStorage.getItem('admin_token') || '');
+                const adminToken = ref(adminStorage.getItem('admin_token') || '');
                 const adminClickCount = ref(0);
                 const lastClickTime = ref(0);
                 const showAdminLogin = ref(false);
-                const adminLoginForm = reactive({ username: '', password: '' });
+                const adminLoginForm = reactive({ password: '' });
                 const adminLoginError = ref('');
 
                 // User Auth (regular users, separate from admin)
@@ -2471,11 +2483,11 @@
                             fetchUiTemplates();
                         } else {
                             adminToken.value = '';
-                            safeStorage.removeItem('admin_token');
+                            adminStorage.removeItem('admin_token');
                         }
                     } catch (e) {
                         adminToken.value = '';
-                        safeStorage.removeItem('admin_token');
+                        adminStorage.removeItem('admin_token');
                     }
                 };
 
@@ -2490,7 +2502,7 @@
                         const resp = await fetch(API_BASE + '/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ username: adminLoginForm.username, password: adminLoginForm.password })
+                            body: JSON.stringify({ password: adminLoginForm.password })
                         });
                         const data = await resp.json();
                         if (!resp.ok) {
@@ -2498,10 +2510,9 @@
                             return;
                         }
                         adminToken.value = data.token;
-                        safeStorage.setItem('admin_token', data.token);
+                        adminStorage.setItem('admin_token', data.token);
                         isAdmin.value = true;
                         showAdminLogin.value = false;
-                        adminLoginForm.username = '';
                         adminLoginForm.password = '';
                         showToast('已进入管理员模式', 'success');
                         currentTab.value = 'mine';
@@ -2515,7 +2526,7 @@
                 const handleAdminLogout = () => {
                     adminToken.value = '';
                     isAdmin.value = false;
-                    safeStorage.removeItem('admin_token');
+                    adminStorage.removeItem('admin_token');
                     currentTab.value = 'all';
                     fetchCards();
                     fetchUiTemplates();
@@ -4962,27 +4973,15 @@
 
                 const createIframe = (rawHtml) => {
                     const iframe = document.createElement('iframe');
+                    const frameId = 'rph-frame-' + Math.random().toString(36).slice(2);
                     iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block';
                     iframe.style.height = '1px';
                     iframe.style.overflow = 'hidden';
                     iframe.style.transition = 'none';
                     iframe.style.marginBottom = '0';
+                    iframe.dataset.rphFrameId = frameId;
                     iframe.setAttribute('scrolling', 'no');
-                    iframe.sandbox = 'allow-scripts allow-forms allow-popups allow-modals allow-same-origin';
-                    
-                    iframe.onload = function() {
-                        try {
-                            setTimeout(() => {
-                                if (this.contentWindow && this.contentWindow.document) {
-                                    const doc = this.contentWindow.document;
-                                    const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
-                                    this.style.height = height + 'px';
-                                }
-                            }, 100);
-                        } catch (e) {
-                            console.warn('Failed to resize iframe:', e);
-                        }
-                    };
+                    iframe.sandbox = 'allow-scripts allow-forms allow-popups allow-modals';
 
                     const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
                     const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;max-width:100% !important;min-width:0 !important;height:auto !important;min-height:auto !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;box-sizing:border-box !important;overflow-x:hidden !important;overflow-y:hidden !important;} body{position:relative !important;isolation:isolate !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;} img,video,canvas,svg,iframe{max-width:100% !important;height:auto !important;} table{display:block !important;width:100% !important;overflow-x:auto !important;max-width:100% !important;-webkit-overflow-scrolling:touch !important;} pre,code{white-space:pre-wrap !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;max-width:100% !important;} main,section,article,aside,header,footer{max-width:100% !important;} .container,.reality-panel,.app-container{max-width:100% !important;width:100% !important;margin:0 !important;border-radius:0 !important;box-shadow:none !important;border:none !important;} body > div:first-child{max-width:100% !important;} ' + hudCSS + '</style>';
@@ -4990,6 +4989,7 @@
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const scriptShim = `
                         <script>
+                            const rphFrameId = ${JSON.stringify(frameId)};
                             window.triggerSlash = function(text) {
                                 console.log('Slash triggered:', text);
                                 try {
@@ -5014,11 +5014,12 @@
                                 );
                             }
                             function applyHeight(force) {
-                                if (!window.frameElement) return;
                                 const measuredHeight = Math.max(1, Math.ceil(readHeight()));
                                 if (!force && Math.abs(measuredHeight - lastHeight) < 2) return;
                                 lastHeight = measuredHeight;
-                                window.frameElement.style.height = measuredHeight + 'px';
+                                try {
+                                    window.parent.postMessage({ type: 'rph_iframe_height', frameId: rphFrameId, height: measuredHeight }, '*');
+                                } catch (e) {}
                             }
                             function scheduleHeightUpdate(force) {
                                 if (heightFrame) cancelAnimationFrame(heightFrame);
@@ -5384,9 +5385,10 @@
                     const trimmed = text.trim();
                     
                     const cleanConfig = {
-                        ADD_TAGS: ['details', 'summary', 'iframe', 'svg', 'path', 'g', 'circle', 'rect', 'defs', 'linearGradient', 'stop', 'style', 'div', 'span', 'script', 'button', 'input'],
-                        ADD_ATTR: ['style', 'open', 'srcdoc', 'sandbox', 'frameborder', 'allow', 'allowfullscreen', 'class', 'id', 'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'stroke-linecap', 'stroke-linejoin', 'x1', 'y1', 'x2', 'y2', 'offset', 'stop-color', 'stop-opacity', 'width', 'height', 'onclick', 'type', 'value', 'checked'],
-                        FORBID_ATTR: ['onmouseover', 'onload'],
+                        ADD_TAGS: ['details', 'summary', 'svg', 'path', 'g', 'circle', 'rect', 'defs', 'linearGradient', 'stop', 'div', 'span'],
+                        ADD_ATTR: ['style', 'open', 'class', 'id', 'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'stroke-linecap', 'stroke-linejoin', 'x1', 'y1', 'x2', 'y2', 'offset', 'stop-color', 'stop-opacity', 'width', 'height'],
+                        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+                        FORBID_ATTR: ['onclick', 'onerror', 'onload', 'onmouseover', 'onfocus', 'oninput', 'onchange', 'srcdoc', 'sandbox'],
                         FORCE_BODY: true
                     };
                     const renderHtmlFrame = (rawHtml) => {
@@ -5835,6 +5837,18 @@
 
                 const handleWindowMessage = (event) => {
                     const data = event.data || {};
+                    if (data.type === 'rph_iframe_height') {
+                        const height = Math.min(8000, Math.max(1, Number(data.height) || 1));
+                        const frameId = String(data.frameId || '');
+                        const frames = document.querySelectorAll('iframe[data-rph-frame-id]');
+                        for (const frame of frames) {
+                            if (frame.dataset.rphFrameId === frameId && frame.contentWindow === event.source) {
+                                frame.style.height = height + 'px';
+                                break;
+                            }
+                        }
+                        return;
+                    }
                     if (data.type === 'slash_command') {
                         showToast(`触发指令：${data.content}`, 'success');
                     }
