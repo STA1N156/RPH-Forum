@@ -10,6 +10,7 @@ const bcrypt = require('bcryptjs');
 const helmet = require('helmet');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
+const zlib = require('zlib');
 let sharp = null;
 try {
     sharp = require('sharp');
@@ -23,6 +24,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = parseInt(process.env.PORT) || 9191;
 const HOST = process.env.HOST || '0.0.0.0';
 const SERVER_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const PUBLIC_DIR = path.join(__dirname, 'public');
 const TRUST_PROXY_SETTING = process.env.TRUST_PROXY === 'false'
     ? false
     : (process.env.TRUST_PROXY === 'true' || !process.env.TRUST_PROXY ? true : process.env.TRUST_PROXY);
@@ -287,17 +289,74 @@ app.use((req, res, next) => {
     next();
 });
 
+const htmlAssetCache = new Map();
+
+function getCachedHtmlAsset(fileName) {
+    const filePath = path.join(PUBLIC_DIR, fileName);
+    const stat = fs.statSync(filePath);
+    const cached = htmlAssetCache.get(fileName);
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
+
+    const body = fs.readFileSync(filePath);
+    const gzip = zlib.gzipSync(body, { level: 6 });
+    const etag = `"html-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+    const nextCache = {
+        body,
+        gzip,
+        etag,
+        lastModified: stat.mtime.toUTCString(),
+        size: stat.size,
+        mtimeMs: stat.mtimeMs
+    };
+    htmlAssetCache.set(fileName, nextCache);
+    return nextCache;
+}
+
+function sendCachedHtml(req, res, fileName) {
+    try {
+        const asset = getCachedHtmlAsset(fileName);
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+        res.set('ETag', asset.etag);
+        res.set('Last-Modified', asset.lastModified);
+        res.set('Vary', 'Accept-Encoding');
+        markPerf(req, 'html-cache-ready', { fileName, bytes: asset.body.length, gzipBytes: asset.gzip.length });
+
+        if (String(req.headers['if-none-match'] || '').split(',').map(value => value.trim()).includes(asset.etag)) {
+            markPerf(req, 'html-cache-not-modified');
+            return res.status(304).end();
+        }
+
+        const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+        if (acceptsGzip) {
+            res.set('Content-Encoding', 'gzip');
+            res.set('Content-Length', asset.gzip.length);
+            return res.end(asset.gzip);
+        }
+        res.set('Content-Length', asset.body.length);
+        return res.end(asset.body);
+    } catch (err) {
+        console.error('Send cached HTML error:', err);
+        return res.status(500).send('Failed to load page');
+    }
+}
 
 // Serve static files (no cache for HTML, allow cache for assets).
 // Skip this middleware for API requests so they do not wait on filesystem stats
 // when image generation/cache writes are busy.
-const publicStaticMiddleware = express.static(path.join(__dirname, 'public'), {
-    etag: false,
+app.get('/', (req, res) => sendCachedHtml(req, res, 'index.html'));
+app.get('/index.html', (req, res) => sendCachedHtml(req, res, 'index.html'));
+app.get('/admin', (req, res) => sendCachedHtml(req, res, 'admin.html'));
+
+const publicStaticMiddleware = express.static(PUBLIC_DIR, {
+    index: false,
+    etag: true,
+    maxAge: '7d',
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
-            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
         } else {
-            res.set('Cache-Control', 'public, max-age=86400');
+            res.set('Cache-Control', 'public, max-age=604800');
         }
     }
 });
@@ -6777,14 +6836,7 @@ app.post('/api/admin/import', authenticateAdmin, (req, res) => {
 });
 
 // ============== SPA fallback ==============
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-
-app.get('/', (req, res) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Root and admin HTML are handled by the cached HTML routes above static assets.
 
 function getFileSizeSafe(filePath) {
     try {
