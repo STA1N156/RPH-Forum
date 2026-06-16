@@ -2707,22 +2707,20 @@ function getUiTemplateCommentCounts(templateId) {
 function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}) {
     if (!row) return row;
     const result = { ...row };
-    const previewSource = String(row.content ?? row.content_preview_source ?? row.content_preview ?? '');
-    const variableSource = String(row.variable_count_source ?? row.content ?? row.content_preview_source ?? row.content_preview ?? '');
+    const contentSource = String(row.content ?? row.content_preview_source ?? row.content_preview ?? '');
     const commentCount = Number(row.comment_count || 0);
     const commentHeatCount = getCommentHeatCount(row);
     const downloadsCount = Number(row.downloads_count || 0);
     const viewsCount = Number(row.views_count || 0);
     const canViewDownloads = Boolean(viewer.admin || (viewer.user && row.uploader_user_id === viewer.user.id));
-    result.content_preview = previewSource.slice(0, 600);
-    result.variable_count = getUiTemplateVariableCount(variableSource);
+    result.content_preview = contentSource.slice(0, 600);
+    result.variable_count = getUiTemplateVariableCount(contentSource);
     result.comment_count = commentCount;
     result.comment_heat_count = commentHeatCount;
     result.heat_score = computeTemplateHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount });
     result.can_view_downloads = canViewDownloads;
     if (!canViewDownloads) result.downloads_count = null;
     delete result.content_preview_source;
-    delete result.variable_count_source;
     if (!includeContent) delete result.content;
     return result;
 }
@@ -2905,7 +2903,7 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
         const rawTemplates = db.prepare(
             `SELECT id, title, description, file_name, file_ext, mime_type,
-                    substr(content, 1, 4096) AS content_preview_source, content AS variable_count_source, file_size,
+                    content AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
                     ${templateCommentCountSql} AS comment_count,
