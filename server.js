@@ -290,6 +290,8 @@ app.use((req, res, next) => {
 });
 
 const htmlAssetCache = new Map();
+const publicAssetCache = new Map();
+const CACHED_PUBLIC_ASSETS = new Set(['tailwind.js', 'vue.global.js', 'marked.min.js', 'purify.min.js']);
 
 function getCachedHtmlAsset(fileName) {
     const filePath = path.join(PUBLIC_DIR, fileName);
@@ -341,12 +343,68 @@ function sendCachedHtml(req, res, fileName) {
     }
 }
 
+function getCachedPublicAsset(fileName) {
+    if (!CACHED_PUBLIC_ASSETS.has(fileName)) return null;
+    const filePath = path.join(PUBLIC_DIR, fileName);
+    const stat = fs.statSync(filePath);
+    const cached = publicAssetCache.get(fileName);
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
+
+    const body = fs.readFileSync(filePath);
+    const gzip = zlib.gzipSync(body, { level: 6 });
+    const etag = `"asset-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+    const nextCache = {
+        body,
+        gzip,
+        etag,
+        lastModified: stat.mtime.toUTCString(),
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+        contentType: 'application/javascript; charset=utf-8'
+    };
+    publicAssetCache.set(fileName, nextCache);
+    return nextCache;
+}
+
+function sendCachedPublicAsset(req, res, fileName) {
+    try {
+        const asset = getCachedPublicAsset(fileName);
+        if (!asset) return res.status(404).end();
+        res.set('Content-Type', asset.contentType);
+        res.set('Cache-Control', 'public, max-age=604800');
+        res.set('ETag', asset.etag);
+        res.set('Last-Modified', asset.lastModified);
+        res.set('Vary', 'Accept-Encoding');
+        markPerf(req, 'public-asset-cache-ready', { fileName, bytes: asset.body.length, gzipBytes: asset.gzip.length });
+
+        if (String(req.headers['if-none-match'] || '').split(',').map(value => value.trim()).includes(asset.etag)) {
+            markPerf(req, 'public-asset-cache-not-modified');
+            return res.status(304).end();
+        }
+
+        const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+        if (acceptsGzip) {
+            res.set('Content-Encoding', 'gzip');
+            res.set('Content-Length', asset.gzip.length);
+            return res.end(asset.gzip);
+        }
+        res.set('Content-Length', asset.body.length);
+        return res.end(asset.body);
+    } catch (err) {
+        console.error('Send cached public asset error:', err);
+        return res.status(500).end();
+    }
+}
+
 // Serve static files (no cache for HTML, allow cache for assets).
 // Skip this middleware for API requests so they do not wait on filesystem stats
 // when image generation/cache writes are busy.
 app.get('/', (req, res) => sendCachedHtml(req, res, 'index.html'));
 app.get('/index.html', (req, res) => sendCachedHtml(req, res, 'index.html'));
 app.get('/admin', (req, res) => sendCachedHtml(req, res, 'admin.html'));
+CACHED_PUBLIC_ASSETS.forEach(fileName => {
+    app.get(`/${fileName}`, (req, res) => sendCachedPublicAsset(req, res, fileName));
+});
 
 const publicStaticMiddleware = express.static(PUBLIC_DIR, {
     index: false,
@@ -3847,6 +3905,25 @@ function cleanupOutdatedImageCaches() {
     ensureImageCacheVersion(PREVIEW_IMAGE_CACHE_DIR, PREVIEW_IMAGE_CACHE_VERSION, 'preview-image');
 }
 
+function warmPublicAssetCache() {
+    ['index.html', 'admin.html'].forEach(fileName => {
+        try {
+            const asset = getCachedHtmlAsset(fileName);
+            console.info(`[AssetCache] warmed html ${fileName} bytes=${asset.body.length} gzip=${asset.gzip.length}`);
+        } catch (err) {
+            console.warn(`[AssetCache] failed to warm html ${fileName}:`, err.message);
+        }
+    });
+    for (const fileName of CACHED_PUBLIC_ASSETS) {
+        try {
+            const asset = getCachedPublicAsset(fileName);
+            console.info(`[AssetCache] warmed asset ${fileName} bytes=${asset.body.length} gzip=${asset.gzip.length}`);
+        } catch (err) {
+            console.warn(`[AssetCache] failed to warm asset ${fileName}:`, err.message);
+        }
+    }
+}
+
 function makeThumbnailCacheKey(cardId, row) {
     const signature = crypto
         .createHash('sha1')
@@ -6905,6 +6982,7 @@ const server = app.listen(PORT, HOST, () => {
     console.log(`[Server] RP Forum running at http://${HOST}:${PORT}`);
     console.log(`[Server] Admin panel at http://${HOST}:${PORT}/admin`);
     setTimeout(() => {
+        warmPublicAssetCache();
         logDatabaseHealth();
         cleanupOutdatedImageCaches();
         scheduleCardUiSummaryBackfill();
