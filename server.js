@@ -1336,15 +1336,41 @@ function setCardListCache(key, cards) {
         cardListCache.delete(firstKey);
     }
     const body = JSON.stringify(cards);
+    const gzipBody = zlib.gzipSync(body, { level: 6 });
     const etagHash = crypto.createHash('sha1').update(`${key}:${cardListCacheRevision}:${body}`).digest('hex').slice(0, 16);
     const cached = {
         body,
+        gzipBody,
         etag: `"cards-${cardListCacheRevision}-${etagHash}"`,
         revision: cardListCacheRevision,
         createdAt: Date.now()
     };
     cardListCache.set(key, cached);
     return cached;
+}
+
+function sendCardListCache(req, res, cached) {
+    res.set('ETag', cached.etag);
+    res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+    res.set('Vary', 'Accept-Encoding');
+    res.type('application/json');
+
+    if (hasRequestEtag(req, cached.etag)) {
+        markPerf(req, 'cards-cache-not-modified');
+        return res.status(304).end();
+    }
+
+    const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+    if (acceptsGzip && cached.gzipBody) {
+        res.set('Content-Encoding', 'gzip');
+        res.set('Content-Length', cached.gzipBody.length);
+        markPerf(req, 'cards-response-gzip', { bytes: cached.gzipBody.length });
+        return res.end(cached.gzipBody);
+    }
+
+    res.set('Content-Length', Buffer.byteLength(cached.body, 'utf8'));
+    markPerf(req, 'cards-response-json', { bytes: cached.body.length });
+    return res.send(cached.body);
 }
 
 function clearCardListCache(reason = '') {
@@ -2901,15 +2927,8 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const cacheKey = getCardListCacheKey(req, sortMode);
         const cached = getFreshCardListCache(cacheKey);
         if (cached) {
-            res.set('ETag', cached.etag);
-            res.set('Cache-Control', 'private, max-age=0, must-revalidate');
-            markPerf(req, 'cards-cache-hit', { bytes: cached.body.length });
-            if (hasRequestEtag(req, cached.etag)) {
-                markPerf(req, 'cards-cache-not-modified');
-                return res.status(304).end();
-            }
-            res.type('application/json');
-            return res.send(cached.body);
+            markPerf(req, 'cards-cache-hit', { bytes: cached.body.length, gzipBytes: cached.gzipBody?.length || 0 });
+            return sendCardListCache(req, res, cached);
         }
 
         const commentCountSql = cardCommentCountExpr('cc');
@@ -2966,12 +2985,8 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         ));
         markPerf(req, 'cards-normalize-summary', { rows: cards.length });
         const newCache = setCardListCache(cacheKey, cards);
-        markPerf(req, 'cards-cache-store', { rows: cards.length, bytes: newCache.body.length });
-        res.set('ETag', newCache.etag);
-        res.set('Cache-Control', 'private, max-age=0, must-revalidate');
-        res.type('application/json');
-        res.send(newCache.body);
-        markPerf(req, 'cards-response-json', { rows: cards.length });
+        markPerf(req, 'cards-cache-store', { rows: cards.length, bytes: newCache.body.length, gzipBytes: newCache.gzipBody.length });
+        return sendCardListCache(req, res, newCache);
     } catch (err) {
         console.error('Fetch cards error:', err);
         res.status(500).json({ error: '获取卡片失败' });
