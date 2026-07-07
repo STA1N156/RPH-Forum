@@ -139,14 +139,35 @@
         }
 
         /* Toast Transitions */
+        .toast-stack {
+            position: relative;
+        }
+
+        .toast-item {
+            will-change: transform, opacity;
+            transform-origin: top center;
+        }
+
         .list-enter-active,
         .list-leave-active {
-            transition: all 0.4s ease;
+            transition:
+                opacity 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
+                transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
         }
+
+        .list-move {
+            transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .list-leave-active {
+            position: absolute;
+            z-index: 0;
+        }
+
         .list-enter-from,
         .list-leave-to {
             opacity: 0;
-            transform: translateY(-20px);
+            transform: translateY(-10px) scale(0.98);
         }
 
         /* Fade Animation */
@@ -345,9 +366,9 @@
     <div id="app" v-cloak class="min-h-screen flex flex-col">
         <!-- Toast Notification Container -->
         <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[999] flex flex-col gap-2 pointer-events-none items-center">
-            <transition-group name="list" tag="div" class="flex flex-col items-center">
+            <transition-group name="list" tag="div" class="toast-stack flex flex-col items-center gap-2">
                 <div v-for="toast in toasts" :key="toast.id"
-                     class="pointer-events-auto flex items-center px-6 py-3 mb-2 rounded-full shadow-lg border bg-white text-gray-800 min-w-[300px] transform transition-all duration-300 backdrop-blur-sm bg-opacity-95"
+                     class="pointer-events-auto flex items-center px-6 py-3 rounded-full shadow-lg border bg-white text-gray-800 min-w-[300px] transform backdrop-blur-sm bg-opacity-95 toast-item"
                      :class="{
                         'border-green-200 text-green-800 bg-green-50': toast.type === 'success',
                         'border-red-200 text-red-800 bg-red-50': toast.type === 'error',
@@ -2218,6 +2239,7 @@
                 });
                 const isDownloadingCard = ref(false);
                 const toasts = ref([]);
+                let toastIdSeed = 0;
 
                 // R18 Content Control
                 const r18ConfirmedRaw = ref(safeStorage.getItem('r18_confirmed') === 'true');
@@ -3297,7 +3319,7 @@
                 });
 
                 const showToast = (message, type = 'info', duration = 3000) => {
-                    const id = Date.now();
+                    const id = `${Date.now()}-${toastIdSeed++}`;
                     toasts.value.push({ id, message, type });
                     setTimeout(() => {
                         toasts.value = toasts.value.filter(t => t.id !== id);
@@ -4997,33 +5019,12 @@
                     }
                 });
 
-                const createIframe = (rawHtml) => {
-                    const iframe = document.createElement('iframe');
-                    iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block';
-                    iframe.style.height = '1px';
-                    iframe.style.overflow = 'hidden';
-                    iframe.style.transition = 'none';
-                    iframe.style.marginBottom = '0';
-                    iframe.setAttribute('scrolling', 'no');
-                    iframe.sandbox = 'allow-scripts allow-forms allow-popups allow-modals allow-same-origin';
-                    
-                    iframe.onload = function() {
-                        try {
-                            setTimeout(() => {
-                                if (this.contentWindow && this.contentWindow.document) {
-                                    const doc = this.contentWindow.document;
-                                    const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
-                                    this.style.height = height + 'px';
-                                }
-                            }, 100);
-                        } catch (e) {
-                            console.warn('Failed to resize iframe:', e);
-                        }
-                    };
+                const htmlIframeSandbox = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-same-origin allow-downloads allow-pointer-lock allow-presentation allow-top-navigation-by-user-activation';
 
-                    const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
-                    const resetStyle = '<style>html,body{margin:0 !important;padding:0 !important;width:100% !important;max-width:100% !important;min-width:0 !important;height:auto !important;min-height:auto !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;box-sizing:border-box !important;overflow-x:hidden !important;overflow-y:hidden !important;} body{position:relative !important;isolation:isolate !important;} ::-webkit-scrollbar{display:none;} *,*::before,*::after{box-sizing:inherit !important;} img,video,canvas,svg,iframe{max-width:100% !important;height:auto !important;} table{display:block !important;width:100% !important;overflow-x:auto !important;max-width:100% !important;-webkit-overflow-scrolling:touch !important;} pre,code{white-space:pre-wrap !important;word-wrap:break-word !important;overflow-wrap:anywhere !important;max-width:100% !important;} main,section,article,aside,header,footer{max-width:100% !important;} .container,.reality-panel,.app-container{max-width:100% !important;width:100% !important;margin:0 !important;border-radius:0 !important;box-shadow:none !important;border:none !important;} body > div:first-child{max-width:100% !important;} ' + hudCSS + '</style>';
+                const buildExecutableHtmlDocument = (rawHtml) => {
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
+                    const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
+                    const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:auto!important;word-wrap:break-word!important;box-sizing:border-box!important;overflow:hidden!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;height:auto!important;}table{display:block!important;overflow-x:auto!important;max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}.container,.reality-panel,.app-container{max-width:100%!important;width:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;border:none!important;height:auto!important;min-height:0!important;}body>div:first-child{margin:0!important;max-width:100%!important;height:auto!important;min-height:0!important;}#app{height:auto!important;min-height:auto!important;}.bottom-safe{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;}' + hudCSS + '</style>';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const scriptShim = `
                         <script>
@@ -5035,85 +5036,131 @@
                                     console.error('TriggerSlash error:', e);
                                 }
                             };
+
                             let lastHeight = 0;
-                            let heightFrame = 0;
-                            function readHeight() {
-                                const body = document.body;
-                                const html = document.documentElement;
-                                if (!body || !html) return 0;
-                                return Math.max(
-                                    body.scrollHeight,
-                                    body.offsetHeight,
-                                    body.clientHeight,
-                                    html.scrollHeight,
-                                    html.offsetHeight,
-                                    html.clientHeight
-                                );
+                            let isUpdating = false;
+                            let resizeObserver = null;
+                            function observeBody() {
+                                if (resizeObserver || !window.ResizeObserver || !document.body) return;
+                                resizeObserver = new ResizeObserver(updateHeight);
+                                resizeObserver.observe(document.body);
                             }
-                            function applyHeight(force) {
-                                if (!window.frameElement) return;
-                                const measuredHeight = Math.max(1, Math.ceil(readHeight()));
-                                if (!force && Math.abs(measuredHeight - lastHeight) < 2) return;
-                                lastHeight = measuredHeight;
-                                window.frameElement.style.height = measuredHeight + 'px';
-                            }
-                            function scheduleHeightUpdate(force) {
-                                if (heightFrame) cancelAnimationFrame(heightFrame);
-                                heightFrame = requestAnimationFrame(() => {
-                                    heightFrame = 0;
-                                    applyHeight(force);
+                            function updateHeight() {
+                                if (!window.frameElement || isUpdating) return;
+                                isUpdating = true;
+                                requestAnimationFrame(function() {
+                                    var body = document.body;
+                                    var html = document.documentElement;
+                                    if (!body || !html) {
+                                        isUpdating = false;
+                                        return;
+                                    }
+                                    var maxBottom = 0;
+                                    var nodes = body.querySelectorAll('*');
+                                    for (var i = 0; i < nodes.length; i++) {
+                                        var child = nodes[i];
+                                        if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE' || child.tagName === 'LINK') continue;
+                                        var style = window.getComputedStyle(child);
+                                        if (style.position === 'fixed') continue;
+                                        var rect = child.getBoundingClientRect();
+                                        var itemMax = rect.bottom;
+                                        if (itemMax > maxBottom) maxBottom = itemMax;
+                                    }
+                                    if (maxBottom <= 0 && body.textContent.trim()) {
+                                        var range = document.createRange();
+                                        range.selectNodeContents(body);
+                                        maxBottom = range.getBoundingClientRect().bottom;
+                                        range.detach();
+                                    }
+                                    var bodyStyle = window.getComputedStyle(body);
+                                    var paddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+                                    var marginBottom = parseFloat(bodyStyle.marginBottom) || 0;
+                                    var newHeight = Math.max(1, maxBottom + paddingBottom + marginBottom) + 4;
+                                    if (Math.abs(newHeight - lastHeight) > 1) {
+                                        window.frameElement.style.height = newHeight + 'px';
+                                        lastHeight = newHeight;
+                                    }
+                                    isUpdating = false;
                                 });
                             }
-                            window.addEventListener('load', () => { scheduleHeightUpdate(true); setTimeout(() => scheduleHeightUpdate(true), 200); });
-                            window.addEventListener('resize', () => scheduleHeightUpdate(false));
-                            window.addEventListener('click', () => { setTimeout(() => scheduleHeightUpdate(false), 100); setTimeout(() => scheduleHeightUpdate(false), 300); });
-                            window.addEventListener('DOMContentLoaded', () => {
-                                document.querySelectorAll('img').forEach(img => img.addEventListener('load', () => scheduleHeightUpdate(true)));
-                                scheduleHeightUpdate(true);
+                            window.addEventListener('load', function() {
+                                observeBody();
+                                updateHeight();
+                                setTimeout(updateHeight, 200);
+                                setTimeout(updateHeight, 1000);
+                            });
+                            window.addEventListener('resize', updateHeight);
+                            window.addEventListener('click', function(event) {
+                                var slashTarget = event.target && event.target.closest && event.target.closest('[data-slash]');
+                                if (slashTarget) {
+                                    event.preventDefault();
+                                    var command = slashTarget.getAttribute('data-slash');
+                                    if (command) window.triggerSlash(command);
+                                }
+                                var start = Date.now();
+                                var tick = function() {
+                                    if (Date.now() - start >= 600) return;
+                                    updateHeight();
+                                    requestAnimationFrame(tick);
+                                };
+                                tick();
+                            });
+                            window.addEventListener('DOMContentLoaded', function() {
+                                observeBody();
+                                document.querySelectorAll('img').forEach(function(img) {
+                                    img.addEventListener('load', updateHeight);
+                                });
+                                updateHeight();
                             });
                             if (window.ResizeObserver) {
-                                const ro = new ResizeObserver(() => scheduleHeightUpdate(false));
-                                const observeTargets = () => {
-                                    if (document.documentElement) ro.observe(document.documentElement);
-                                    if (document.body) ro.observe(document.body);
-                                };
-                                if (document.body) observeTargets();
-                                else window.addEventListener('DOMContentLoaded', observeTargets, { once: true });
-                            }
-                            if (window.MutationObserver) {
-                                const mo = new MutationObserver(() => scheduleHeightUpdate(false));
-                                const observeMutations = () => {
-                                    if (document.body) {
-                                        mo.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
-                                    }
-                                };
-                                if (document.body) observeMutations();
-                                else window.addEventListener('DOMContentLoaded', observeMutations, { once: true });
+                                observeBody();
                             } else {
-                                setInterval(() => scheduleHeightUpdate(false), 1500);
+                                setInterval(updateHeight, 1000);
                             }
+                            if (document.readyState === 'complete') updateHeight();
                         <\/script>
                     `;
-                    
-                    let content = rawHtml;
-                    const trimmed = content.trim();
-                    const isStandardDoc = /^\s*(<!doctype|<html)/i.test(trimmed);
 
-                    if (isStandardDoc) {
+                    let content = rawHtml || '';
+                    const trimmed = content.trim();
+                    if (/^\s*(<!doctype|<html)/i.test(trimmed)) {
                         const headRegex = /<head(\s[^>]*)?>/i;
                         const htmlRegex = /<html(\s[^>]*)?>/i;
                         if (headRegex.test(content)) {
-                            content = content.replace(headRegex, (match) => match + metaViewport + resetStyle + jqueryScript + scriptShim);
-                        } else if (htmlRegex.test(content)) {
-                            content = content.replace(htmlRegex, (match) => match + '<head>' + metaViewport + resetStyle + jqueryScript + scriptShim + '</head>');
-                        } else {
-                            content = metaViewport + resetStyle + jqueryScript + scriptShim + content;
+                            return content.replace(headRegex, (match) => match + metaViewport + resetStyle + jqueryScript + scriptShim);
                         }
-                    } else {
-                        content = `<!DOCTYPE html><html><head>${metaViewport}${resetStyle}${jqueryScript}${scriptShim}</head><body>${rawHtml}</body></html>`;
+                        if (htmlRegex.test(content)) {
+                            return content.replace(htmlRegex, (match) => match + '<head>' + metaViewport + resetStyle + jqueryScript + scriptShim + '</head>');
+                        }
+                        return metaViewport + resetStyle + jqueryScript + scriptShim + content;
                     }
 
-                    iframe.srcdoc = content;
+                    return `<!DOCTYPE html>
+<html>
+<head>
+${metaViewport}
+${resetStyle}
+${jqueryScript}
+${scriptShim}
+</head>
+<body>
+${content}
+</body>
+</html>`;
+                };
+
+                const createIframe = (rawHtml) => {
+                    const iframe = document.createElement('iframe');
+                    iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block executable-html-frame';
+                    iframe.style.height = 'auto';
+                    iframe.style.overflow = 'hidden';
+                    iframe.style.transition = 'height 0.2s ease-out';
+                    iframe.style.margin = '0';
+                    iframe.style.padding = '0';
+                    iframe.setAttribute('scrolling', 'no');
+                    iframe.setAttribute('sandbox', htmlIframeSandbox);
+                    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen; autoplay; encrypted-media; picture-in-picture');
+                    iframe.srcdoc = buildExecutableHtmlDocument(rawHtml);
                     return iframe;
                 };
 
