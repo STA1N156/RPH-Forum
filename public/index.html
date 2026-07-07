@@ -5039,12 +5039,6 @@
 
                             let lastHeight = 0;
                             let isUpdating = false;
-                            let resizeObserver = null;
-                            function observeBody() {
-                                if (resizeObserver || !window.ResizeObserver || !document.body) return;
-                                resizeObserver = new ResizeObserver(updateHeight);
-                                resizeObserver.observe(document.body);
-                            }
                             function updateHeight() {
                                 if (!window.frameElement || isUpdating) return;
                                 isUpdating = true;
@@ -5056,35 +5050,27 @@
                                         return;
                                     }
                                     var maxBottom = 0;
-                                    var nodes = body.querySelectorAll('*');
-                                    for (var i = 0; i < nodes.length; i++) {
-                                        var child = nodes[i];
+                                    for (var i = 0; i < body.children.length; i++) {
+                                        var child = body.children[i];
                                         if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE' || child.tagName === 'LINK') continue;
                                         var style = window.getComputedStyle(child);
                                         if (style.position === 'fixed') continue;
                                         var rect = child.getBoundingClientRect();
-                                        var itemMax = rect.bottom;
+                                        var itemMax = Math.max(rect.bottom, child.offsetTop + child.offsetHeight);
                                         if (itemMax > maxBottom) maxBottom = itemMax;
                                     }
-                                    if (maxBottom <= 0 && body.textContent.trim()) {
-                                        var range = document.createRange();
-                                        range.selectNodeContents(body);
-                                        maxBottom = range.getBoundingClientRect().bottom;
-                                        range.detach();
-                                    }
                                     var bodyStyle = window.getComputedStyle(body);
-                                    var paddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
                                     var marginBottom = parseFloat(bodyStyle.marginBottom) || 0;
-                                    var newHeight = Math.max(1, maxBottom + paddingBottom + marginBottom) + 4;
-                                    if (Math.abs(newHeight - lastHeight) > 1) {
-                                        window.frameElement.style.height = newHeight + 'px';
+                                    var newHeight = Math.max(maxBottom + marginBottom, body.scrollHeight) + 4;
+                                    if (Math.abs(newHeight - lastHeight) > 0) {
                                         lastHeight = newHeight;
+                                        window.frameElement.style.height = newHeight + 'px';
                                     }
                                     isUpdating = false;
                                 });
                             }
+
                             window.addEventListener('load', function() {
-                                observeBody();
                                 updateHeight();
                                 setTimeout(updateHeight, 200);
                                 setTimeout(updateHeight, 1000);
@@ -5106,14 +5092,14 @@
                                 tick();
                             });
                             window.addEventListener('DOMContentLoaded', function() {
-                                observeBody();
                                 document.querySelectorAll('img').forEach(function(img) {
                                     img.addEventListener('load', updateHeight);
                                 });
                                 updateHeight();
                             });
                             if (window.ResizeObserver) {
-                                observeBody();
+                                var ro = new ResizeObserver(updateHeight);
+                                if (document.body) ro.observe(document.body);
                             } else {
                                 setInterval(updateHeight, 1000);
                             }
@@ -5160,6 +5146,18 @@ ${content}
                     iframe.setAttribute('scrolling', 'no');
                     iframe.setAttribute('sandbox', htmlIframeSandbox);
                     iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen; autoplay; encrypted-media; picture-in-picture');
+                    iframe.onload = function () {
+                        try {
+                            setTimeout(() => {
+                                if (this.contentWindow && this.contentWindow.document) {
+                                    const doc = this.contentWindow.document;
+                                    this.style.height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 'px';
+                                }
+                            }, 100);
+                        } catch (e) {
+                            console.warn('Failed to resize iframe:', e);
+                        }
+                    };
                     iframe.srcdoc = buildExecutableHtmlDocument(rawHtml);
                     return iframe;
                 };
