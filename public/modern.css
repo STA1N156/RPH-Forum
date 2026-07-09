@@ -76,6 +76,61 @@ body.forum-shell {
 .catalog-tabs { margin-bottom: 14px !important; border-radius: 0; }
 .catalog-filters { margin-bottom: 22px !important; border-radius: 0; }
 
+.catalog-loader {
+    display: flex;
+    min-height: clamp(15rem, 34vh, 22rem);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    animation: catalog-loader-enter 0.32s var(--ease-out) both;
+}
+
+.catalog-loader-symbol {
+    position: relative;
+    display: grid;
+    width: 50px;
+    height: 50px;
+    place-items: center;
+}
+
+.catalog-loader-symbol::before,
+.catalog-loader-symbol::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    border-radius: 999px;
+}
+
+.catalog-loader-symbol::before {
+    border: 2px solid rgba(37, 99, 235, 0.12);
+}
+
+.catalog-loader-symbol::after {
+    background: conic-gradient(from 30deg, transparent 0 56%, rgba(37, 99, 235, 0.3) 74%, var(--accent) 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 0);
+    animation: catalog-loader-spin 0.82s linear infinite;
+    will-change: transform;
+}
+
+.catalog-loader-symbol span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 7px rgba(37, 99, 235, 0.08);
+    animation: catalog-loader-breathe 1.5s ease-in-out infinite;
+}
+
+.catalog-loader p {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    animation: catalog-loader-text 1.5s ease-in-out infinite;
+}
+
 .catalog-tabs > div {
     gap: 20px !important;
     padding: 0 2px;
@@ -223,6 +278,23 @@ body.forum-shell {
 }
 
 @keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes catalog-loader-enter {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes catalog-loader-spin { to { transform: rotate(360deg); } }
+
+@keyframes catalog-loader-breathe {
+    0%, 100% { opacity: 0.72; transform: scale(0.88); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes catalog-loader-text {
+    0%, 100% { opacity: 0.62; }
+    50% { opacity: 1; }
+}
 
 @media (max-width: 900px) {
     .forum-card-list { grid-template-columns: 1fr; }

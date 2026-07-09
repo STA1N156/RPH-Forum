@@ -362,7 +362,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20260710-8">
+    <link rel="stylesheet" href="/modern.css?v=20260710-9">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -508,7 +508,7 @@
             </div>
 
             <!-- Plaza Sections -->
-            <div v-if="!loading" class="catalog-tabs mb-4 animate-fade-in">
+            <div class="catalog-tabs mb-4 animate-fade-in">
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
                     <button @click="contentSection = 'all'"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
@@ -532,7 +532,7 @@
             </div>
 
             <!-- Sort + Tags row -->
-            <div v-if="!loading" class="catalog-filters mb-5 animate-fade-in">
+            <div class="catalog-filters mb-5 animate-fade-in">
                 <div class="tag-filter-layout flex items-start gap-2" :class="{ 'tags-expanded': tagsExpanded }">
                     <!-- Sort dropdown -->
                     <div class="sort-control relative flex-shrink-0">
@@ -605,12 +605,11 @@
             </div>
 
             <!-- Loading State -->
-            <div v-if="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center pointer-events-none animate-fade-in">
-                <div class="relative">
-                    <div class="w-16 h-16 border-4 border-primary-100 rounded-full"></div>
-                    <div class="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+            <div v-if="loading" class="catalog-loader" role="status" aria-live="polite">
+                <div class="catalog-loader-symbol" aria-hidden="true">
+                    <span></span>
                 </div>
-                <p class="mt-6 text-gray-500 font-medium">正在加载角色卡...</p>
+                <p>{{ contentSection === 'uitemplates' ? '正在加载 UI 模板' : '正在加载角色卡' }}</p>
             </div>
 
             <!-- Empty State -->
