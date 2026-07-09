@@ -362,7 +362,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20260710-7">
+    <link rel="stylesheet" href="/modern.css?v=20260710-8">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -3405,17 +3405,23 @@
                     card.clean_notes = text.replace(regex, '').trim();
                 };
 
-                const fetchCards = async () => {
-                    const showFullLoading = cards.value.length === 0 && contentSection.value !== 'uitemplates';
+                let cardsRequestId = 0;
+                let uiTemplatesRequestId = 0;
+
+                const fetchCards = async ({ showLoading = false } = {}) => {
+                    const requestId = ++cardsRequestId;
+                    const requestedSort = cardSort.value;
+                    const showFullLoading = showLoading || (cards.value.length === 0 && contentSection.value !== 'uitemplates');
                     if (showFullLoading) loading.value = true;
                     try {
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(cardSort.value), { headers });
+                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(requestedSort), { headers });
                         if (resp.status === 304) return;
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
+                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value) return;
                         const items = Array.isArray(data) ? data : (data.items || []);
                         
                         // Process tags for each card
@@ -3431,24 +3437,33 @@
                             return card;
                         });
                     } catch (err) {
+                        if (requestId !== cardsRequestId) return;
                         console.error('Fetch error:', err);
                         showToast('加载失败，请检查服务器连接', 'error');
                     } finally {
-                        if (showFullLoading) loading.value = false;
+                        if (showFullLoading && requestId === cardsRequestId) loading.value = false;
                     }
                 };
 
-                const fetchUiTemplates = async () => {
+                const fetchUiTemplates = async ({ showLoading = false } = {}) => {
+                    const requestId = ++uiTemplatesRequestId;
+                    const requestedSort = cardSort.value;
+                    if (showLoading) loading.value = true;
                     try {
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/ui-templates?sort=' + encodeURIComponent(cardSort.value), { headers });
+                        const resp = await fetch(API_BASE + '/api/ui-templates?sort=' + encodeURIComponent(requestedSort), { headers });
                         if (!resp.ok) throw new Error('加载失败');
-                        uiTemplates.value = await resp.json();
+                        const items = await resp.json();
+                        if (requestId !== uiTemplatesRequestId || requestedSort !== cardSort.value) return;
+                        uiTemplates.value = items;
                     } catch (err) {
+                        if (requestId !== uiTemplatesRequestId) return;
                         console.error('Fetch UI templates error:', err);
                         showToast('UI模板加载失败', 'error');
+                    } finally {
+                        if (showLoading && requestId === uiTemplatesRequestId) loading.value = false;
                     }
                 };
 
@@ -5937,8 +5952,8 @@ ${content}
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(cardSort, () => {
-                    fetchCards();
-                    fetchUiTemplates();
+                    fetchCards({ showLoading: contentSection.value !== 'uitemplates' });
+                    fetchUiTemplates({ showLoading: contentSection.value === 'uitemplates' });
                 });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value !== 'login') resetCaptcha();

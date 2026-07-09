@@ -230,8 +230,7 @@ body.forum-shell {
 
 @media (max-width: 640px) {
     .site-nav { height: 64px !important; }
-    .brand-copy small { display: none; }
-    .brand-copy strong { font-size: 14px; }
+    .brand-copy { display: none; }
     .site-main { padding-top: 18px !important; }
     .catalog-tabs, .catalog-filters { margin-left: -4px; margin-right: -4px; padding: 0 4px; }
     .content-card { min-height: 12rem !important; border-radius: 17px !important; }
