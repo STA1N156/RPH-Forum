@@ -225,6 +225,14 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS content_view_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type TEXT NOT NULL,
+            content_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS ip_bans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ip_pattern TEXT UNIQUE NOT NULL,
@@ -270,10 +278,12 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_comments_card_time ON character_comments(card_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_user ON comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_id ON ui_template_comments(template_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comments_time ON ui_template_comments(template_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_comment ON ui_template_comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_user ON ui_template_comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_card_likes_card ON card_likes(card_id);
@@ -287,13 +297,16 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_account_view_limits_lookup ON account_view_limits(content_type, content_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_account_view_limits_last ON account_view_limits(last_view_at);
+        CREATE INDEX IF NOT EXISTS idx_content_view_events_lookup ON content_view_events(content_type, content_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
         CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_card_downloads_card_time ON card_downloads(card_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_time ON ui_template_downloads(template_id, created_at DESC);
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
@@ -325,6 +338,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_comments ADD COLUMN user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_comments ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_time ON character_comments(card_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN data_hash TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN detail_preview TEXT'); } catch (e) { /* column exists */ }
@@ -340,6 +354,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_id TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_time ON ui_template_comments(template_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec("ALTER TABLE character_cards ADD COLUMN review_status TEXT DEFAULT 'approved'"); } catch (e) { /* column exists */ }
@@ -384,6 +399,7 @@ function initDatabase() {
         )
     `); } catch (e) { /* table exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_card_downloads_card_time ON card_downloads(card_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec(`
         CREATE TABLE IF NOT EXISTS ui_template_downloads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -396,6 +412,30 @@ function initDatabase() {
         )
     `); } catch (e) { /* table exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_time ON ui_template_downloads(template_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec(`
+        CREATE TABLE IF NOT EXISTS content_view_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type TEXT NOT NULL,
+            content_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `); } catch (e) { /* table exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_content_view_events_lookup ON content_view_events(content_type, content_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try {
+        const migrated = db.prepare("SELECT value FROM settings WHERE key = 'content_view_events_backfilled'").get();
+        if (!migrated) {
+            db.prepare(`
+                INSERT INTO content_view_events (content_type, content_id, user_id, created_at)
+                SELECT content_type, content_id, user_id, last_view_at
+                FROM account_view_limits
+                WHERE view_count > 0
+            `).run();
+            db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+                .run('content_view_events_backfilled', '1', new Date().toISOString());
+        }
+    } catch (e) { /* best effort view history backfill */ }
 
     try {
         db.exec(`
@@ -587,6 +627,7 @@ function cleanupOldLogs() {
     db.prepare("DELETE FROM operation_logs WHERE created_at < datetime('now', '-90 days')").run();
     db.prepare("DELETE FROM page_views WHERE created_at < datetime('now', '-30 days')").run();
     db.prepare("DELETE FROM account_view_limits WHERE last_view_at < datetime('now', '-30 days')").run();
+    db.prepare("DELETE FROM content_view_events WHERE created_at < datetime('now', '-31 days')").run();
 }
 
 module.exports = { db, initDatabase, cleanupLoginAttempts, cleanupOldLogs };

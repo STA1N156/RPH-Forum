@@ -411,7 +411,7 @@ const publicStaticMiddleware = express.static(PUBLIC_DIR, {
     etag: true,
     maxAge: '7d',
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.html')) {
+        if (filePath.endsWith('.html') || filePath.endsWith('.css')) {
             res.set('Cache-Control', 'no-cache, max-age=0, must-revalidate');
         } else {
             res.set('Cache-Control', 'public, max-age=604800');
@@ -1279,6 +1279,34 @@ function templateCommentHeatCountExpr(templateAlias = 'ui_templates') {
     return `COALESCE(${templateAlias}.comment_count_override, (SELECT COUNT(DISTINCT COALESCE(CAST(utc.user_id AS TEXT), utc.id)) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id))`;
 }
 
+function getRankingPeriodModifier(sortMode) {
+    return { daily: '-1 day', weekly: '-7 days', monthly: '-30 days' }[sortMode] || '';
+}
+
+function cardPeriodHeatExpr(cardAlias, periodModifier) {
+    const cutoff = `datetime('now', '${periodModifier}')`;
+    return `(
+        (SELECT COUNT(*) FROM content_view_events cve
+         WHERE cve.content_type = 'card' AND cve.content_id = ${cardAlias}.id AND cve.created_at >= ${cutoff}) * ${VIEW_HEAT_WEIGHT}
+        + (SELECT COUNT(DISTINCT COALESCE(CAST(cmt.user_id AS TEXT), cmt.id)) FROM character_comments cmt
+           WHERE cmt.card_id = ${cardAlias}.id AND cmt.created_at >= ${cutoff}) * ${COMMENT_HEAT_WEIGHT}
+        + (SELECT COUNT(*) FROM card_downloads cd
+           WHERE cd.card_id = ${cardAlias}.id AND cd.created_at >= ${cutoff}) * ${DOWNLOAD_HEAT_WEIGHT}
+    )`;
+}
+
+function templatePeriodHeatExpr(templateAlias, periodModifier) {
+    const cutoff = `datetime('now', '${periodModifier}')`;
+    return `(
+        (SELECT COUNT(*) FROM content_view_events cve
+         WHERE cve.content_type = 'ui_template' AND cve.content_id = ${templateAlias}.id AND cve.created_at >= ${cutoff}) * ${VIEW_HEAT_WEIGHT}
+        + (SELECT COUNT(DISTINCT COALESCE(CAST(utc.user_id AS TEXT), utc.id)) FROM ui_template_comments utc
+           WHERE utc.template_id = ${templateAlias}.id AND utc.created_at >= ${cutoff}) * ${COMMENT_HEAT_WEIGHT}
+        + (SELECT COUNT(*) FROM ui_template_downloads utd
+           WHERE utd.template_id = ${templateAlias}.id AND utd.created_at >= ${cutoff}) * ${DOWNLOAD_HEAT_WEIGHT}
+    )`;
+}
+
 function getCommentHeatCount(row) {
     return Number(row?.comment_heat_count ?? row?.comment_count ?? 0);
 }
@@ -1398,6 +1426,9 @@ function recordAccountViewHeat(req, contentType, contentId) {
     if (!userId) return { counted: false, limited: false, reason: 'login_required' };
 
     const now = new Date().toISOString();
+    const recordViewEvent = () => db.prepare(
+        'INSERT INTO content_view_events (content_type, content_id, user_id, created_at) VALUES (?, ?, ?, ?)'
+    ).run(contentType, String(contentId), userId, now);
     const windowModifier = `-${VIEW_HEAT_ACCOUNT_WINDOW_HOURS} hours`;
     const row = db.prepare(
         `SELECT id, view_count,
@@ -1411,6 +1442,7 @@ function recordAccountViewHeat(req, contentType, contentId) {
             `INSERT INTO account_view_limits (content_type, content_id, user_id, view_count, window_started_at, last_view_at)
              VALUES (?, ?, ?, 1, ?, ?)`
         ).run(contentType, String(contentId), userId, now, now);
+        recordViewEvent();
         return { counted: true, limited: false };
     }
 
@@ -1420,6 +1452,7 @@ function recordAccountViewHeat(req, contentType, contentId) {
              SET view_count = 1, window_started_at = ?, last_view_at = ?
              WHERE id = ?`
         ).run(now, now, row.id);
+        recordViewEvent();
         return { counted: true, limited: false };
     }
 
@@ -1433,6 +1466,7 @@ function recordAccountViewHeat(req, contentType, contentId) {
          SET view_count = view_count + 1, last_view_at = ?
          WHERE id = ?`
     ).run(now, row.id);
+    recordViewEvent();
     return { counted: true, limited: false };
 }
 
@@ -2934,6 +2968,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const commentCountSql = cardCommentCountExpr('cc');
         const commentHeatCountSql = cardCommentHeatCountExpr('cc');
         const heatExpr = `((IFNULL(cc.views_count, 0) * ${VIEW_HEAT_WEIGHT}) + (IFNULL(${commentHeatCountSql}, 0) * ${COMMENT_HEAT_WEIGHT}) + (IFNULL(cc.downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
+        const periodModifier = getRankingPeriodModifier(sortMode);
         const whereParts = [];
         const params = [];
         let orderByClause = 'cc.created_at DESC';
@@ -2951,15 +2986,12 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push('cc.is_featured = 1');
             orderByClause = 'cc.created_at DESC';
         } else if (sortMode === 'updated') {
-            orderByClause = 'COALESCE(cc.latest_rank_at, cc.created_at) DESC, cc.created_at DESC';
+            whereParts.push('cc.updated_at IS NOT NULL AND julianday(cc.updated_at) > julianday(cc.created_at)');
+            orderByClause = 'cc.updated_at DESC, cc.created_at DESC';
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
-        } else if (sortMode === 'daily') {
-            whereParts.push("cc.created_at >= datetime('now', '-1 day')");
-            orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
-        } else if (sortMode === 'weekly') {
-            whereParts.push("cc.created_at >= datetime('now', '-7 days')");
-            orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
+        } else if (periodModifier) {
+            orderByClause = `${cardPeriodHeatExpr('cc', periodModifier)} DESC, ${heatExpr} DESC, cc.created_at DESC`;
         }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
@@ -3016,19 +3048,17 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         const heatExpr = `((IFNULL(views_count, 0) * ${VIEW_HEAT_WEIGHT})
             + (${templateCommentHeatCountSql} * ${COMMENT_HEAT_WEIGHT})
             + (IFNULL(downloads_count, 0) * ${DOWNLOAD_HEAT_WEIGHT}))`;
+        const periodModifier = getRankingPeriodModifier(sortMode);
         if (sortMode === 'featured') {
             whereParts.push('is_featured = 1');
             orderByClause = 'created_at DESC';
         } else if (sortMode === 'updated') {
-            orderByClause = 'COALESCE(latest_rank_at, created_at) DESC, created_at DESC';
+            whereParts.push('updated_at IS NOT NULL AND julianday(updated_at) > julianday(created_at)');
+            orderByClause = 'updated_at DESC, created_at DESC';
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
-        } else if (sortMode === 'daily') {
-            whereParts.push("created_at >= datetime('now', '-1 day')");
-            orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
-        } else if (sortMode === 'weekly') {
-            whereParts.push("created_at >= datetime('now', '-7 days')");
-            orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
+        } else if (periodModifier) {
+            orderByClause = `${templatePeriodHeatExpr('ui_templates', periodModifier)} DESC, ${heatExpr} DESC, created_at DESC`;
         }
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';

@@ -8,6 +8,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>万相广场</title>
+    <meta name="description" content="发现、分享与收藏角色卡和 UI 模板。">
     <script src="/tailwind.js"></script>
     <script src="/vue.global.js"></script>
     <!-- Local API backend replaces Supabase -->
@@ -361,8 +362,9 @@
             overflow: hidden;
         }
     </style>
+    <link rel="stylesheet" href="/modern.css?v=20260710-7">
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
+<body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
         <!-- Toast Notification Container -->
         <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[999] flex flex-col gap-2 pointer-events-none items-center">
@@ -387,13 +389,18 @@
         </div>
 
         <!-- Header -->
-        <header class="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-30 transition-all duration-300">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-                <div class="flex items-center gap-3 select-none">
+        <header class="site-header bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-30 transition-all duration-300">
+            <div class="site-nav max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="brand-lockup flex items-center gap-3 select-none">
                     <div @click="handleLogoClick"
-                         class="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-200 transform transition-all active:scale-90 hover:scale-105 cursor-pointer overflow-hidden relative">
+                         class="brand-mark w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-200 transform transition-all active:scale-90 hover:scale-105 cursor-pointer overflow-hidden relative">
                         <svg class="w-6 h-6 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                         <div v-if="isAdmin" class="absolute inset-0 bg-yellow-400 opacity-20 animate-pulse"></div>
+                    </div>
+
+                    <div class="brand-copy" @click="handleLogoClick">
+                        <strong>万相广场</strong>
+                        <small>WANXIANG COMMONS</small>
                     </div>
 
                     <span v-if="isAdmin" class="hidden sm:inline-block text-[10px] font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full border border-yellow-100 ml-2 cursor-pointer" @click="handleAdminLogout" title="点击退出管理员模式">ADMIN 模式</span>
@@ -458,9 +465,7 @@
         </header>
 
         <!-- Main Content -->
-        <!-- Main Content -->
-        <main class="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
-            
+        <main class="site-main flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
             <!-- Credits Banner (Only in Mine Tab) -->
             <div v-if="currentTab === 'mine'" class="mb-6 bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 shadow-sm shadow-blue-100 animate-fade-in relative overflow-hidden group">
                 <div class="absolute right-0 top-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10 blur-2xl opacity-60 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -503,7 +508,7 @@
             </div>
 
             <!-- Plaza Sections -->
-            <div v-if="!loading" class="mb-4 animate-fade-in">
+            <div v-if="!loading" class="catalog-tabs mb-4 animate-fade-in">
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
                     <button @click="contentSection = 'all'"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
@@ -527,16 +532,18 @@
             </div>
 
             <!-- Sort + Tags row -->
-            <div v-if="!loading" class="mb-5 animate-fade-in">
-                <div class="flex items-start gap-2">
+            <div v-if="!loading" class="catalog-filters mb-5 animate-fade-in">
+                <div class="tag-filter-layout flex items-start gap-2" :class="{ 'tags-expanded': tagsExpanded }">
                     <!-- Sort dropdown -->
-                    <div class="relative flex-shrink-0">
+                    <div class="sort-control relative flex-shrink-0">
                         <button @click.stop="showSortDropdown = !showSortDropdown" class="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 rounded-xl text-xs font-bold transition-all hover:bg-gray-200">
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             <svg v-else-if="cardSort === 'updated'" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
                             <svg v-else-if="cardSort === 'featured'" class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            <svg v-else-if="cardSort === 'daily'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                            <svg v-else-if="cardSort === 'weekly' || cardSort === 'monthly'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
-                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行'}[cardSort] }}</span>
+                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行', monthly: '月排行'}[cardSort] }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
                         <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[6rem]">
@@ -564,9 +571,22 @@
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                 周排行
                             </button>
+                            <button @click="cardSort = 'monthly'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'monthly' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                月排行
+                            </button>
                         </div>
                     </div>
-                    <div class="flex-1 min-w-0">
+                    <button v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && showPopularTagsToggle"
+                            @click="tagsExpanded = !tagsExpanded"
+                            class="tag-filter-toggle mt-1 flex items-center gap-0.5 text-xs font-bold text-gray-400 hover:text-primary-500 transition-colors flex-shrink-0">
+                        <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="tagsExpanded ? 'rotate-180' : ''"
+                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                        {{ tagsExpanded ? '收起' : '展开' }}
+                    </button>
+                    <div class="tag-filter-list flex-1 min-w-0">
                         <div class="flex items-center gap-2 flex-wrap" :class="tagsExpanded ? '' : 'max-h-[2.25rem] overflow-hidden'">
                             <!-- Tags (only on non-mine tab) -->
                             <template v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && visiblePopularTags.length > 0">
@@ -581,15 +601,6 @@
                             </template>
                         </div>
                     </div>
-                    <button v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && showPopularTagsToggle"
-                            @click="tagsExpanded = !tagsExpanded"
-                            class="mt-1 flex items-center gap-0.5 text-xs font-bold text-gray-400 hover:text-primary-500 transition-colors flex-shrink-0">
-                        <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="tagsExpanded ? 'rotate-180' : ''"
-                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                        {{ tagsExpanded ? '收起' : '展开' }}
-                    </button>
                 </div>
             </div>
 
@@ -615,11 +626,11 @@
             </div>
 
             <!-- Card List -->
-            <div v-else class="flex flex-col gap-4 animate-fade-in">
+            <div v-else class="forum-card-list flex flex-col gap-4 animate-fade-in">
 
-                    <div v-if="contentSection === 'uitemplates'" v-for="template in pagedUiTemplates" :key="template.id"
+                    <div v-if="contentSection === 'uitemplates'" v-for="template in pagedUiTemplates" :key="cardSort + '-' + template.id"
                          @click="openTemplateDetail(template)"
-                         class="group relative flex bg-white rounded-3xl border border-blue-100 shadow-sm hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden cursor-pointer min-h-[12rem] sm:min-h-[13.5rem] h-auto">
+                         class="content-card group relative flex bg-white rounded-3xl border border-blue-100 shadow-sm hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden cursor-pointer min-h-[12rem] sm:min-h-[13.5rem] h-auto">
                         <div v-if="template.is_featured" class="absolute top-2.5 left-2.5 z-10">
                             <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50">
                                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -710,9 +721,9 @@
                         </div>
                     </div>
 
-                    <div v-if="contentSection !== 'uitemplates'" v-for="card in pagedCards" :key="card.id"
+                    <div v-if="contentSection !== 'uitemplates'" v-for="card in pagedCards" :key="cardSort + '-' + card.id"
                          @click="isR18Card(card) && !r18Confirmed ? showR18Disclaimer() : previewCard(card)"
-                         class="group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
+                         class="content-card group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
                     <!-- Featured Badge (Card Top-Left Corner) -->
                     <div v-if="card.is_featured" class="absolute top-2.5 left-2.5 z-10">
@@ -796,7 +807,7 @@
                             <!-- Creator Note & Tags -->
                             <div class="flex flex-col gap-1 mt-1.5">
                                 <!-- Tags -->
-                                <div v-if="isUiTemplateCard(card) || (card.tags && card.tags.length > 0)" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
+                                <div v-if="isUiTemplateCard(card) || (card.tags && card.tags.length > 0)" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="card-tags flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
                                     <span v-if="isUiTemplateCard(card)"
                                           class="px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-100 bg-blue-50 text-blue-600 leading-none flex-shrink-0 inline-flex items-center gap-1">
                                         {{ formatCardUiVariableBadge(card) }}
@@ -1011,20 +1022,7 @@
                         评论 ({{ comments.length }})
                         <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                     </h4>
-                    <div class="bg-gray-50 rounded-2xl p-4 mb-6 border border-gray-100">
-                        <div class="flex flex-col gap-3">
-                            <div v-if="newComment.reply_to_id" class="flex items-center gap-2 text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">
-                                <span>回复 <b>{{ newComment.reply_to_name }}</b></span>
-                                <button @click="cancelReply" class="text-gray-400 hover:text-gray-600 ml-auto">&times;</button>
-                            </div>
-                            <textarea v-model="newComment.content" rows="3" :placeholder="newComment.reply_to_id ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
-                            <div class="flex items-center justify-between gap-3">
-                                <span v-if="!isLoggedIn" class="text-xs text-gray-400"><button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button> 后即可评论</span>
-                                <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
-                                <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
-                            </div>
-                        </div>
-                    </div>
+                    <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
                     <div v-if="loadingComments" class="flex justify-center py-4">
                         <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
                     </div>
@@ -1051,6 +1049,15 @@
                                     回复
                                 </button>
                             </div>
+                            <comment-composer
+                                v-if="newComment.reply_to_id === root.id"
+                                v-model="newComment.content"
+                                :is-logged-in="isLoggedIn"
+                                :reply-name="newComment.reply_to_name"
+                                inline
+                                @submit="submitComment"
+                                @cancel="cancelReply">
+                            </comment-composer>
                             <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
                                 <div class="space-y-2 pl-3 border-l-2 border-primary-100">
                                     <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="'ut-full-r-' + reply.id" class="bg-white rounded-xl p-3 border border-gray-50">
@@ -1071,6 +1078,15 @@
                                             </button>
                                             <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">回复</button>
                                         </div>
+                                        <comment-composer
+                                            v-if="newComment.reply_to_id === reply.id"
+                                            v-model="newComment.content"
+                                            :is-logged-in="isLoggedIn"
+                                            :reply-name="newComment.reply_to_name"
+                                            inline
+                                            @submit="submitComment"
+                                            @cancel="cancelReply">
+                                        </comment-composer>
                                     </div>
                                 </div>
                                 <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
@@ -1277,7 +1293,7 @@
                     </div>
                     <!-- Creator Notes -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">创作者备注</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">创作者备注（使用 #标签名 添加标签，如 #纯爱 #剧情）</label>
                         <textarea v-model="editingCard.creator_notes" rows="5" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
                     </div>
                     <!-- Re-upload file -->
@@ -1399,12 +1415,17 @@
                             </section>
 
                             <section v-if="selectedCard._display.personality">
-                                <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                                <div class="mb-5 flex items-center gap-4">
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    设定
+                                    <h4 class="text-base font-black uppercase tracking-[0.2em] text-gray-400">设定</h4>
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
+                                    <button type="button" @click="personalityExpanded = !personalityExpanded" :aria-expanded="personalityExpanded" :aria-label="personalityExpanded ? '收起设定' : '展开设定'" class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 active:scale-95">
+                                        <svg class="w-5 h-5 transition-transform duration-200" :class="personalityExpanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M19 9l-7 7-7-7"/></svg>
+                                    </button>
+                                </div>
+                                <transition name="fade">
+                                    <div v-show="personalityExpanded" class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
+                                </transition>
                             </section>
 
                             <section v-if="selectedCard._display.first_mes">
@@ -1439,23 +1460,7 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 
-                                <div class="bg-gray-50 rounded-2xl p-4 mb-6 border border-gray-100">
-                                    <div class="flex flex-col gap-3">
-                                        <div v-if="newComment.reply_to_id" class="flex items-center gap-2 text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">
-                                            <span>回复 <b>{{ newComment.reply_to_name }}</b></span>
-                                            <button @click="cancelReply" class="text-gray-400 hover:text-gray-600 ml-auto">&times;</button>
-                                        </div>
-                                        <textarea v-model="newComment.content" rows="3" :placeholder="newComment.reply_to_id ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
-                                        <div class="flex items-center justify-between">
-                                            <span v-if="!isLoggedIn" class="text-xs text-gray-400">
-                                                <button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button>
-                                                后即可评论
-                                            </span>
-                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
-                                            <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
-                                        </div>
-                                    </div>
-                                </div>
+                                <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
 
                                 <!-- Hot Comment -->
                                 <div v-if="loadingComments" class="flex justify-center py-4">
@@ -1486,6 +1491,15 @@
                                                 回复
                                             </button>
                                         </div>
+                                        <comment-composer
+                                            v-if="newComment.reply_to_id === root.id"
+                                            v-model="newComment.content"
+                                            :is-logged-in="isLoggedIn"
+                                            :reply-name="newComment.reply_to_name"
+                                            inline
+                                            @submit="submitComment"
+                                            @cancel="cancelReply">
+                                        </comment-composer>
                                         <!-- Nested replies -->
                                         <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
                                             <div class="space-y-2 pl-3 border-l-2 border-primary-100">
@@ -1511,6 +1525,15 @@
                                                             回复
                                                         </button>
                                                     </div>
+                                                    <comment-composer
+                                                        v-if="newComment.reply_to_id === reply.id"
+                                                        v-model="newComment.content"
+                                                        :is-logged-in="isLoggedIn"
+                                                        :reply-name="newComment.reply_to_name"
+                                                        inline
+                                                        @submit="submitComment"
+                                                        @cancel="cancelReply">
+                                                    </comment-composer>
                                                 </div>
                                             </div>
                                             <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
@@ -1616,12 +1639,17 @@
                             </section>
 
                             <section v-if="selectedCard._display.personality">
-                                <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
+                                <div class="mb-5 flex items-center gap-4">
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    设定
+                                    <h4 class="text-base font-black uppercase tracking-[0.2em] text-gray-400">设定</h4>
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
+                                    <button type="button" @click="personalityExpanded = !personalityExpanded" :aria-expanded="personalityExpanded" :aria-label="personalityExpanded ? '收起设定' : '展开设定'" class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 active:scale-95">
+                                        <svg class="w-5 h-5 transition-transform duration-200" :class="personalityExpanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M19 9l-7 7-7-7"/></svg>
+                                    </button>
+                                </div>
+                                <transition name="fade">
+                                    <div v-show="personalityExpanded" class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
+                                </transition>
                             </section>
 
                             <section v-if="selectedCard._display.first_mes">
@@ -1656,23 +1684,7 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 
-                                <div class="bg-gray-50 rounded-2xl p-4 mb-6 border border-gray-100">
-                                    <div class="flex flex-col gap-3">
-                                        <div v-if="newComment.reply_to_id" class="flex items-center gap-2 text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">
-                                            <span>回复 <b>{{ newComment.reply_to_name }}</b></span>
-                                            <button @click="cancelReply" class="text-gray-400 hover:text-gray-600 ml-auto">&times;</button>
-                                        </div>
-                                        <textarea v-model="newComment.content" rows="3" :placeholder="newComment.reply_to_id ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
-                                        <div class="flex items-center justify-between">
-                                            <span v-if="!isLoggedIn" class="text-xs text-gray-400">
-                                                <button @click="showUserAuthModal = true; userAuthMode = 'login'" class="text-primary-600 font-bold hover:underline">登录</button>
-                                                后即可评论
-                                            </span>
-                                            <span v-else class="text-xs text-gray-400">每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）</span>
-                                            <button @click="submitComment" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">发布</button>
-                                        </div>
-                                    </div>
-                                </div>
+                                <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
 
                                 <!-- Hot Comment -->
                                 <div v-if="loadingComments" class="flex justify-center py-4">
@@ -1703,6 +1715,15 @@
                                                 回复
                                             </button>
                                         </div>
+                                        <comment-composer
+                                            v-if="newComment.reply_to_id === root.id"
+                                            v-model="newComment.content"
+                                            :is-logged-in="isLoggedIn"
+                                            :reply-name="newComment.reply_to_name"
+                                            inline
+                                            @submit="submitComment"
+                                            @cancel="cancelReply">
+                                        </comment-composer>
                                         <!-- Nested replies -->
                                         <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
                                             <div class="space-y-2 pl-3 border-l-2 border-primary-100">
@@ -1728,6 +1749,15 @@
                                                             回复
                                                         </button>
                                                     </div>
+                                                    <comment-composer
+                                                        v-if="newComment.reply_to_id === reply.id"
+                                                        v-model="newComment.content"
+                                                        :is-logged-in="isLoggedIn"
+                                                        :reply-name="newComment.reply_to_name"
+                                                        inline
+                                                        @submit="submitComment"
+                                                        @cancel="cancelReply">
+                                                    </comment-composer>
                                                 </div>
                                             </div>
                                             <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
@@ -2134,6 +2164,40 @@
             return API_BASE + '/api/cards/' + encodeURIComponent(cardId) + '/' + type + '?' + params.toString();
         };
 
+        const CommentComposer = {
+            props: {
+                modelValue: { type: String, default: '' },
+                isLoggedIn: { type: Boolean, default: false },
+                replyName: { type: String, default: '' },
+                inline: { type: Boolean, default: false }
+            },
+            emits: ['update:modelValue', 'submit', 'cancel', 'login'],
+            mounted() {
+                if (this.inline) {
+                    this.$nextTick(() => {
+                        const input = this.$refs.input;
+                        if (input && input.offsetParent !== null) input.focus();
+                    });
+                }
+            },
+            template: `
+                <div class="bg-gray-50 rounded-2xl p-4 border border-gray-100" :class="inline ? 'mt-3' : 'mb-6'">
+                    <div class="flex flex-col gap-3">
+                        <div v-if="replyName" class="flex items-center gap-2 text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">
+                            <span>回复 <b>{{ replyName }}</b></span>
+                            <button type="button" @click="$emit('cancel')" class="text-gray-400 hover:text-gray-600 ml-auto">&times;</button>
+                        </div>
+                        <textarea ref="input" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" @keydown.ctrl.enter.prevent="$emit('submit')" rows="3" :placeholder="replyName ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
+                        <div class="flex items-center justify-between gap-3">
+                            <span v-if="!isLoggedIn" class="text-xs text-gray-400"><button type="button" @click="$emit('login')" class="text-primary-600 font-bold hover:underline">登录</button> 后即可评论</span>
+                            <span v-else class="text-xs text-gray-400">{{ replyName ? 'Ctrl + Enter 快速回复' : '每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）' }}</span>
+                            <button type="button" @click="$emit('submit')" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">{{ replyName ? '回复' : '发布' }}</button>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
         // Safe localStorage wrapper (handles Tracking Prevention blocking)
         const safeStorage = {
             getItem(key) { try { return localStorage.getItem(key); } catch(e) { return null; } },
@@ -2178,6 +2242,7 @@
         };
 
         createApp({
+            components: { CommentComposer },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -2220,6 +2285,7 @@
                 const showTemplateEditModal = ref(false);
                 const isTemplateEditSaving = ref(false);
                 const selectedCard = ref(null);
+                const personalityExpanded = ref(false);
                 const selectedCardDetailLoading = ref(false);
                 const selectedCardDetailError = ref('');
                 const selectedCardDetailCardId = ref('');
@@ -3242,24 +3308,20 @@
 
                     // Sorting & filtering by time range
                     const computeHeatScore = (c) => (c.views_count || 0) * 1.0 + getCommentHeatCount(c) * 2 + (c.downloads_count || 0) * 2.5;
-                    const latestRankTime = (c) => new Date(c.latest_rank_at || c.created_at || 0).getTime();
+                    const createdTime = (c) => new Date(c.created_at || 0).getTime();
+                    const updatedTime = (c) => new Date(c.updated_at || 0).getTime();
                     const sortMode = cardSort.value;
 
                     if (sortMode === 'featured') {
                         result = result.filter(c => c.is_featured);
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    } else if (sortMode === 'daily') {
-                        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-                        result = result.filter(c => new Date(c.created_at) >= oneDayAgo);
-                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
-                    } else if (sortMode === 'weekly') {
-                        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                        result = result.filter(c => new Date(c.created_at) >= oneWeekAgo);
-                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                    } else if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
+                        // Time-range rankings are already ordered by the server using activity in that period.
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
                     } else if (sortMode === 'updated') {
-                        result.sort((a, b) => latestRankTime(b) - latestRankTime(a));
+                        result = result.filter(c => updatedTime(c) > createdTime(c));
+                        result.sort((a, b) => updatedTime(b) - updatedTime(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     }
@@ -3292,23 +3354,19 @@
                     }
 
                     const heatScore = (item) => computeTemplateHeat(item);
-                    const latestRankTime = (item) => new Date(item.latest_rank_at || item.created_at || 0).getTime();
+                    const createdTime = (item) => new Date(item.created_at || 0).getTime();
+                    const updatedTime = (item) => new Date(item.updated_at || 0).getTime();
                     const sortMode = cardSort.value;
                     if (sortMode === 'featured') {
                         result = result.filter(item => item.is_featured);
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    } else if (sortMode === 'daily') {
-                        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-                        result = result.filter(item => new Date(item.created_at) >= oneDayAgo);
-                        result.sort((a, b) => heatScore(b) - heatScore(a));
-                    } else if (sortMode === 'weekly') {
-                        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                        result = result.filter(item => new Date(item.created_at) >= oneWeekAgo);
-                        result.sort((a, b) => heatScore(b) - heatScore(a));
+                    } else if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
+                        // Time-range rankings are already ordered by the server using activity in that period.
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => heatScore(b) - heatScore(a));
                     } else if (sortMode === 'updated') {
-                        result.sort((a, b) => latestRankTime(b) - latestRankTime(a));
+                        result = result.filter(item => updatedTime(item) > createdTime(item));
+                        result.sort((a, b) => updatedTime(b) - updatedTime(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     }
@@ -3354,7 +3412,7 @@
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/cards', { headers });
+                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(cardSort.value), { headers });
                         if (resp.status === 304) return;
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
@@ -3385,7 +3443,7 @@
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/ui-templates', { headers });
+                        const resp = await fetch(API_BASE + '/api/ui-templates?sort=' + encodeURIComponent(cardSort.value), { headers });
                         if (!resp.ok) throw new Error('加载失败');
                         uiTemplates.value = await resp.json();
                     } catch (err) {
@@ -3588,6 +3646,7 @@
 
                 const closeSelectedCard = () => {
                     selectedCard.value = null;
+                    personalityExpanded.value = false;
                     resetSelectedCardDetailState();
                     stopPreviewOpening();
                 };
@@ -4886,6 +4945,7 @@
                 };
 
                 const previewCard = async (card) => {
+                    personalityExpanded.value = false;
                     const thumbnailReady = isCardThumbnailReady(card);
                     const requestId = thumbnailReady ? ++previewOpenRequestId : startPreviewOpening(card);
                     if (thumbnailReady) stopPreviewOpening({ cancelPending: false });
@@ -5650,7 +5710,7 @@ ${content}
                         }
 
                         const fallbackName = `${card.name || 'character-card'}.png`;
-                        const needsAuthDownload = isAdmin.value || canModerate.value || isCardOwnedByCurrentUser(card) || String(card.review_status || 'approved') !== 'approved';
+                        const needsAuthDownload = String(card.review_status || 'approved') !== 'approved';
                         if (needsAuthDownload) {
                             await fetchAndSaveDownload(data.download_url, headers, fallbackName);
                         } else {
@@ -5876,6 +5936,10 @@ ${content}
 
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
+                watch(cardSort, () => {
+                    fetchCards();
+                    fetchUiTemplates();
+                });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value !== 'login') resetCaptcha();
                 });
@@ -5960,7 +6024,7 @@ ${content}
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
                     handleFileSelect, handleTemplateFileSelect, confirmUpload, confirmTemplateUpload, handleUploadClick,
                     downloadTemplate, reviewTemplate, deleteTemplate, toggleTemplateFeatured, formatFileSize, isTemplateOwnedByCurrentUser, canViewTemplateDownloads, computeTemplateHeat,
-                    selectedCard, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
+                    selectedCard, personalityExpanded, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
                     previewOpening, stopPreviewOpening, closeSelectedCard,
                     toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,

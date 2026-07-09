@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理后台 - 角色卡广场</title>
+    <title>管理后台 - 万相广场</title>
+    <meta name="description" content="万相广场内容与社区管理后台。">
     <script src="/tailwind.js"></script>
     <script src="/vue.global.js"></script>
     <style>
@@ -28,12 +29,13 @@
             transform: translateY(-10px) scale(0.98);
         }
     </style>
+    <link rel="stylesheet" href="/admin-modern.css?v=20260710-4">
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="admin-body bg-gray-50 min-h-screen">
     <div id="admin-app" v-cloak>
         <!-- Login Screen -->
-        <div v-if="!isAuthenticated" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-            <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div v-if="!isAuthenticated" class="admin-login min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+            <div class="admin-login-card bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
                 <div class="text-center mb-8">
                     <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                         <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,7 +43,7 @@
                         </svg>
                     </div>
                     <h1 class="text-2xl font-bold text-gray-900">管理员登录</h1>
-                    <p class="text-gray-500 mt-2">角色卡广场 · 管理后台</p>
+                    <p class="text-gray-500 mt-2">万相广场 · 管理后台</p>
                 </div>
                 <form @submit.prevent="handleLogin">
                     <div class="space-y-4">
@@ -68,16 +70,21 @@
         </div>
 
         <!-- Admin Dashboard -->
-        <div v-else class="min-h-screen bg-gray-50 md:flex">
+        <div v-else class="admin-layout min-h-screen bg-gray-50 md:flex">
             <div v-if="showMobileMenu" class="fixed inset-0 z-30 bg-black/40 md:hidden" @click="showMobileMenu = false"></div>
             <!-- Sidebar -->
-            <aside class="fixed inset-y-0 left-0 z-40 w-[85vw] max-w-xs bg-gray-900 text-white flex-shrink-0 flex flex-col transform transition-transform duration-200 md:static md:w-64 md:max-w-none md:translate-x-0"
+            <aside class="admin-sidebar fixed inset-y-0 left-0 z-40 w-[85vw] max-w-xs bg-gray-900 text-white flex-shrink-0 flex flex-col transform transition-transform duration-200 md:static md:w-64 md:max-w-none md:translate-x-0"
                    :class="showMobileMenu ? 'translate-x-0' : '-translate-x-full md:translate-x-0'">
-                <div class="p-6 border-b border-gray-800">
-                    <h1 class="text-lg font-bold">🎭 角色卡广场</h1>
-                    <p class="text-gray-400 text-sm mt-1">管理后台</p>
+                <div class="admin-brand p-6 border-b border-gray-800">
+                    <div class="admin-brand-row">
+                        <span class="admin-brand-mark">万</span>
+                        <div>
+                            <h1 class="text-lg font-bold">万相广场</h1>
+                            <p class="text-gray-400 text-sm mt-1">CONTROL ROOM</p>
+                        </div>
+                    </div>
                 </div>
-                <nav class="flex-1 p-4 space-y-1">
+                <nav class="admin-nav flex-1 p-4 space-y-1">
                     <button @click="currentPage = 'dashboard'; showMobileMenu = false" :class="currentPage === 'dashboard' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
                         仪表盘
@@ -129,9 +136,9 @@
             </aside>
 
             <!-- Main Content -->
-            <main class="flex-1 min-w-0 overflow-auto">
+            <main class="admin-main flex-1 min-w-0 overflow-auto">
                 <!-- Header -->
-                <header class="bg-white border-b border-gray-200 px-4 md:px-8 py-4 flex items-center justify-between gap-4 sticky top-0 z-20">
+                <header class="admin-header bg-white border-b border-gray-200 px-4 md:px-8 py-4 flex items-center justify-between gap-4 sticky top-0 z-20">
                     <div class="flex items-center gap-3 min-w-0">
                         <button @click="showMobileMenu = true" class="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-100 transition">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -143,11 +150,11 @@
                     <a href="/" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
                 </header>
 
-                <div class="p-4 md:p-8">
+                <div class="admin-content p-4 md:p-8">
                     <!-- Dashboard -->
                     <div v-if="currentPage === 'dashboard'">
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">总卡片数</p>
@@ -159,7 +166,7 @@
                                 </div>
                                 <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentCards || 0 }}</p>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">总评论数</p>
@@ -171,7 +178,7 @@
                                 </div>
                                 <p class="text-xs text-green-600 mt-2">近7天 +{{ stats.recentComments || 0 }}</p>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">注册用户</p>
@@ -183,7 +190,7 @@
                                 </div>
                                 <p class="text-xs text-green-600 mt-2">今日 +{{ stats.todayNewUsers || 0 }}</p>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">总访问量</p>
@@ -198,7 +205,7 @@
 
                         <!-- Second Row: More Stats -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">总下载量</p>
@@ -209,7 +216,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">总点赞数</p>
@@ -220,7 +227,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">今日新卡片</p>
@@ -231,7 +238,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="admin-stat-card bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <p class="text-sm text-gray-500">24h失败登录</p>
