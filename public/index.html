@@ -362,7 +362,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20260710-9">
+    <link rel="stylesheet" href="/modern.css?v=20260710-10">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -606,9 +606,7 @@
 
             <!-- Loading State -->
             <div v-if="loading" class="catalog-loader" role="status" aria-live="polite">
-                <div class="catalog-loader-symbol" aria-hidden="true">
-                    <span></span>
-                </div>
+                <div class="catalog-loader-symbol" aria-hidden="true"></div>
                 <p>{{ contentSection === 'uitemplates' ? '正在加载 UI 模板' : '正在加载角色卡' }}</p>
             </div>
 

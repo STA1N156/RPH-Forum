@@ -77,20 +77,21 @@ body.forum-shell {
 .catalog-filters { margin-bottom: 22px !important; border-radius: 0; }
 
 .catalog-loader {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
     display: flex;
-    min-height: clamp(15rem, 34vh, 22rem);
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    pointer-events: none;
     animation: catalog-loader-enter 0.32s var(--ease-out) both;
 }
 
 .catalog-loader-symbol {
     position: relative;
-    display: grid;
-    width: 50px;
-    height: 50px;
-    place-items: center;
+    width: 58px;
+    height: 58px;
 }
 
 .catalog-loader-symbol::before,
@@ -113,19 +114,10 @@ body.forum-shell {
     will-change: transform;
 }
 
-.catalog-loader-symbol span {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--accent);
-    box-shadow: 0 0 0 7px rgba(37, 99, 235, 0.08);
-    animation: catalog-loader-breathe 1.5s ease-in-out infinite;
-}
-
 .catalog-loader p {
-    margin-top: 16px;
+    margin-top: 18px;
     color: var(--muted);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 650;
     letter-spacing: 0.01em;
     animation: catalog-loader-text 1.5s ease-in-out infinite;
@@ -285,11 +277,6 @@ body.forum-shell {
 }
 
 @keyframes catalog-loader-spin { to { transform: rotate(360deg); } }
-
-@keyframes catalog-loader-breathe {
-    0%, 100% { opacity: 0.72; transform: scale(0.88); }
-    50% { opacity: 1; transform: scale(1); }
-}
 
 @keyframes catalog-loader-text {
     0%, 100% { opacity: 0.62; }
