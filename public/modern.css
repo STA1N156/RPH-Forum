@@ -154,6 +154,9 @@ body.forum-shell {
     height: 2px;
     content: "";
     border-radius: 2px 2px 0 0;
+}
+
+.catalog-tabs button.bg-blue-600::after {
     background: var(--accent);
 }
 

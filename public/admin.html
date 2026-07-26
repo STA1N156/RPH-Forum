@@ -1304,7 +1304,7 @@
             setup() {
                 const API_BASE = '';
                 try { localStorage.removeItem('admin_token'); } catch(e) {}
-                const token = ref(sessionStorage.getItem('admin_token') || '');
+                try { sessionStorage.removeItem('admin_token'); } catch(e) {}
                 const isAuthenticated = ref(false);
                 const adminUser = ref(null);
                 const currentPage = ref('dashboard');
@@ -1504,7 +1504,7 @@
                 });
 
                 function authHeaders() {
-                    return { 'Authorization': 'Bearer ' + token.value, 'Content-Type': 'application/json' };
+                    return { 'Content-Type': 'application/json' };
                 }
 
                 function showToast(message, type = 'info') {
@@ -1831,11 +1831,8 @@
                             loginError.value = data.error || '登录失败';
                             return;
                         }
-                        token.value = data.token;
                         adminUser.value = data.user;
                         isAuthenticated.value = true;
-                        try { localStorage.removeItem('admin_token'); } catch(e) {}
-                        sessionStorage.setItem('admin_token', data.token);
                         loadDashboard();
                     } catch (err) {
                         loginError.value = '网络错误，请重试';
@@ -1845,16 +1842,13 @@
                 }
 
                 function handleLogout() {
-                    token.value = '';
+                    fetch(API_BASE + '/api/auth/logout', { method: 'POST' }).catch(() => {});
                     isAuthenticated.value = false;
                     adminUser.value = null;
                     showMobileMenu.value = false;
-                    try { localStorage.removeItem('admin_token'); } catch(e) {}
-                    sessionStorage.removeItem('admin_token');
                 }
 
                 async function checkAuth() {
-                    if (!token.value) return;
                     try {
                         const resp = await fetch(API_BASE + '/api/auth/me', { headers: authHeaders() });
                         if (resp.ok) {
@@ -2476,7 +2470,6 @@
                         const resp = await fetch(API_BASE + '/api/admin/import', {
                             method: 'POST',
                             headers: {
-                                'Authorization': 'Bearer ' + token.value,
                                 'Content-Type': 'application/octet-stream'
                             },
                             body: buffer

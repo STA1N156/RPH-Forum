@@ -415,7 +415,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         {{ uploadButtonLabel }}
                     </button>
-                    <button v-if="canModerate" @click="currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
+                    <button v-if="canModerate" @click="contentSection = 'all'; currentTab = 'mine'" class="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-2xl text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                         审核
                     </button>
@@ -433,7 +433,7 @@
                         </button>
                         <!-- Dropdown -->
                         <div v-if="showUserMenu" class="absolute right-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-50 animate-scale-in">
-                            <button @click="currentTab = 'mine'; showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                            <button @click="canModerate && (contentSection = 'all'); currentTab = 'mine'; showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                                 {{ canModerate ? '审核队列' : '我的卡片' }}
                             </button>
@@ -492,7 +492,7 @@
 
                 <!-- Row 2: earn badges, wraps on mobile -->
                 <div class="flex flex-wrap gap-1.5 relative z-10">
-                    <div class="px-2.5 py-1 bg-blue-50 text-blue-600 border border-blue-100 text-xs font-bold rounded-xl whitespace-nowrap flex items-center gap-1">
+                    <div v-if="contentSection !== 'unreviewed'" class="px-2.5 py-1 bg-blue-50 text-blue-600 border border-blue-100 text-xs font-bold rounded-xl whitespace-nowrap flex items-center gap-1">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                         发布 +3
                     </div>
@@ -517,7 +517,16 @@
                                 : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
                         角色卡
-                        <span class="text-[10px] opacity-70">{{ cards.length }}</span>
+                        <span class="text-[10px] opacity-70">{{ cardSectionCounts.reviewed }}</span>
+                    </button>
+                    <button @click="contentSection = 'unreviewed'; currentTab = 'all'"
+                            class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
+                            :class="contentSection === 'unreviewed'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
+                                : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86A2 2 0 0020.66 16L13.73 4a2 2 0 00-3.46 0L3.34 16A2 2 0 005.07 19z"/></svg>
+                        无审专区
+                        <span class="text-[10px] opacity-70">{{ cardSectionCounts.unreviewed }}</span>
                     </button>
                     <button @click="contentSection = 'uitemplates'"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
@@ -531,6 +540,10 @@
                 </div>
             </div>
 
+            <p v-if="contentSection === 'unreviewed'" class="mb-4 px-1 text-[11px] leading-relaxed text-orange-600">
+                下载不消耗次数；广场不对无审专区内容和质量负责。
+            </p>
+
             <!-- Sort + Tags row -->
             <div class="catalog-filters mb-5 animate-fade-in">
                 <div class="tag-filter-layout flex items-start gap-2" :class="{ 'tags-expanded': tagsExpanded }">
@@ -539,11 +552,10 @@
                         <button @click.stop="showSortDropdown = !showSortDropdown" class="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 rounded-xl text-xs font-bold transition-all hover:bg-gray-200">
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             <svg v-else-if="cardSort === 'updated'" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
-                            <svg v-else-if="cardSort === 'featured'" class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             <svg v-else-if="cardSort === 'daily'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                             <svg v-else-if="cardSort === 'weekly' || cardSort === 'monthly'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
-                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行', monthly: '月排行'}[cardSort] }}</span>
+                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', hot: '最热门', daily: '日排行', weekly: '周排行', monthly: '月排行'}[cardSort] }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
                         <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[6rem]">
@@ -554,10 +566,6 @@
                             <button @click="cardSort = 'updated'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'updated' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
                                 最近更新
-                            </button>
-                            <button @click="cardSort = 'featured'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'featured' ? 'text-amber-500' : 'text-gray-500'">
-                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                精选
                             </button>
                             <button @click="cardSort = 'hot'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'hot' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
@@ -723,7 +731,7 @@
                          class="content-card group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
                     <!-- Featured Badge (Card Top-Left Corner) -->
-                    <div v-if="card.is_featured" class="absolute top-2.5 left-2.5 z-10">
+                    <div v-if="card.is_featured && card.review_status !== 'unreviewed'" class="absolute top-2.5 left-2.5 z-10">
                         <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200/50">
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                             精选
@@ -731,8 +739,8 @@
                     </div>
                     <div v-if="card.review_status && card.review_status !== 'approved'" class="absolute top-2.5 z-10" :class="card.is_featured ? 'left-20' : 'left-2.5'">
                         <span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-white shadow-md"
-                              :class="card.review_status === 'pending' ? 'bg-amber-500' : 'bg-red-500'">
-                            {{ card.review_status === 'pending' ? '待审核' : '已拒绝' }}
+                              :class="card.review_status === 'pending' ? 'bg-amber-500' : (card.review_status === 'unreviewed' ? 'bg-orange-500' : 'bg-red-500')">
+                            {{ card.review_status === 'pending' ? '待审核' : (card.review_status === 'unreviewed' ? '无审' : '已拒绝') }}
                         </span>
                     </div>
 
@@ -775,7 +783,7 @@
                                     </button>
 
                                     <!-- Feature Toggle Button (Admin Only) -->
-                                    <button v-if="isAdmin"
+                                    <button v-if="isAdmin && card.review_status !== 'unreviewed'"
                                             @click.stop="toggleFeatured(card)"
                                             class="p-1.5 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
                                             :class="card.is_featured ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'"
@@ -834,10 +842,10 @@
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                                 <span>{{ card.comment_count || 0 }}</span>
                             </span>
-                            <span @click.stop="isAdmin ? openHeatEdit(card) : null" class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-orange-400" :class="{ 'cursor-pointer hover:bg-orange-50 transition-colors': isAdmin }" :title="isAdmin ? '点击调整热度' : ''">
+                            <span @click.stop="canModerate ? openHeatEdit(card) : null" class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-orange-400" :class="{ 'cursor-pointer hover:bg-orange-50 transition-colors': canModerate }" :title="canModerate ? '点击调整热度' : ''">
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
                                 <span>{{ computeHeat(card) }}</span>
-                                <svg v-if="isAdmin" class="w-3 h-3 text-orange-300 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                                <svg v-if="canModerate" class="w-3 h-3 text-orange-300 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                             </span>
                         </div>
                     </div>
@@ -951,15 +959,21 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
-                <div class="p-5 overflow-y-auto flex flex-wrap gap-2">
-                    <button v-for="item in allTags" :key="item.tag"
-                            @click="searchTag(item.tag); showTagLibrary = false"
-                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95"
-                            :class="searchQuery === item.tag
-                                ? 'bg-primary-500 text-white border-primary-500'
-                                : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50'">
-                        {{ item.tag }}
-                        <span class="text-[10px] font-bold opacity-60">{{ item.count }}</span>
+                <div class="p-5 overflow-y-auto">
+                    <div class="flex flex-wrap gap-2">
+                        <button v-for="item in visibleTagLibrary" :key="item.tag"
+                                @click="searchTag(item.tag); showTagLibrary = false"
+                                class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95"
+                                :class="searchQuery === item.tag
+                                    ? 'bg-primary-500 text-white border-primary-500'
+                                    : 'bg-white text-gray-600 border-gray-200 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50'">
+                            {{ item.tag }}
+                            <span class="text-[10px] font-bold opacity-60">{{ item.count }}</span>
+                        </button>
+                    </div>
+                    <button v-if="visibleTagLibrary.length < allTags.length" @click="loadMoreTags"
+                            class="mt-5 w-full rounded-xl border border-blue-100 bg-blue-50 py-2.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100">
+                        加载更多（{{ visibleTagLibrary.length }} / {{ allTags.length }}）
                     </button>
                 </div>
             </div>
@@ -1130,6 +1144,9 @@
                     </button>
                 </div>
                 <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col h-full">
+                    <div v-if="contentSection === 'unreviewed'" class="mb-4 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs font-medium leading-relaxed text-orange-700">
+                        无审专区发布后立即公开，无需审核，无发布收益
+                    </div>
                     <div v-if="contentSection === 'uitemplates'" class="flex flex-col h-full">
                         <div v-if="!uploadingTemplate"
                              @click="$refs.templateFileInput.click()"
@@ -1217,7 +1234,7 @@
                         <div class="flex flex-col gap-2 mt-auto">
                             <button @click="confirmUpload" :disabled="isUploading" class="w-full bg-primary-600 hover:bg-primary-700 text-white py-3.5 rounded-2xl font-bold transition-all shadow-lg shadow-primary-100 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]">
                                 <span v-if="isUploading" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                                {{ isUploading ? '正在发布...' : '确认发布到广场' }}
+                                {{ isUploading ? '正在发布...' : (contentSection === 'unreviewed' ? '确认发布到无审专区' : '确认发布到广场') }}
                             </button>
                             <button @click="uploadingCard = null" :disabled="isUploading" class="w-full text-gray-400 text-sm font-bold py-2 hover:text-gray-600 transition-colors">重新选择文件</button>
                         </div>
@@ -1364,7 +1381,7 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
-                            <div v-if="selectedCard.is_featured" class="mt-3 flex items-center">
+                            <div v-if="selectedCard.is_featured && selectedCard.review_status !== 'unreviewed'" class="mt-3 flex items-center">
                                 <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200">
                                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                                     精选角色卡
@@ -1556,7 +1573,7 @@
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     {{ downloadButtonLabel }}
                 </button>
-                <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                    <button v-if="isAdmin && selectedCard.review_status !== 'unreviewed'" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                     <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                 </button>
                 <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
@@ -1586,7 +1603,7 @@
                         <!-- Title & Meta -->
                         <div class="mb-8">
                             <h2 class="text-3xl md:text-4xl font-black text-gray-900 tracking-tight leading-tight">{{ selectedCard.name }}</h2>
-                            <div v-if="selectedCard.is_featured" class="mt-3 flex items-center">
+                            <div v-if="selectedCard.is_featured && selectedCard.review_status !== 'unreviewed'" class="mt-3 flex items-center">
                                 <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-400 text-white shadow-md shadow-amber-200">
                                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                                     精选角色卡
@@ -1776,7 +1793,7 @@
                             <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             {{ downloadButtonLabel }}
                         </button>
-                        <button v-if="isAdmin" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                    <button v-if="isAdmin && selectedCard.review_status !== 'unreviewed'" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                             <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                         </button>
                         <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="startEditCard(selectedCard)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
@@ -2039,83 +2056,83 @@
         </div>
 
         <!-- STA1N API Reward Modal -->
-        <div v-if="showNewApiModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4" @click.self="showNewApiModal = false">
-            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-scale-in overflow-hidden">
-                <div class="p-5 border-b border-gray-100 flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m-7-6a7 7 0 1114 0 7 7 0 01-14 0z"/></svg>
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900">提现收益</h3>
-                            <p class="text-xs text-gray-400 mt-0.5">角色卡和 UI 模板收益都会汇总在这里</p>
-                        </div>
+        <div v-if="showNewApiModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @click.self="showNewApiModal = false">
+            <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl animate-scale-in">
+                <div class="sticky top-0 z-10 flex items-start justify-between border-b border-gray-100 bg-white px-6 py-5">
+                    <div>
+                        <h3 class="text-xl font-black text-gray-900">提现收益</h3>
+                        <p class="mt-1 text-xs text-gray-400">仅统计已审核角色卡和 UI 模板的热度收益</p>
                     </div>
-                    <button @click="showNewApiModal = false" class="p-1.5 rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    <button @click="showNewApiModal = false" class="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700" aria-label="关闭">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
-                <div class="p-5 space-y-4">
-                    <div v-if="newApiRewardLoading" class="py-8 text-center text-sm text-gray-400">加载中...</div>
+
+                <div class="p-6">
+                    <div v-if="newApiRewardLoading" class="flex items-center justify-center gap-2 py-16 text-sm text-gray-400">
+                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
+                        正在读取收益
+                    </div>
+
                     <template v-else>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="rounded-2xl bg-amber-50 border border-amber-100 p-4 min-h-[92px] flex flex-col items-center justify-center text-center gap-2">
-                                <p class="text-xs text-amber-500 font-bold">可提现</p>
-                                <div class="flex items-end justify-center gap-1.5">
-                                    <span class="text-3xl font-black text-amber-600 font-mono leading-none">{{ formatCookieAmount(newApiReward.available_cookies) }}</span>
-                                    <span class="text-lg leading-none pb-0.5">🍪</span>
+                        <section class="rounded-2xl border border-amber-100 bg-amber-50 px-5 py-5">
+                            <p class="text-center text-xs font-bold text-amber-600">当前可提现</p>
+                            <div class="mt-2 flex items-baseline justify-center gap-2">
+                                <span class="font-mono text-4xl font-black tracking-tight text-amber-700">{{ formatCookieAmount(newApiReward.available_cookies) }}</span>
+                                <span class="text-sm font-bold text-amber-600">🍪</span>
+                            </div>
+                            <div class="mt-5 grid grid-cols-3 divide-x divide-amber-200/70 border-t border-amber-200/70 pt-4 text-center">
+                                <div>
+                                    <p class="text-[11px] text-amber-600/70">角色卡热度</p>
+                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ newApiReward.card_heat || 0 }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] text-amber-600/70">UI 模板热度</p>
+                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ newApiReward.template_heat || 0 }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] text-amber-600/70">累计已提现</p>
+                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ formatCookieAmount(newApiReward.redeemed_cookies) }} 🍪</p>
                                 </div>
                             </div>
-                            <div class="rounded-2xl bg-blue-50 border border-blue-100 p-4 min-h-[92px] flex flex-col items-center justify-center text-center gap-2">
-                                <p class="text-xs text-blue-400 font-bold">总热度</p>
-                                <p class="text-3xl font-black text-blue-700 font-mono leading-none">{{ newApiReward.total_heat || 0 }}</p>
+                        </section>
+
+                        <section class="mt-6">
+                            <div class="mb-2 flex items-center justify-between">
+                                <label class="text-sm font-bold text-gray-800">收款账号</label>
+                                <span class="text-xs text-gray-400">STA1N API 用户 ID</span>
                             </div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
-                                <p class="text-xs text-gray-400 font-bold">角色卡</p>
-                                <p class="text-base font-black text-gray-700 font-mono">{{ newApiReward.card_heat || 0 }}</p>
-                            </div>
-                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
-                                <p class="text-xs text-gray-400 font-bold">UI模板</p>
-                                <p class="text-base font-black text-gray-700 font-mono">{{ newApiReward.template_heat || 0 }}</p>
-                            </div>
-                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-3">
-                                <p class="text-xs text-gray-400 font-bold">已提现</p>
-                                <p class="text-base font-black text-gray-700 font-mono">{{ formatCookieAmount(newApiReward.redeemed_cookies) }}🍪</p>
-                            </div>
-                        </div>
-                        <div class="rounded-2xl border border-gray-100 p-4 space-y-3">
-                            <div class="flex items-center gap-3">
-                                <label class="block text-sm font-bold text-gray-700">STA1N API 用户 ID</label>
-                            </div>
-                            <div v-if="newApiReward.newapi_user_id" class="flex items-center gap-2">
-                                <div class="flex-1 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 text-sm font-mono break-all">{{ newApiReward.newapi_user_id }}</div>
-                                <button @click="unbindNewApiUser" :disabled="newApiUnbinding" class="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold transition-colors disabled:opacity-60">
+                            <div v-if="newApiReward.newapi_user_id" class="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                                <span class="min-w-0 flex-1 break-all font-mono text-sm font-bold text-gray-700">{{ newApiReward.newapi_user_id }}</span>
+                                <button @click="unbindNewApiUser" :disabled="newApiUnbinding" class="flex-shrink-0 text-xs font-bold text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60">
                                     {{ newApiUnbinding ? '解绑中' : '解绑' }}
                                 </button>
                             </div>
                             <div v-else class="flex gap-2">
-                                <input v-model.trim="newApiForm.userId" inputmode="numeric" placeholder="例如 123"
-                                    class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm">
-                                <button @click="bindNewApiUser" :disabled="newApiSaving" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors disabled:opacity-60">
-                                    {{ newApiSaving ? '保存中' : '绑定' }}
+                                <input v-model.trim="newApiForm.userId" inputmode="numeric" placeholder="输入用户 ID"
+                                    class="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+                                <button @click="bindNewApiUser" :disabled="newApiSaving" class="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-60">
+                                    {{ newApiSaving ? '绑定中' : '绑定' }}
                                 </button>
                             </div>
-                        </div>
-                        <div class="rounded-2xl border border-gray-100 p-4 space-y-3">
-                            <label class="block text-sm font-bold text-gray-700">提现 🍪 数量</label>
-                            <div class="flex gap-2">
+                        </section>
+
+                        <section class="mt-6 border-t border-gray-100 pt-6">
+                            <div class="mb-2 flex items-center justify-between">
+                                <label class="text-sm font-bold text-gray-800">提现数量</label>
+                                <button type="button" @click="newApiForm.cookies = newApiReward.available_cookies" class="text-xs font-bold text-blue-600 hover:text-blue-700">全部提现</button>
+                            </div>
+                            <div class="flex items-center rounded-xl border border-gray-200 bg-white px-4 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
                                 <input v-model.number="newApiForm.cookies" type="number" min="1" step="0.01" :max="newApiReward.available_cookies || 1"
-                                    class="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
-                                <button @click="redeemNewApiQuota" :disabled="newApiRedeeming || !newApiReward.newapi_configured || !newApiReward.newapi_user_id || (newApiReward.available_cookies || 0) < 1"
-                                    class="px-4 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-bold disabled:opacity-60 disabled:cursor-not-allowed">
-                                    {{ newApiRedeeming ? '提现中' : '提现' }}
-                                </button>
+                                    class="min-w-0 flex-1 bg-transparent py-3.5 font-mono text-lg font-bold text-gray-900 outline-none">
+                                <span class="text-sm font-bold text-gray-400">🍪</span>
                             </div>
-                            <p class="text-xs text-gray-400">最少提现 1🍪。收益会发到绑定的 STA1N API 用户 ID 上。</p>
-                            <p v-if="!newApiReward.newapi_configured" class="text-xs text-amber-600 bg-amber-50 rounded-xl px-3 py-2">管理员还没完整配置 STA1N API，暂时不能提现。</p>
-                        </div>
+                            <p v-if="!newApiReward.newapi_configured" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">管理员尚未配置 STA1N API，暂时不能提现。</p>
+                            <button @click="redeemNewApiQuota" :disabled="newApiRedeeming || !newApiReward.newapi_configured || !newApiReward.newapi_user_id"
+                                class="mt-4 w-full rounded-xl bg-blue-600 py-3.5 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500">
+                                {{ newApiRedeeming ? '正在提现' : '确认提现' }}
+                            </button>
+                        </section>
                     </template>
                 </div>
             </div>
@@ -2201,23 +2218,8 @@
             setItem(key, val) { try { localStorage.setItem(key, val); } catch(e) {} },
             removeItem(key) { try { localStorage.removeItem(key); } catch(e) {} }
         };
-        const adminStorage = {
-            getItem(key) {
-                let value = null;
-                try { value = sessionStorage.getItem(key); } catch(e) {}
-                try { sessionStorage.removeItem(key); } catch(e) {}
-                try { localStorage.removeItem(key); } catch(e) {}
-                return value;
-            },
-            setItem(key, val) {
-                try { localStorage.removeItem(key); } catch(e) {}
-                try { sessionStorage.removeItem(key); } catch(e) {}
-            },
-            removeItem(key) {
-                try { localStorage.removeItem(key); } catch(e) {}
-                try { sessionStorage.removeItem(key); } catch(e) {}
-            }
-        };
+        try { localStorage.removeItem('admin_token'); } catch(e) {}
+        try { sessionStorage.removeItem('admin_token'); } catch(e) {}
         const userTokenStorage = {
             getItem(key) {
                 let value = null;
@@ -2245,6 +2247,7 @@
                 
                 const cards = ref([]);
                 const uiTemplates = ref([]);
+                const cardSectionCounts = reactive({ reviewed: 0, unreviewed: 0 });
                 const cardSort = ref('latest');
                 const showSortDropdown = ref(false);
                 const loading = ref(true);
@@ -2256,6 +2259,8 @@
                 const configuredTagLibrary = ref([]);
                 const hiddenPopularTags = ref([]);
                 const hiddenTagLibrary = ref([]);
+                const TAG_LIBRARY_PAGE_SIZE = 200;
+                const tagLibraryVisibleCount = ref(TAG_LIBRARY_PAGE_SIZE);
                 const ANNOUNCEMENT_SEEN_KEY = 'rph_announcement_seen_version';
                 const announcement = reactive({
                     enabled: false,
@@ -2424,7 +2429,6 @@
 
                 // Admin Logic - JWT-based authentication
                 const isAdmin = ref(false);
-                const adminToken = ref(adminStorage.getItem('admin_token') || '');
                 const adminClickCount = ref(0);
                 const lastClickTime = ref(0);
                 const showAdminLogin = ref(false);
@@ -2481,7 +2485,7 @@
                 const formatCookieAmount = (value) => floorToTwoDecimals(value).toFixed(2);
                 const clampCookieAmount = (value, available) => {
                     const max = floorToTwoDecimals(available || 0);
-                    if (max < 1) return 1;
+                    if (max < 1) return max;
                     const amount = floorToTwoDecimals(value || 1);
                     return Math.max(1, Math.min(amount, max));
                 };
@@ -2579,27 +2583,21 @@
 
                 // Check existing token on load
                 const checkAdminToken = async () => {
-                    if (!adminToken.value) return;
                     try {
-                        const resp = await fetch(API_BASE + '/api/auth/me', {
-                            headers: { 'Authorization': 'Bearer ' + adminToken.value }
-                        });
+                        const resp = await fetch(API_BASE + '/api/auth/me');
                         if (resp.ok) {
                             isAdmin.value = true;
                             fetchCards();
                             fetchUiTemplates();
                         } else {
-                            adminToken.value = '';
-                            adminStorage.removeItem('admin_token');
+                            isAdmin.value = false;
                         }
                     } catch (e) {
-                        adminToken.value = '';
-                        adminStorage.removeItem('admin_token');
+                        isAdmin.value = false;
                     }
                 };
 
                 const adminAuthHeaders = () => ({
-                    'Authorization': 'Bearer ' + adminToken.value,
                     'Content-Type': 'application/json'
                 });
 
@@ -2616,8 +2614,6 @@
                             adminLoginError.value = data.error || '登录失败';
                             return;
                         }
-                        adminToken.value = data.token;
-                        adminStorage.setItem('admin_token', data.token);
                         isAdmin.value = true;
                         showAdminLogin.value = false;
                         adminLoginForm.password = '';
@@ -2631,9 +2627,8 @@
                 };
 
                 const handleAdminLogout = () => {
-                    adminToken.value = '';
+                    fetch(API_BASE + '/api/auth/logout', { method: 'POST' }).catch(() => {});
                     isAdmin.value = false;
-                    adminStorage.removeItem('admin_token');
                     currentTab.value = 'all';
                     fetchCards();
                     fetchUiTemplates();
@@ -2641,6 +2636,7 @@
                 };
 
                 const handleLogoClick = () => {
+                    tagLibraryVisibleCount.value = TAG_LIBRARY_PAGE_SIZE;
                     showTagLibrary.value = true;
                 };
 
@@ -3197,6 +3193,13 @@
                         ...ranked.filter(([tag]) => !configuredSet.has(tag)).map(([tag, count]) => ({ tag, count }))
                     ];
                 });
+                const visibleTagLibrary = computed(() => allTags.value.slice(0, tagLibraryVisibleCount.value));
+                const loadMoreTags = () => {
+                    tagLibraryVisibleCount.value = Math.min(
+                        tagLibraryVisibleCount.value + TAG_LIBRARY_PAGE_SIZE,
+                        allTags.value.length
+                    );
+                };
 
                 const searchTag = (tag) => {
                     if (searchQuery.value === tag) {
@@ -3225,6 +3228,10 @@
                         if (currentTab.value === 'mine') return '你还没有上传 UI 模板';
                         return searchQuery.value ? '没有找到匹配的 UI 模板' : 'UI模板还没有作品';
                     }
+                    if (contentSection.value === 'unreviewed') {
+                        if (currentTab.value === 'mine') return '你还没有上传无审角色卡';
+                        return searchQuery.value ? '没有找到匹配的角色卡' : '无审专区还没有作品';
+                    }
                     return '没有找到匹配的角色卡';
                 });
 
@@ -3235,6 +3242,9 @@
                         return searchQuery.value
                             ? '换个关键词试试，或清空搜索看看全部模板。'
                             : '上传独立的 UI 模板文件后，会显示在这个专属分区。';
+                    }
+                    if (contentSection.value === 'unreviewed') {
+                        return '上传 RPH 角色卡即可立即发布，但不会获得收益。';
                     }
                     return '换个关键词试试，或上传您的第一张角色卡！';
                 });
@@ -3285,7 +3295,7 @@
 
                     // Tab filter
                     if (currentTab.value === 'mine') {
-                        if (canModerate.value) {
+                        if (canModerate.value && contentSection.value !== 'unreviewed') {
                             result = result.filter(c => c.review_status === 'pending');
                         } else {
                             result = result.filter(c => isCardOwnedByCurrentUser(c));
@@ -3309,10 +3319,7 @@
                     const updatedTime = (c) => new Date(c.updated_at || 0).getTime();
                     const sortMode = cardSort.value;
 
-                    if (sortMode === 'featured') {
-                        result = result.filter(c => c.is_featured);
-                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    } else if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
+                    if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
                         // Time-range rankings are already ordered by the server using activity in that period.
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
@@ -3354,10 +3361,7 @@
                     const createdTime = (item) => new Date(item.created_at || 0).getTime();
                     const updatedTime = (item) => new Date(item.updated_at || 0).getTime();
                     const sortMode = cardSort.value;
-                    if (sortMode === 'featured') {
-                        result = result.filter(item => item.is_featured);
-                        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    } else if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
+                    if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
                         // Time-range rankings are already ordered by the server using activity in that period.
                     } else if (sortMode === 'hot') {
                         result.sort((a, b) => heatScore(b) - heatScore(a));
@@ -3408,18 +3412,20 @@
                 const fetchCards = async ({ showLoading = false } = {}) => {
                     const requestId = ++cardsRequestId;
                     const requestedSort = cardSort.value;
+                    const requestedZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
                     const showFullLoading = showLoading || (cards.value.length === 0 && contentSection.value !== 'uitemplates');
                     if (showFullLoading) loading.value = true;
                     try {
                         const headers = {};
                         if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
                         else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(requestedSort), { headers });
+                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(requestedSort) + '&zone=' + requestedZone, { headers });
                         if (resp.status === 304) return;
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
-                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value) return;
+                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value || requestedZone !== (contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed')) return;
                         const items = Array.isArray(data) ? data : (data.items || []);
+                        cardSectionCounts[requestedZone] = items.length;
                         
                         // Process tags for each card
                         cards.value = items.map(card => {
@@ -4434,7 +4440,8 @@
                                 description: uploadingCard.value.description,
                                 avatar_url: uploadingCard.value.avatar,
                                 data: uploadingCard.value.full_data,
-                                creator_notes: uploadingCard.value.creator_notes
+                                creator_notes: uploadingCard.value.creator_notes,
+                                publish_mode: contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed'
                             })
                         });
                         if (!resp.ok) {
@@ -4449,7 +4456,9 @@
 
                         // Award upload credits
                         const creditInfo = data?.find(d => d.new_credits !== undefined);
-                        if (creditInfo && currentUser.value) {
+                        if (data?.some(d => d.unreviewed)) {
+                            showToast('已发布到无审专区，本次发布无收益', 'success', 4000);
+                        } else if (creditInfo && currentUser.value) {
                             currentUser.value = { ...currentUser.value, download_credits: creditInfo.new_credits };
                             showToast('发布成功！获得 3 次下载机会 🎉', 'success');
                         } else if (data?.some(d => d.pending_review)) {
@@ -4460,8 +4469,7 @@
                         showUploadModal.value = false;
                         uploadingCard.value = null;
                         
-                        // Switch to 'mine' tab to show the new card
-                        currentTab.value = 'mine';
+                        currentTab.value = data?.some(d => d.unreviewed) ? 'all' : 'mine';
                         
                         fetchCards();
                     } catch (err) {
@@ -4473,6 +4481,7 @@
 
 
                 const toggleFeatured = async (card) => {
+                    if (!isAdmin.value || card?.review_status === 'unreviewed') return;
                     try {
                         const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/feature', {
                             method: 'PUT',
@@ -5064,8 +5073,10 @@
                 const downloadButtonLabel = computed(() => {
                     if (selectedCard.value) {
                         const isOwner = isCardOwnedByCurrentUser(selectedCard.value);
+                        const isFreeDownload = selectedCard.value.review_status === 'unreviewed';
                         if (!canModerate.value && !isOwner && !isLoggedIn.value) return '登录后下载';
-                        if (!canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
+                        if (!isFreeDownload && !canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
+                        if (isFreeDownload) return '下载角色卡';
                     }
                     if (isDownloadingCard.value) return '正在生成下载文件...';
                     if (previewAsset.loading) return '图片加载中...';
@@ -5091,19 +5102,20 @@
                     }
                 });
 
-                const htmlIframeSandbox = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-same-origin allow-downloads allow-pointer-lock allow-presentation allow-top-navigation-by-user-activation';
+                const htmlIframeSandbox = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-pointer-lock allow-presentation allow-top-navigation-by-user-activation';
 
-                const buildExecutableHtmlDocument = (rawHtml) => {
+                const buildExecutableHtmlDocument = (rawHtml, frameId) => {
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
                     const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
                     const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:auto!important;word-wrap:break-word!important;box-sizing:border-box!important;overflow:hidden!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;height:auto!important;}table{display:block!important;overflow-x:auto!important;max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}.container,.reality-panel,.app-container{max-width:100%!important;width:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;border:none!important;height:auto!important;min-height:0!important;}body>div:first-child{margin:0!important;max-width:100%!important;height:auto!important;min-height:0!important;}#app{height:auto!important;min-height:auto!important;}.bottom-safe{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;}' + hudCSS + '</style>';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const scriptShim = `
                         <script>
+                            const rphFrameId = ${JSON.stringify(String(frameId || ''))};
                             window.triggerSlash = function(text) {
                                 console.log('Slash triggered:', text);
                                 try {
-                                    window.parent.postMessage({ type: 'slash_command', content: text }, '*');
+                                    window.parent.postMessage({ type: 'slash_command', content: text, frameId: rphFrameId }, '*');
                                 } catch (e) {
                                     console.error('TriggerSlash error:', e);
                                 }
@@ -5112,9 +5124,9 @@
                             let lastHeight = 0;
                             let isUpdating = false;
                             function updateHeight() {
-                                if (!window.frameElement || isUpdating) return;
+                                if (isUpdating) return;
                                 isUpdating = true;
-                                requestAnimationFrame(function() {
+                                setTimeout(function() {
                                     var body = document.body;
                                     var html = document.documentElement;
                                     if (!body || !html) {
@@ -5136,10 +5148,10 @@
                                     var newHeight = Math.max(maxBottom + marginBottom, body.scrollHeight) + 4;
                                     if (Math.abs(newHeight - lastHeight) > 0) {
                                         lastHeight = newHeight;
-                                        window.frameElement.style.height = newHeight + 'px';
+                                        window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: newHeight }, '*');
                                     }
                                     isUpdating = false;
-                                });
+                                }, 0);
                             }
 
                             window.addEventListener('load', function() {
@@ -5164,6 +5176,9 @@
                                 tick();
                             });
                             window.addEventListener('DOMContentLoaded', function() {
+                                if (window.ResizeObserver && document.body) {
+                                    ro.observe(document.body);
+                                }
                                 document.querySelectorAll('img').forEach(function(img) {
                                     img.addEventListener('load', updateHeight);
                                 });
@@ -5209,7 +5224,9 @@ ${content}
 
                 const createIframe = (rawHtml) => {
                     const iframe = document.createElement('iframe');
+                    const frameId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
                     iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block executable-html-frame';
+                    iframe.dataset.rphFrameId = frameId;
                     iframe.style.height = 'auto';
                     iframe.style.overflow = 'hidden';
                     iframe.style.transition = 'height 0.2s ease-out';
@@ -5218,19 +5235,7 @@ ${content}
                     iframe.setAttribute('scrolling', 'no');
                     iframe.setAttribute('sandbox', htmlIframeSandbox);
                     iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen; autoplay; encrypted-media; picture-in-picture');
-                    iframe.onload = function () {
-                        try {
-                            setTimeout(() => {
-                                if (this.contentWindow && this.contentWindow.document) {
-                                    const doc = this.contentWindow.document;
-                                    this.style.height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 'px';
-                                }
-                            }, 100);
-                        } catch (e) {
-                            console.warn('Failed to resize iframe:', e);
-                        }
-                    };
-                    iframe.srcdoc = buildExecutableHtmlDocument(rawHtml);
+                    iframe.srcdoc = buildExecutableHtmlDocument(rawHtml, frameId);
                     return iframe;
                 };
 
@@ -5384,7 +5389,7 @@ ${content}
                 const heatEditForm = reactive({ views_count: 0, comment_heat_count: 0, downloads_count: 0 });
 
                 const openHeatEdit = (card, type = 'card') => {
-                    if (!isAdmin.value) return;
+                    if (type === 'template' ? !isAdmin.value : !canModerate.value) return;
                     editingHeatCard.value = card;
                     editingHeatType.value = type;
                     heatEditForm.views_count = card.views_count || 0;
@@ -5399,7 +5404,7 @@ ${content}
                         const isTemplateHeat = editingHeatType.value === 'template';
                         const resp = await fetch(API_BASE + (isTemplateHeat ? '/api/ui-templates/' : '/api/cards/') + editingHeatCard.value.id + '/heat', {
                             method: 'PUT',
-                            headers: adminAuthHeaders(),
+                            headers: isTemplateHeat ? adminAuthHeaders() : moderationAuthHeaders(),
                             body: JSON.stringify({
                                 views_count: parseInt(heatEditForm.views_count) || 0,
                                 comment_heat_count: parseInt(heatEditForm.comment_heat_count) || 0,
@@ -5671,6 +5676,7 @@ ${content}
                 const downloadCard = async (card) => {
                     // Require login to download
                     const isOwner = isCardOwnedByCurrentUser(card);
+                    const isFreeDownload = card.review_status === 'unreviewed';
                     if (!canModerate.value && !isOwner && !isLoggedIn.value) {
                         showUserAuthModal.value = true;
                         userAuthMode.value = 'login';
@@ -5679,7 +5685,7 @@ ${content}
                     }
 
                     // Credit Check
-                    if (!canModerate.value && !isOwner) {
+                    if (!isFreeDownload && !canModerate.value && !isOwner) {
                         if (downloadCredits.value <= 0) {
                             if (!isLoggedIn.value) {
                                 showUserAuthModal.value = true;
@@ -5952,6 +5958,10 @@ ${content}
                     fetchCards({ showLoading: contentSection.value !== 'uitemplates' });
                     fetchUiTemplates({ showLoading: contentSection.value === 'uitemplates' });
                 });
+                watch(contentSection, (section) => {
+                    if (section === 'uitemplates') fetchUiTemplates({ showLoading: true });
+                    else fetchCards({ showLoading: true });
+                });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value !== 'login') resetCaptcha();
                 });
@@ -5994,6 +6004,17 @@ ${content}
 
                 const handleWindowMessage = (event) => {
                     const data = event.data || {};
+                    const frames = Array.from(document.querySelectorAll('iframe.executable-html-frame'));
+                    const sourceFrame = frames.find(frame => frame.contentWindow === event.source)
+                        || frames.find(frame => data.frameId && frame.dataset.rphFrameId === data.frameId);
+                    if (!sourceFrame) return;
+                    if (data.type === 'rph_iframe_resize') {
+                        const height = Number(data.height);
+                        if (Number.isFinite(height)) {
+                            sourceFrame.style.height = Math.min(Math.max(height, 1), 50000) + 'px';
+                        }
+                        return;
+                    }
                     if (data.type === 'slash_command') {
                         showToast(`触发指令：${data.content}`, 'success');
                     }
@@ -6030,7 +6051,7 @@ ${content}
                 });
 
                 return {
-                    cards, uiTemplates, cardSort, showSortDropdown, loading, searchQuery, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    cards, uiTemplates, cardSectionCounts, cardSort, showSortDropdown, loading, searchQuery, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
@@ -6065,7 +6086,7 @@ ${content}
                     editingCard, showEditModal, isEditUploading, startEditCard, handleEditFileSelect, confirmEditCard,
                     // Visit Tracking
                     totalVisits,
-                    tagsExpanded, showTagLibrary, allTags,
+                    tagsExpanded, showTagLibrary, allTags, visibleTagLibrary, loadMoreTags,
                     currentPage, totalPages, pageNumbers, currentListLength, jumpPageInput, jumpToPage
                 };
             }

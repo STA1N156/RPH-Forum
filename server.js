@@ -88,6 +88,8 @@ const captchaTokens = new Map(); // token -> { createdAt, used }
 // ============== Admin Export Downloads ==============
 const adminExportDownloads = new Map(); // token -> prepared backup download
 const ADMIN_EXPORT_DOWNLOAD_TTL_MS = 5 * 60 * 1000;
+const ADMIN_AUTH_COOKIE = 'rph_admin_token';
+const ADMIN_AUTH_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 // ============== Upload Rate Limiting ==============
 const MAX_UPLOAD_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
@@ -155,6 +157,16 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
+app.use('/api', (req, res, next) => {
+    if (!req.cookies?.[ADMIN_AUTH_COOKIE] || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return next();
+    }
+    const expectedOrigin = `${req.protocol}://${req.get('host')}`;
+    if (String(req.get('origin') || '') !== expectedOrigin) {
+        return res.status(403).json({ error: '请求来源无效' });
+    }
+    next();
+});
 
 function formatDuration(ms) {
     return `${Number(ms || 0).toFixed(1)}ms`;
@@ -444,6 +456,43 @@ function generateUserToken(user) {
     );
 }
 
+function getBearerToken(req) {
+    const authHeader = String(req.headers.authorization || '');
+    return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+function getAdminAuthToken(req) {
+    return String(req.cookies?.[ADMIN_AUTH_COOKIE] || '').trim();
+}
+
+function getRequestAuthToken(req) {
+    return getBearerToken(req) || String(req.cookies?.[ADMIN_AUTH_COOKIE] || '').trim();
+}
+
+function isAdminCookieToken(req, token) {
+    const cookieToken = getAdminAuthToken(req);
+    return Boolean(cookieToken && token === cookieToken);
+}
+
+function setAdminAuthCookie(res, token) {
+    res.cookie(ADMIN_AUTH_COOKIE, token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: IS_PRODUCTION,
+        maxAge: ADMIN_AUTH_COOKIE_MAX_AGE_MS,
+        path: '/'
+    });
+}
+
+function clearAdminAuthCookie(res) {
+    res.clearCookie(ADMIN_AUTH_COOKIE, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: IS_PRODUCTION,
+        path: '/'
+    });
+}
+
 function validateAdminPassword(password) {
     const input = String(password || '');
     if (!ADMIN_PASSWORD || !input) return false;
@@ -488,14 +537,17 @@ function isModeratorUser(user) {
     return Number(user?.is_moderator || 0) === 1;
 }
 
+function isPublicCardStatus(status) {
+    return status === 'approved' || status === 'unreviewed';
+}
+
 function authenticateAdmin(req, res, next) {
     markPerf(req, 'auth-admin-start');
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getAdminAuthToken(req);
+    if (!token) {
         return res.status(401).json({ error: '未授权' });
     }
     try {
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         const admin = validateAdminTokenPayload(decoded);
         if (!admin) return res.status(403).json({ error: '权限不足或登录状态已失效' });
@@ -551,20 +603,24 @@ function authenticateUserAllowUnbound(req, res, next) {
 
 function optionalUserAuth(req, res, next) {
     markPerf(req, 'auth-optional-start');
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getRequestAuthToken(req);
+    if (!token) {
         req.user = null;
         markPerf(req, 'auth-optional-guest');
         return next();
     }
     try {
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
             req.user = validateUserTokenPayload(decoded);
             markPerf(req, 'auth-optional-user', { userId: req.user?.id || null });
         }
         else if (decoded.role === 'admin') {
+            if (!isAdminCookieToken(req, token)) {
+                req.user = null;
+                markPerf(req, 'auth-optional-rejected-admin-bearer');
+                return next();
+            }
             req.admin = validateAdminTokenPayload(decoded);
             req.user = null;
             markPerf(req, 'auth-optional-admin', { adminId: req.admin?.id || null });
@@ -583,12 +639,11 @@ function optionalUserAuth(req, res, next) {
 
 function requireUserOrAdmin(req, res, next) {
     markPerf(req, 'auth-user-or-admin-start');
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getRequestAuthToken(req);
+    if (!token) {
         return res.status(401).json({ error: '请先登录后再操作' });
     }
     try {
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'user') {
             const user = validateUserTokenPayload(decoded);
@@ -597,6 +652,7 @@ function requireUserOrAdmin(req, res, next) {
             req.user = user;
             markPerf(req, 'auth-user-or-admin-user', { userId: user.id });
         } else if (decoded.role === 'admin') {
+            if (!isAdminCookieToken(req, token)) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             const admin = validateAdminTokenPayload(decoded);
             if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             req.admin = admin;
@@ -613,14 +669,14 @@ function requireUserOrAdmin(req, res, next) {
 
 function requireModeration(req, res, next) {
     markPerf(req, 'auth-moderation-start');
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getRequestAuthToken(req);
+    if (!token) {
         return res.status(401).json({ error: '请先登录' });
     }
     try {
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         if (decoded.role === 'admin') {
+            if (!isAdminCookieToken(req, token)) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             const admin = validateAdminTokenPayload(decoded);
             if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             req.admin = admin;
@@ -1332,11 +1388,11 @@ const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_C
 const cardListCache = new Map();
 let cardListCacheRevision = 1;
 
-function getCardListCacheKey(req, sortMode) {
-    if (req.admin) return `admin:${req.admin.id}:${sortMode}`;
-    if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${sortMode}`;
-    if (req.user) return `user:${req.user.id}:${sortMode}`;
-    return `guest:${sortMode}`;
+function getCardListCacheKey(req, sortMode, zone) {
+    if (req.admin) return `admin:${req.admin.id}:${zone}:${sortMode}`;
+    if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${zone}:${sortMode}`;
+    if (req.user) return `user:${req.user.id}:${zone}:${sortMode}`;
+    return `guest:${zone}:${sortMode}`;
 }
 
 function hasRequestEtag(req, etag) {
@@ -1628,11 +1684,17 @@ app.post('/api/auth/login', (req, res) => {
     logOperation({ userType: 'admin', userId: user.id, username: user.username, action: 'admin_login', targetType: 'user', targetId: String(user.id), ip, details: { role: 'admin' } });
 
     const token = generateAdminToken(user);
-    res.json({ token, user: { id: user.id, username: user.username } });
+    setAdminAuthCookie(res, token);
+    res.json({ user: { id: user.id, username: user.username } });
 });
 
 app.get('/api/auth/me', authenticateAdmin, (req, res) => {
     res.json({ user: req.admin });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    clearAdminAuthCookie(res);
+    res.json({ success: true });
 });
 
 // ============== Captcha ==============
@@ -2897,6 +2959,10 @@ function sanitizeUiTemplateRow(row, { includeContent = false, viewer = {} } = {}
     result.heat_score = computeTemplateHeatFromRow({ views_count: viewsCount, comment_heat_count: commentHeatCount, downloads_count: downloadsCount });
     result.can_view_downloads = canViewDownloads;
     if (!canViewDownloads) result.downloads_count = null;
+    if (!viewer.admin && !isModeratorUser(viewer.user)) {
+        delete result.uploader_ip_address;
+        delete result.reviewed_by_admin_id;
+    }
     delete result.content_preview_source;
     if (!includeContent) delete result.content;
     return result;
@@ -2957,8 +3023,9 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        markPerf(req, 'cards-start', { sortMode });
-        const cacheKey = getCardListCacheKey(req, sortMode);
+        const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
+        markPerf(req, 'cards-start', { sortMode, zone });
+        const cacheKey = getCardListCacheKey(req, sortMode, zone);
         const cached = getFreshCardListCache(cacheKey);
         if (cached) {
             markPerf(req, 'cards-cache-hit', { bytes: cached.body.length, gzipBytes: cached.gzipBody?.length || 0 });
@@ -2973,10 +3040,14 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const params = [];
         let orderByClause = 'cc.created_at DESC';
 
-        if (req.admin || isModeratorUser(req.user)) {
+        if (zone === 'unreviewed') {
+            whereParts.push("cc.review_status = 'unreviewed'");
+        } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
+            whereParts.push("cc.review_status <> 'unreviewed'");
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
+            whereParts.push("cc.review_status <> 'unreviewed'");
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
@@ -4361,7 +4432,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             reviewStatus: card?.review_status || null
         });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        const canView = card.review_status === 'approved'
+        const canView = isPublicCardStatus(card.review_status)
             || (req.admin && req.admin.id)
             || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
@@ -4396,6 +4467,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
 app.post('/api/cards', requireUserOrAdmin, (req, res) => {
     try {
         const { name, description, avatar_url, data, creator_notes } = req.body;
+        const publishMode = req.body.publish_mode === 'unreviewed' ? 'unreviewed' : 'reviewed';
         if (!name) {
             return res.status(400).json({ error: '卡片名称不能为空' });
         }
@@ -4443,9 +4515,9 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         });
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
-        const reviewStatus = req.admin ? 'approved' : 'pending';
-        const reviewedBy = req.admin ? req.admin.id : null;
-        const reviewedAt = req.admin ? now : null;
+        const reviewStatus = publishMode === 'unreviewed' ? 'unreviewed' : (req.admin ? 'approved' : 'pending');
+        const reviewedBy = reviewStatus === 'approved' ? req.admin.id : null;
+        const reviewedAt = reviewStatus === 'approved' ? now : null;
         const uploaderIp = getRequestIp(req);
 
         try {
@@ -4489,7 +4561,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
             username: req.user?.username || req.admin?.username,
-            action: req.admin ? 'upload' : 'upload_pending',
+            action: reviewStatus === 'unreviewed' ? 'upload_unreviewed' : (req.admin ? 'upload' : 'upload_pending'),
             targetType: 'card',
             targetId: id,
             ip: uploaderIp,
@@ -4506,7 +4578,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         res.json([
             sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }),
-            { pending_review: reviewStatus === 'pending' }
+            { pending_review: reviewStatus === 'pending', unreviewed: reviewStatus === 'unreviewed' }
         ]);
     } catch (err) {
         console.error('Create card error:', err);
@@ -4515,12 +4587,11 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 });
 
 app.delete('/api/cards/:id', (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getRequestAuthToken(req);
+    if (!token) {
         return res.status(401).json({ error: '请先登录' });
     }
     try {
-        const token = authHeader.split(' ')[1];
         let isAdmin = false;
         let isModerator = false;
         let userId = null;
@@ -4528,6 +4599,7 @@ app.delete('/api/cards/:id', (req, res) => {
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
             if (decoded.role === 'admin') {
+                if (!isAdminCookieToken(req, token)) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
                 const admin = validateAdminTokenPayload(decoded);
                 if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
                 isAdmin = true;
@@ -4597,18 +4669,18 @@ app.delete('/api/cards/:id', (req, res) => {
 
 app.put('/api/cards/:id', (req, res) => {
     // Authenticate: card owner OR admin
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = getRequestAuthToken(req);
+    if (!token) {
         return res.status(401).json({ error: '请先登录' });
     }
     try {
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
 
         let userType, userId, username;
         if (decoded.role === 'admin') {
+            if (!isAdminCookieToken(req, token)) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             const admin = validateAdminTokenPayload(decoded);
             if (!admin) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
             userType = 'admin'; userId = admin.id; username = admin.username;
@@ -4664,7 +4736,7 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
-        if (decoded.role === 'user' && hasDataUpdate) {
+        if (decoded.role === 'user' && hasDataUpdate && card.review_status !== 'unreviewed') {
             fields.push("review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
             fields.push('reviewed_at = NULL');
@@ -4745,13 +4817,16 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
     try {
         const { id } = req.params;
         const card = db.prepare(
-            `SELECT cc.id, cc.name, cc.is_featured,
+            `SELECT cc.id, cc.name, cc.is_featured, cc.review_status,
                     u.username, u.email, u.email_verified
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
              WHERE cc.id = ?`
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        if (card.review_status === 'unreviewed') {
+            return res.status(400).json({ error: '无审专区角色卡不能设为精选' });
+        }
 
         const newFeatured = card.is_featured ? 0 : 1;
         db.prepare('UPDATE character_cards SET is_featured = ? WHERE id = ?').run(newFeatured, id);
@@ -4779,8 +4854,8 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
     }
 });
 
-// ============== Card Heat Adjustment (Admin Only) ==============
-app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
+// ============== Card Heat Adjustment (Admin or Moderator) ==============
+app.put('/api/cards/:id/heat', requireModeration, (req, res) => {
     try {
         const { id } = req.params;
         const card = db.prepare(
@@ -4821,9 +4896,10 @@ app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
         db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         clearCardListCache('card-heat');
 
+        const actor = getModerationActor(req);
         logOperation({
-            userType: 'admin', userId: req.admin.id, username: req.admin.username,
-            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
+            userType: actor.userType, userId: actor.userId, username: actor.username,
+            action: req.admin ? 'admin_adjust_heat' : 'moderator_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
             details: { name: card.name, views_count, downloads_count, comment_heat_count: commentHeatCount }
         });
 
@@ -4929,15 +5005,16 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const isOwner = req.user && card.uploader_user_id === req.user.id;
         const isModerator = isModeratorUser(req.user);
-        if (card.review_status !== 'approved' && !req.admin && !isModerator && !isOwner) {
+        if (!isPublicCardStatus(card.review_status) && !req.admin && !isModerator && !isOwner) {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
+        const isFreeDownload = card.review_status === 'unreviewed';
         let newCredits = null;
         let downloadCounted = false;
         const recordDownload = db.transaction(() => {
             if (!req.admin && !isModerator) {
-                if (!isOwner) {
+                if (!isOwner && !isFreeDownload) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                     if (result.changes === 0) {
                         const error = new Error('下载次数不足');
@@ -4974,6 +5051,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
             new_credits: newCredits,
             download_counted: downloadCounted,
             downloads_count: latestDownloads,
+            free_download: isFreeDownload,
             download_url: `/api/cards/${encodeURIComponent(id)}/download/file`
         });
     } catch (err) {
@@ -4991,7 +5069,7 @@ app.get('/api/cards/:id/download/file', optionalUserAuth, async (req, res) => {
         if (!card) {
             return res.status(404).json({ error: '卡片不存在' });
         }
-        const canView = card.review_status === 'approved'
+        const canView = isPublicCardStatus(card.review_status)
             || (req.admin && req.admin.id)
             || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
@@ -5023,7 +5101,7 @@ app.post('/api/cards/:id/like', authenticateUser, (req, res) => {
         const cardId = req.params.id;
         const userId = req.user.id;
 
-        const card = db.prepare("SELECT id FROM character_cards WHERE id = ? AND review_status = 'approved'").get(cardId);
+        const card = db.prepare("SELECT id FROM character_cards WHERE id = ? AND review_status IN ('approved', 'unreviewed')").get(cardId);
         if (!card) return res.status(404).json({ error: '角色卡不存在' });
 
         const existing = db.prepare('SELECT id FROM card_likes WHERE card_id = ? AND user_id = ?').get(cardId, userId);
@@ -5074,7 +5152,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
         const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(cardId);
         markPerf(req, 'comments-card-read', { found: Boolean(card), reviewStatus: card?.review_status || null });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        const canView = card.review_status === 'approved'
+        const canView = isPublicCardStatus(card.review_status)
             || (req.admin && req.admin.id)
             || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
@@ -5150,7 +5228,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
                     u.username, u.email, u.email_verified, u.comment_email_notifications
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
-             WHERE cc.id = ? AND cc.review_status = 'approved'`
+             WHERE cc.id = ? AND cc.review_status IN ('approved', 'unreviewed')`
         ).get(req.params.cardId);
         if (!card) return res.status(404).json({ error: '卡片不存在或尚未通过审核' });
         if (hasDuplicateCommentContent({
@@ -5708,7 +5786,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         const params = [];
         const countParams = [];
         const whereParts = [];
-        if (status && ['pending', 'approved', 'rejected'].includes(status)) {
+        if (status && ['pending', 'approved', 'rejected', 'unreviewed'].includes(status)) {
             whereParts.push('cc.review_status = ?');
             params.push(status);
             countParams.push(status);
@@ -5760,6 +5838,9 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
              WHERE cc.id = ?`
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
+        if (card.review_status === 'unreviewed') {
+            return res.status(400).json({ error: '无审专区角色卡无需审核' });
+        }
 
         const now = new Date().toISOString();
         const reviewAndReward = db.transaction(() => {
@@ -6660,7 +6741,7 @@ app.post('/api/cards/:id/view', optionalUserAuth, (req, res) => {
         const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(id);
         markPerf(req, 'card-view-db-card', { found: Boolean(card), reviewStatus: card?.review_status || null });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        if (card.review_status !== 'approved' && !req.admin && !isModeratorUser(req.user) && !(req.user && card.uploader_user_id === req.user.id)) {
+        if (!isPublicCardStatus(card.review_status) && !req.admin && !isModeratorUser(req.user) && !(req.user && card.uploader_user_id === req.user.id)) {
             return res.status(404).json({ error: '卡片不存在' });
         }
 
