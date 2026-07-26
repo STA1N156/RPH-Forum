@@ -2695,7 +2695,7 @@ async function requestAiCardReview(card, config) {
         })
         : (coverBuildError
             ? Promise.reject(coverBuildError)
-            : Promise.resolve({ decision: 'ALLOW', reason: '角色卡没有可审核的封面，已跳过封面审核' }));
+            : Promise.resolve({ decision: 'REJECT', reason: '角色卡没有可审核的封面，封面审核不通过' }));
     const [textSettled, coverSettled] = await Promise.allSettled([textPromise, coverPromise]);
     const textResult = textSettled.status === 'fulfilled'
         ? textSettled.value
