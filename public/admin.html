@@ -93,6 +93,10 @@
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                         卡片管理
                     </button>
+                    <button @click="currentPage = 'aiReviews'; showMobileMenu = false; loadAiReviews()" :class="currentPage === 'aiReviews' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3.75h4.5M12 3.75v3m-6.75 3h13.5v8.5a2 2 0 01-2 2h-9.5a2 2 0 01-2-2v-8.5zm3 3.5h.01m6-.01h.01M9 17h6"/></svg>
+                        AI审核
+                    </button>
                     <button @click="currentPage = 'ipbans'; showMobileMenu = false; loadIpBans()" :class="currentPage === 'ipbans' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728m0-12.728l12.728 12.728M12 3a9 9 0 110 18 9 9 0 010-18z"/></svg>
                         IP封禁
@@ -144,7 +148,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
                         <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
-                            {{ {dashboard:'仪表盘',cards:'卡片管理',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',aiReviews:'AI审核',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
                     <a href="/" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
@@ -301,6 +305,8 @@
                                 <option value="pending">待审核</option>
                                 <option value="approved">已通过</option>
                                 <option value="rejected">已拒绝</option>
+                                <option value="unreviewed">无收益</option>
+                                <option value="ai_pending">AI 审核中</option>
                             </select>
                             <span class="text-sm text-gray-500">共 {{ cardData.total || 0 }} 张卡片</span>
                         </div>
@@ -311,7 +317,7 @@
                                         <p class="text-base font-semibold text-gray-900 break-all">{{ card.name }}</p>
                                         <p class="text-xs text-gray-400 mt-1">{{ formatDate(card.created_at) }}</p>
                                         <p class="text-xs text-gray-500 mt-1">上传者：{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</p>
-                                        <p class="text-xs mt-1" :class="card.review_status === 'pending' ? 'text-amber-600' : (card.review_status === 'rejected' ? 'text-red-600' : 'text-green-600')">{{ getReviewStatusLabel(card.review_status) }}</p>
+                                        <p class="text-xs mt-1" :class="card.review_status === 'pending' ? 'text-amber-600' : (card.review_status === 'rejected' ? 'text-red-600' : (card.review_status === 'ai_pending' ? 'text-blue-600' : 'text-green-600'))">{{ getReviewStatusLabel(card.review_status) }}</p>
                                     </div>
                                     <div class="flex gap-2">
                                         <button v-if="card.review_status === 'pending'" @click="reviewAdminCard(card, 'approved')" class="px-3 py-1.5 rounded-xl bg-green-50 text-green-600 text-sm font-medium">通过</button>
@@ -349,7 +355,7 @@
                                         <td class="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">{{ card.uploader_username || (card.uploader_user_id ? '用户#' + card.uploader_user_id : '-') }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-500 max-w-[300px] truncate">{{ card.description }}</td>
                                         <td class="px-6 py-4 text-sm">
-                                            <span class="px-2 py-1 rounded-full text-xs font-medium" :class="card.review_status === 'pending' ? 'bg-amber-100 text-amber-700' : (card.review_status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700')">{{ getReviewStatusLabel(card.review_status) }}</span>
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium" :class="card.review_status === 'pending' ? 'bg-amber-100 text-amber-700' : (card.review_status === 'rejected' ? 'bg-red-100 text-red-700' : (card.review_status === 'ai_pending' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'))">{{ getReviewStatusLabel(card.review_status) }}</span>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-500">{{ card.downloads_count }}</td>
                                         <td class="px-6 py-4 text-xs text-gray-500 font-mono">{{ card.uploader_ip_address || '-' }}</td>
@@ -371,6 +377,63 @@
                             <button @click="cardPage--; loadAdminCards()" :disabled="cardPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ cardPage }} / {{ cardData.totalPages }}</span>
                             <button @click="cardPage++; loadAdminCards()" :disabled="cardPage >= cardData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- AI Review History -->
+                    <div v-if="currentPage === 'aiReviews'">
+                        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+                            <div class="rounded-2xl border border-gray-100 bg-white p-4"><p class="text-xs text-gray-400">等待</p><p class="mt-1 text-xl font-bold text-gray-900">{{ aiReviewData.summary?.pending || 0 }}</p></div>
+                            <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p class="text-xs text-blue-500">处理中</p><p class="mt-1 text-xl font-bold text-blue-700">{{ aiReviewData.summary?.processing || 0 }}</p></div>
+                            <div class="rounded-2xl border border-green-100 bg-green-50 p-4"><p class="text-xs text-green-600">通过</p><p class="mt-1 text-xl font-bold text-green-700">{{ aiReviewData.summary?.allowed || 0 }}</p></div>
+                            <div class="rounded-2xl border border-red-100 bg-red-50 p-4"><p class="text-xs text-red-500">未通过</p><p class="mt-1 text-xl font-bold text-red-700">{{ aiReviewData.summary?.rejected || 0 }}</p></div>
+                            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-4"><p class="text-xs text-gray-400">已跳过</p><p class="mt-1 text-xl font-bold text-gray-700">{{ aiReviewData.summary?.skipped || 0 }}</p></div>
+                        </div>
+                        <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center">
+                            <input v-model="aiReviewSearch" @keyup.enter="aiReviewPage = 1; loadAiReviews()" type="text" placeholder="搜索卡片、上传者或理由..."
+                                class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none md:w-72">
+                            <select v-model="aiReviewStatusFilter" @change="aiReviewPage = 1; loadAiReviews()" class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none md:w-40">
+                                <option value="">全部结果</option>
+                                <option value="pending">等待</option>
+                                <option value="processing">处理中</option>
+                                <option value="allowed">通过/自动放行</option>
+                                <option value="rejected">未通过</option>
+                                <option value="skipped">已跳过</option>
+                            </select>
+                            <button @click="aiReviewPage = 1; loadAiReviews()" class="px-5 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">查询</button>
+                            <span class="text-sm text-gray-500 md:ml-auto">共 {{ aiReviewData.total || 0 }} 条</span>
+                        </div>
+                        <div class="space-y-4">
+                            <article v-for="review in aiReviewData.reviews" :key="review.id" class="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div class="min-w-0">
+                                        <h3 class="font-semibold text-gray-900 break-all">{{ review.card_name || '已删除角色卡' }}</h3>
+                                        <p class="mt-1 text-xs text-gray-400">上传者：{{ review.uploader_username || '-' }} · 提交于 {{ formatDate(review.created_at) }}</p>
+                                    </div>
+                                    <span class="self-start rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap" :class="getAiReviewStatusClass(review)">
+                                        {{ getAiReviewStatusLabel(review) }}
+                                    </span>
+                                </div>
+                                <div class="mt-4 rounded-xl bg-gray-50 px-4 py-3">
+                                    <p class="text-xs font-medium text-gray-500">审核理由</p>
+                                    <p class="mt-1 text-sm leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ review.reason || (review.status === 'pending' ? '等待审核' : '暂无理由') }}</p>
+                                </div>
+                                <div v-if="review.error" class="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+                                    <p class="text-xs font-medium text-amber-700">自动放行原因</p>
+                                    <p class="mt-1 text-xs leading-relaxed text-amber-700 break-words">{{ review.error }}</p>
+                                </div>
+                                <div class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
+                                    <span>模型：{{ review.model || '-' }}</span>
+                                    <span>尝试：{{ review.attempts || 0 }} 次</span>
+                                    <span>完成：{{ review.completed_at ? formatDate(review.completed_at) : '-' }}</span>
+                                </div>
+                            </article>
+                            <div v-if="!aiReviewData.reviews?.length" class="rounded-2xl border border-gray-100 bg-white py-16 text-center text-gray-400">暂无 AI 审核记录</div>
+                        </div>
+                        <div v-if="aiReviewData.totalPages > 1" class="flex items-center justify-center gap-2 mt-6">
+                            <button @click="aiReviewPage--; loadAiReviews()" :disabled="aiReviewPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
+                            <span class="text-sm text-gray-500">{{ aiReviewPage }} / {{ aiReviewData.totalPages }}</span>
+                            <button @click="aiReviewPage++; loadAiReviews()" :disabled="aiReviewPage >= aiReviewData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
                         </div>
                     </div>
 
@@ -1229,6 +1292,73 @@
                                 </div>
                             </div>
 
+                            <!-- AI Review Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div class="flex items-start justify-between gap-4 mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">无收益专区 AI 审核</h3>
+                                        <p class="text-sm text-gray-500 mt-1">只审核角色卡名称、简介和开场白；接口失败或判断不确定时自动放行。</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="aiReviewSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                        {{ aiReviewSettings.configured ? '已启用' : '未配置完整' }}
+                                    </span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                                        <div class="rounded-xl bg-gray-50 px-2 py-3"><div class="text-xs text-gray-400">等待</div><div class="font-bold text-gray-800 mt-1">{{ aiReviewSettings.queue?.pending || 0 }}</div></div>
+                                        <div class="rounded-xl bg-blue-50 px-2 py-3"><div class="text-xs text-blue-500">处理中</div><div class="font-bold text-blue-700 mt-1">{{ aiReviewSettings.queue?.processing || 0 }}</div></div>
+                                        <div class="rounded-xl bg-green-50 px-2 py-3"><div class="text-xs text-green-500">已放行</div><div class="font-bold text-green-700 mt-1">{{ aiReviewSettings.queue?.allowed || 0 }}</div></div>
+                                        <div class="rounded-xl bg-red-50 px-2 py-3"><div class="text-xs text-red-500">已拒绝</div><div class="font-bold text-red-700 mt-1">{{ aiReviewSettings.queue?.rejected || 0 }}</div></div>
+                                        <div class="rounded-xl bg-gray-50 px-2 py-3"><div class="text-xs text-gray-400">已跳过</div><div class="font-bold text-gray-600 mt-1">{{ aiReviewSettings.queue?.skipped || 0 }}</div></div>
+                                    </div>
+                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        当前密钥：{{ aiReviewSettings.api_key_configured ? aiReviewSettings.api_key_masked : '未配置' }}
+                                        <span v-if="aiReviewSettings.api_key_source === 'environment'">（来自环境变量）</span>
+                                        <span v-if="aiReviewSettings.api_key_source === 'admin'">（来自后台配置）</span>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">API 地址</label>
+                                        <input v-model="aiReviewSettings.base_url" type="url" placeholder="https://cdn.sta1n.cn/v1"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">API 密钥</label>
+                                        <input v-model="aiReviewSettings.api_key" type="password" autocomplete="off" placeholder="留空则保留当前密钥"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input v-model="aiReviewSettings.clear_api_key" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
+                                        清除后台保存的密钥，改用环境变量
+                                    </label>
+                                    <div>
+                                        <div class="flex items-center justify-between gap-3 mb-1">
+                                            <label class="block text-sm font-medium text-gray-700">审核模型</label>
+                                            <button @click="loadAiReviewModels" :disabled="aiReviewModelsLoading" type="button" class="text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50">
+                                                {{ aiReviewModelsLoading ? '获取中...' : '获取模型列表' }}
+                                            </button>
+                                        </div>
+                                        <input v-model.trim="aiReviewSettings.model" list="ai-review-model-options" type="text" placeholder="选择或输入模型名称"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                        <datalist id="ai-review-model-options">
+                                            <option v-for="model in aiReviewModels" :key="model" :value="model"></option>
+                                        </datalist>
+                                        <p class="text-xs text-gray-400 mt-1">首次配置请先保存地址和密钥，再获取模型列表。</p>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center justify-between gap-3 mb-1">
+                                            <label class="block text-sm font-medium text-gray-700">审核要求提示词（可直接修改）</label>
+                                            <button @click="resetAiReviewPrompt" type="button" class="text-xs font-medium text-blue-600 hover:text-blue-700">恢复默认</button>
+                                        </div>
+                                        <textarea v-model="aiReviewSettings.prompt" rows="8" maxlength="10000"
+                                            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"></textarea>
+                                        <p class="text-xs text-gray-400 mt-1">上方文字会作为审核要求发送给模型；返回格式由程序自动附加。</p>
+                                    </div>
+                                    <button @click="saveAiReviewSettings" :disabled="aiReviewSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                        {{ aiReviewSettingsSaving ? '保存中...' : '保存 AI 审核配置' }}
+                                    </button>
+                                </div>
+                            </div>
+
                             <!-- Data Management -->
                             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <h3 class="text-lg font-bold text-gray-900 mb-2">数据管理</h3>
@@ -1325,6 +1455,12 @@
                 const cardPage = ref(1);
                 const cardSearch = ref('');
                 const cardStatusFilter = ref('');
+
+                // AI reviews
+                const aiReviewData = ref({ reviews: [], total: 0, totalPages: 0, summary: {} });
+                const aiReviewPage = ref(1);
+                const aiReviewSearch = ref('');
+                const aiReviewStatusFilter = ref('');
 
                 // Comments
                 const commentData = ref({ comments: [], total: 0, totalPages: 0 });
@@ -1425,6 +1561,29 @@
                     heat_per_cookie: 7
                 });
                 const newApiSettingsSaving = ref(false);
+                const DEFAULT_AI_REVIEW_PROMPT = [
+                    '你是角色卡的宽松内容审核器，只审核角色卡名称、简介和开场白。',
+                    '只有在内容明确包含以下任一情况时才拒绝：',
+                    '1. 明确的政治敏感内容；',
+                    '2. 以虐杀、肢解、酷刑等为核心且描写非常露骨的极端暴力内容。',
+                    '普通战斗、犯罪、战争背景、轻微血腥、虚构冲突、黑暗题材均应放行。',
+                    '如果语境不足、疑似、影射、不确定或无法确认，一律放行。'
+                ].join('\n');
+                const aiReviewSettings = reactive({
+                    configured: false,
+                    base_url: 'https://cdn.sta1n.cn/v1',
+                    api_key: '',
+                    clear_api_key: false,
+                    api_key_configured: false,
+                    api_key_masked: '',
+                    api_key_source: 'none',
+                    model: '',
+                    prompt: DEFAULT_AI_REVIEW_PROMPT,
+                    queue: { pending: 0, processing: 0, allowed: 0, rejected: 0, skipped: 0 }
+                });
+                const aiReviewSettingsSaving = ref(false);
+                const aiReviewModels = ref([]);
+                const aiReviewModelsLoading = ref(false);
                 const tagPreviewCards = ref([]);
                 const tagEditor = reactive({
                     popular: [],
@@ -1885,7 +2044,35 @@
                 }
 
                 function getReviewStatusLabel(status) {
-                    return ({ pending: '待审核', approved: '已通过', rejected: '已拒绝' })[status] || '已通过';
+                    return ({ pending: '待审核', approved: '已通过', rejected: '已拒绝', unreviewed: '无收益', ai_pending: 'AI 审核中' })[status] || status;
+                }
+
+                async function loadAiReviews() {
+                    try {
+                        let url = API_BASE + `/api/admin/ai-reviews?page=${aiReviewPage.value}&search=${encodeURIComponent(aiReviewSearch.value)}`;
+                        if (aiReviewStatusFilter.value) url += `&status=${encodeURIComponent(aiReviewStatusFilter.value)}`;
+                        const resp = await fetch(url, { headers: authHeaders() });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '加载 AI 审核记录失败');
+                        aiReviewData.value = data;
+                    } catch (err) {
+                        showToast(err.message || '加载 AI 审核记录失败', 'error');
+                    }
+                }
+
+                function getAiReviewStatusLabel(review) {
+                    if (review.status === 'allowed') return review.error ? '自动放行' : '通过';
+                    return ({ pending: '等待', processing: '处理中', rejected: '未通过', skipped: '已跳过' })[review.status] || review.status;
+                }
+
+                function getAiReviewStatusClass(review) {
+                    if (review.status === 'allowed') return review.error ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700';
+                    return ({
+                        pending: 'bg-gray-100 text-gray-600',
+                        processing: 'bg-blue-100 text-blue-700',
+                        rejected: 'bg-red-100 text-red-700',
+                        skipped: 'bg-gray-100 text-gray-500'
+                    })[review.status] || 'bg-gray-100 text-gray-600';
                 }
 
                 async function reviewAdminCard(card, status) {
@@ -2169,6 +2356,10 @@
                         admin_update_announcement: '更新网站公告',
                         admin_update_email_settings: '更新邮件配置',
                         admin_update_newapi_settings: '更新 STA1N API 配置',
+                        admin_update_ai_review_settings: '更新 AI 审核配置',
+                        upload_ai_review_pending: '进入 AI 审核队列',
+                        ai_review_allow: 'AI 审核放行',
+                        ai_review_reject: 'AI 审核拒绝',
                         bind_newapi_user: '绑定 STA1N API 用户',
                         unbind_newapi_user: '解绑 STA1N API 用户',
                         newapi_redeem: '提现',
@@ -2199,10 +2390,11 @@
 
                 async function loadSettings() {
                     try {
-                        const [settingsResp, emailResp, newApiResp] = await Promise.all([
+                        const [settingsResp, emailResp, newApiResp, aiReviewResp] = await Promise.all([
                             fetch(API_BASE + '/api/admin/settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/email-settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/newapi-settings', { headers: authHeaders() }),
+                            fetch(API_BASE + '/api/admin/ai-review-settings', { headers: authHeaders() }),
                             loadTagPreviewCards()
                         ]);
                         if (settingsResp.ok) {
@@ -2218,6 +2410,10 @@
                         if (newApiResp.ok) {
                             const data = await newApiResp.json();
                             Object.assign(newApiSettings, data, { admin_token: '', clear_admin_token: false });
+                        }
+                        if (aiReviewResp.ok) {
+                            const data = await aiReviewResp.json();
+                            Object.assign(aiReviewSettings, data, { api_key: '', clear_api_key: false });
                         }
                     } catch (err) {
                         console.error('Settings error:', err);
@@ -2351,6 +2547,50 @@
                         showToast(err.message || '保存 STA1N API 配置失败', 'error');
                     } finally {
                         newApiSettingsSaving.value = false;
+                    }
+                }
+
+                async function saveAiReviewSettings() {
+                    aiReviewSettingsSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ai-review-settings', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({
+                                base_url: aiReviewSettings.base_url,
+                                api_key: aiReviewSettings.api_key,
+                                clear_api_key: aiReviewSettings.clear_api_key,
+                                model: aiReviewSettings.model,
+                                prompt: aiReviewSettings.prompt
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存 AI 审核配置失败');
+                        Object.assign(aiReviewSettings, data, { api_key: '', clear_api_key: false });
+                        showToast('AI 审核配置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存 AI 审核配置失败', 'error');
+                    } finally {
+                        aiReviewSettingsSaving.value = false;
+                    }
+                }
+
+                function resetAiReviewPrompt() {
+                    aiReviewSettings.prompt = DEFAULT_AI_REVIEW_PROMPT;
+                }
+
+                async function loadAiReviewModels() {
+                    aiReviewModelsLoading.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/ai-review-models', { headers: authHeaders() });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '获取模型失败');
+                        aiReviewModels.value = Array.isArray(data.models) ? data.models : [];
+                        showToast(aiReviewModels.value.length ? `已获取 ${aiReviewModels.value.length} 个模型` : '接口没有返回可用模型', aiReviewModels.value.length ? 'success' : 'warning');
+                    } catch (err) {
+                        showToast(err.message || '获取模型失败', 'error');
+                    } finally {
+                        aiReviewModelsLoading.value = false;
                     }
                 }
 
@@ -2509,17 +2749,22 @@
                     stats, formatDate, formatCookieAmount, chartData, chartMax,
                     cardData, cardPage, cardSearch, cardStatusFilter, loadAdminCards, deleteAdminCard,
                     getReviewStatusLabel, reviewAdminCard, downloadAdminCard,
+                    aiReviewData, aiReviewPage, aiReviewSearch, aiReviewStatusFilter,
+                    loadAiReviews, getAiReviewStatusLabel, getAiReviewStatusClass,
                     commentData, commentPage, loadAdminComments, deleteAdminComment,
                     userData, userPage, userSearch, userDraft, loadAdminUsers, saveUserCredits, toggleUserBan, toggleUserModerator,
                     redemptionData, redemptionPage, redemptionSearch, redemptionStatusFilter, loadRedemptions, getRedemptionStatusLabel, getRedemptionStatusClass,
                     logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogActor, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
-                    siteSettings, announcementSaving, emailSettings, emailSettingsSaving, newApiSettings, newApiSettingsSaving, tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
+                    siteSettings, announcementSaving, emailSettings, emailSettingsSaving, newApiSettings, newApiSettingsSaving,
+                    aiReviewSettings, aiReviewSettingsSaving, aiReviewModels, aiReviewModelsLoading,
+                    tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
                     settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
                     addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,
                     handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
                     toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
                     restoreSavedTagSnapshot, loadSettings, saveSettings, pushAnnouncement, disableAnnouncement, saveEmailSettings, saveNewApiSettings,
+                    saveAiReviewSettings, loadAiReviewModels, resetAiReviewPrompt,
                     dataExporting, dataImporting, importResult, exportProgress, exportData, importData
                 };
             }

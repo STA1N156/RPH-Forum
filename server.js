@@ -41,6 +41,19 @@ const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || proc
 const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
 const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
 const NEWAPI_ADMIN_USER_ID = (process.env.NEWAPI_ADMIN_USER_ID || process.env.NEWAPI_USER_ID || '').trim();
+const AI_REVIEW_DEFAULT_BASE_URL = 'https://cdn.sta1n.cn/v1';
+const AI_REVIEW_API_KEY = (process.env.AI_REVIEW_API_KEY || '').trim();
+const AI_REVIEW_MODEL = (process.env.AI_REVIEW_MODEL || '').trim();
+const AI_REVIEW_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_REVIEW_TIMEOUT_MS || '30000', 10) || 30000);
+const AI_REVIEW_MAX_TEXT_LENGTH = 24000;
+const AI_REVIEW_DEFAULT_PROMPT = [
+    '你是角色卡的宽松内容审核器，只审核角色卡名称、简介和开场白。',
+    '只有在内容明确包含以下任一情况时才拒绝：',
+    '1. 明确的政治敏感内容；',
+    '2. 以虐杀、肢解、酷刑等为核心且描写非常露骨的极端暴力内容。',
+    '普通战斗、犯罪、战争背景、轻微血腥、虚构冲突、黑暗题材均应放行。',
+    '如果语境不足、疑似、影射、不确定或无法确认，一律放行。'
+].join('\n');
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
@@ -957,6 +970,19 @@ function getNewApiConfig() {
 function isNewApiConfigured() {
     const config = getNewApiConfig();
     return Boolean(config.baseUrl && config.adminToken && config.adminUserId);
+}
+
+function getAiReviewConfig() {
+    return {
+        baseUrl: normalizeBaseUrl(getSettingValue('ai_review_base_url') || AI_REVIEW_DEFAULT_BASE_URL),
+        apiKey: getSettingValue('ai_review_api_key') || AI_REVIEW_API_KEY,
+        model: String(getSettingValue('ai_review_model') || AI_REVIEW_MODEL || '').trim(),
+        prompt: String(getSettingValue('ai_review_prompt') || AI_REVIEW_DEFAULT_PROMPT).trim()
+    };
+}
+
+function isAiReviewConfigured(config = getAiReviewConfig()) {
+    return Boolean(config.baseUrl && config.apiKey && config.model);
 }
 
 function getNewApiHeaders() {
@@ -2448,6 +2474,196 @@ function buildCardDetailPreviewJson(rawData, fallback = {}) {
     }
 }
 
+let aiReviewWorkerRunning = false;
+let aiReviewWorkerTimer = null;
+
+function buildAiReviewText(card) {
+    const raw = parseStoredCardData(card?.data) || {};
+    const content = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+    const greetings = [
+        content.first_mes,
+        ...(Array.isArray(content.alternate_greetings) ? content.alternate_greetings : [])
+    ].filter(value => typeof value === 'string' && value.trim());
+    return [
+        `角色卡名称：${String(card?.name || content.name || content.char_name || '').trim()}`,
+        `简介：${String(card?.description || content.description || content.char_persona || '').trim()}`,
+        `开场白：\n${greetings.join('\n\n--- 其他开场白 ---\n')}`
+    ].join('\n\n').slice(0, AI_REVIEW_MAX_TEXT_LENGTH);
+}
+
+function parseAiReviewResponse(payload) {
+    const content = payload?.choices?.[0]?.message?.content;
+    const text = typeof content === 'string'
+        ? content
+        : (Array.isArray(content) ? content.map(item => item?.text || '').join('') : '');
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const jsonStart = cleaned.indexOf('{');
+    const jsonEnd = cleaned.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart) {
+        return { decision: 'ALLOW', reason: 'AI 返回格式无法确认，按规则放行' };
+    }
+    try {
+        const result = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
+        const decision = String(result.decision || '').trim().toUpperCase();
+        if (decision !== 'REJECT') {
+            return { decision: 'ALLOW', reason: String(result.reason || '未明确判定违规').slice(0, 500) };
+        }
+        const certain = result.certain === true || String(result.certain || '').trim().toLowerCase() === 'true';
+        if (!certain) {
+            return { decision: 'ALLOW', reason: String(result.reason || 'AI 未明确确认违规，按规则放行').slice(0, 500) };
+        }
+        const category = String(result.category || '').trim().toLowerCase();
+        if (!['political', 'extreme_violence'].includes(category)) {
+            return { decision: 'ALLOW', reason: '拒绝类别不在规则范围内，按规则放行' };
+        }
+        return {
+            decision: 'REJECT',
+            reason: String(result.reason || (category === 'political' ? '包含政治敏感内容' : '包含非常极端的暴力内容')).slice(0, 500)
+        };
+    } catch {
+        return { decision: 'ALLOW', reason: 'AI 返回内容无法解析，按规则放行' };
+    }
+}
+
+async function requestAiCardReview(card, config) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_REVIEW_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${config.baseUrl}/chat/completions`, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.apiKey}`
+            },
+            body: JSON.stringify({
+                model: config.model,
+                temperature: 0,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `${config.prompt}\n只输出 JSON：{"decision":"ALLOW或REJECT","certain":true或false,"category":"none或political或extreme_violence","reason":"简短中文理由"}。只有完全确定时 certain 才能为 true。`
+                    },
+                    { role: 'user', content: buildAiReviewText(card) }
+                ]
+            })
+        });
+        const body = await response.text();
+        if (!response.ok) {
+            throw new Error(`AI 接口返回 ${response.status}: ${body.slice(0, 200)}`);
+        }
+        let payload;
+        try {
+            payload = JSON.parse(body);
+        } catch {
+            throw new Error('AI 接口返回了无效 JSON');
+        }
+        return parseAiReviewResponse(payload);
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function completeAiReviewJob(job, { decision, reason, error = '', model = '' }) {
+    const now = new Date().toISOString();
+    const shouldReject = decision === 'REJECT';
+    const nextStatus = shouldReject ? 'rejected' : 'unreviewed';
+    const queueStatus = shouldReject ? 'rejected' : 'allowed';
+    const update = db.prepare(
+        `UPDATE character_cards
+         SET review_status = ?, rejection_reason = ?, reviewed_at = ?
+         WHERE id = ? AND review_status = 'ai_pending'`
+    ).run(nextStatus, shouldReject ? `AI审核：${reason}` : null, shouldReject ? now : null, job.card_id);
+    db.prepare(
+        `UPDATE ai_review_queue
+         SET status = ?, decision = ?, reason = ?, error = ?, model = ?, completed_at = ?
+         WHERE id = ?`
+    ).run(update.changes ? queueStatus : 'skipped', decision, reason, String(error || '').slice(0, 1000), model, now, job.id);
+    if (!update.changes) return;
+    clearCardListCache('ai-review-complete');
+    logOperation({
+        userType: 'system',
+        action: shouldReject ? 'ai_review_reject' : 'ai_review_allow',
+        targetType: 'card',
+        targetId: job.card_id,
+        details: { reason, fail_open: Boolean(error), model }
+    });
+}
+
+function claimNextAiReviewJob() {
+    return db.transaction(() => {
+        const job = db.prepare("SELECT * FROM ai_review_queue WHERE status = 'pending' ORDER BY id LIMIT 1").get();
+        if (!job) return null;
+        db.prepare(
+            "UPDATE ai_review_queue SET status = 'processing', attempts = attempts + 1, started_at = ?, completed_at = NULL WHERE id = ?"
+        ).run(new Date().toISOString(), job.id);
+        return job;
+    })();
+}
+
+async function processAiReviewQueue() {
+    if (aiReviewWorkerRunning) return;
+    aiReviewWorkerRunning = true;
+    try {
+        while (true) {
+            const job = claimNextAiReviewJob();
+            if (!job) break;
+            const card = db.prepare('SELECT id, name, description, data, review_status FROM character_cards WHERE id = ?').get(job.card_id);
+            if (!card || card.review_status !== 'ai_pending') {
+                completeAiReviewJob(job, { decision: 'ALLOW', reason: '卡片状态已变化，跳过审核' });
+                continue;
+            }
+            const config = getAiReviewConfig();
+            if (!isAiReviewConfigured(config)) {
+                completeAiReviewJob(job, {
+                    decision: 'ALLOW',
+                    reason: 'AI 审核未配置完整，按规则自动放行',
+                    error: 'AI review is not configured',
+                    model: config.model
+                });
+                continue;
+            }
+            try {
+                const result = await requestAiCardReview(card, config);
+                completeAiReviewJob(job, { ...result, model: config.model });
+            } catch (err) {
+                completeAiReviewJob(job, {
+                    decision: 'ALLOW',
+                    reason: 'AI 审核失败，按规则自动放行',
+                    error: err.message,
+                    model: config.model
+                });
+            }
+        }
+    } finally {
+        aiReviewWorkerRunning = false;
+    }
+}
+
+function scheduleAiReviewQueue() {
+    if (aiReviewWorkerRunning || aiReviewWorkerTimer) return;
+    aiReviewWorkerTimer = setTimeout(() => {
+        aiReviewWorkerTimer = null;
+        processAiReviewQueue().catch(err => console.error('AI review queue error:', err));
+    }, 0);
+}
+
+function enqueueAiCardReview(cardId) {
+    db.prepare(
+        `INSERT INTO ai_review_queue (card_id, status)
+         VALUES (?, 'pending')
+         ON CONFLICT(card_id) DO UPDATE SET
+            status = 'pending', decision = NULL, reason = NULL, error = NULL,
+            model = NULL, started_at = NULL, completed_at = NULL`
+    ).run(cardId);
+    scheduleAiReviewQueue();
+}
+
+function recoverAiReviewQueue() {
+    db.prepare("UPDATE ai_review_queue SET status = 'pending', started_at = NULL WHERE status = 'processing'").run();
+    scheduleAiReviewQueue();
+}
+
 function syncCardEditableFieldsIntoData(rawData, updates = {}) {
     const parsed = parseStoredCardData(rawData);
     if (!parsed || typeof parsed !== 'object') return rawData || null;
@@ -3020,6 +3236,25 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
     return metrics;
 }
 
+app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
+    try {
+        let reviewedWhere = "review_status = 'approved'";
+        const params = [];
+        if (req.admin || isModeratorUser(req.user)) {
+            reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending')";
+        } else if (req.user) {
+            reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending') AND (review_status = 'approved' OR uploader_user_id = ?)";
+            params.push(req.user.id);
+        }
+        const reviewed = db.prepare(`SELECT COUNT(*) AS count FROM character_cards WHERE ${reviewedWhere}`).get(...params).count;
+        const unreviewed = db.prepare("SELECT COUNT(*) AS count FROM character_cards WHERE review_status = 'unreviewed'").get().count;
+        res.json({ reviewed, unreviewed });
+    } catch (err) {
+        console.error('Fetch card counts error:', err);
+        res.status(500).json({ error: '获取卡片数量失败' });
+    }
+});
+
 app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
@@ -3044,10 +3279,10 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             whereParts.push("cc.review_status = 'unreviewed'");
         } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
-            whereParts.push("cc.review_status <> 'unreviewed'");
+            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
-            whereParts.push("cc.review_status <> 'unreviewed'");
+            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
@@ -4515,7 +4750,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         });
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
-        const reviewStatus = publishMode === 'unreviewed' ? 'unreviewed' : (req.admin ? 'approved' : 'pending');
+        let reviewStatus = publishMode === 'unreviewed' ? 'ai_pending' : (req.admin ? 'approved' : 'pending');
         const reviewedBy = reviewStatus === 'approved' ? req.admin.id : null;
         const reviewedAt = reviewStatus === 'approved' ? now : null;
         const uploaderIp = getRequestIp(req);
@@ -4553,6 +4788,16 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             }
         }
 
+        if (reviewStatus === 'ai_pending') {
+            try {
+                enqueueAiCardReview(id);
+            } catch (queueErr) {
+                console.error('AI review enqueue error:', queueErr);
+                db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(id);
+                reviewStatus = 'unreviewed';
+            }
+        }
+
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
         attachCardDetailPreview(card);
         attachUiTemplateSummary(card, { preferStoredSummary: true });
@@ -4561,7 +4806,9 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
             username: req.user?.username || req.admin?.username,
-            action: reviewStatus === 'unreviewed' ? 'upload_unreviewed' : (req.admin ? 'upload' : 'upload_pending'),
+            action: reviewStatus === 'ai_pending'
+                ? 'upload_ai_review_pending'
+                : (reviewStatus === 'unreviewed' ? 'upload_unreviewed' : (req.admin ? 'upload' : 'upload_pending')),
             targetType: 'card',
             targetId: id,
             ip: uploaderIp,
@@ -4578,7 +4825,11 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         res.json([
             sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }),
-            { pending_review: reviewStatus === 'pending', unreviewed: reviewStatus === 'unreviewed' }
+            {
+                pending_review: reviewStatus === 'pending',
+                ai_review_pending: reviewStatus === 'ai_pending',
+                unreviewed: reviewStatus === 'unreviewed'
+            }
         ]);
     } catch (err) {
         console.error('Create card error:', err);
@@ -4693,11 +4944,16 @@ app.put('/api/cards/:id', (req, res) => {
         } else {
             return res.status(403).json({ error: '无权编辑此卡片' });
         }
+        if (userType === 'user' && card.review_status === 'ai_pending') {
+            return res.status(409).json({ error: 'AI 审核处理中，请稍后再编辑' });
+        }
 
         const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace } = req.body;
         const fields = [];
         const values = [];
         const hasDataUpdate = data !== undefined && data !== null;
+        const hasReviewContentUpdate = hasDataUpdate || name !== undefined || description !== undefined;
+        let needsAiReview = false;
         const shouldRefreshLatestRank = reupload_replace === true && hasDataUpdate;
         const nextName = name !== undefined ? name : card.name;
         const nextDescription = description !== undefined ? description : card.description;
@@ -4736,8 +4992,10 @@ app.put('/api/cards/:id', (req, res) => {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
         }
-        if (decoded.role === 'user' && hasDataUpdate && card.review_status !== 'unreviewed') {
-            fields.push("review_status = 'pending'");
+        if (decoded.role === 'user' && hasReviewContentUpdate) {
+            const wasAiReviewed = Boolean(db.prepare('SELECT 1 FROM ai_review_queue WHERE card_id = ?').get(req.params.id));
+            needsAiReview = card.review_status === 'unreviewed' || wasAiReviewed;
+            fields.push(needsAiReview ? "review_status = 'ai_pending'" : "review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
             fields.push('reviewed_at = NULL');
             fields.push('rejection_reason = NULL');
@@ -4782,6 +5040,14 @@ app.put('/api/cards/:id', (req, res) => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         });
         updateCard();
+        if (needsAiReview) {
+            try {
+                enqueueAiCardReview(req.params.id);
+            } catch (queueErr) {
+                console.error('AI review requeue error:', queueErr);
+                db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(req.params.id);
+            }
+        }
         clearCardImageCaches(req.params.id);
         clearCardListCache('card-edit');
 
@@ -4824,8 +5090,8 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
              WHERE cc.id = ?`
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        if (card.review_status === 'unreviewed') {
-            return res.status(400).json({ error: '无审专区角色卡不能设为精选' });
+        if (['unreviewed', 'ai_pending'].includes(card.review_status)) {
+            return res.status(400).json({ error: '无收益专区角色卡不能设为精选' });
         }
 
         const newFeatured = card.is_featured ? 0 : 1;
@@ -5135,7 +5401,11 @@ app.post('/api/cards/:id/like', authenticateUser, (req, res) => {
 
 function countTodayCreditComments(userId, todayStr) {
     const cardCount = db.prepare(
-        "SELECT COUNT(*) as count FROM character_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
+        `SELECT COUNT(*) as count
+         FROM character_comments c
+         JOIN character_cards cc ON cc.id = c.card_id
+         WHERE c.user_id = ? AND cc.review_status != 'unreviewed'
+           AND c.created_at >= ? AND c.created_at < date(?, '+1 day')`
     ).get(userId, todayStr, todayStr).count;
     const templateCount = db.prepare(
         "SELECT COUNT(*) as count FROM ui_template_comments WHERE user_id = ? AND created_at >= ? AND created_at < date(?, '+1 day')"
@@ -5224,7 +5494,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
         const card = db.prepare(
-            `SELECT cc.id, cc.name, cc.uploader_user_id,
+            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
                     u.username, u.email, u.email_verified, u.comment_email_notifications
              FROM character_cards cc
              LEFT JOIN users u ON cc.uploader_user_id = u.id
@@ -5263,7 +5533,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         // Check daily comment credit limit (max 2 comments per day earn credits)
         const todayStr = now.slice(0, 10); // YYYY-MM-DD
         const todayCommentCount = countTodayCreditComments(userId, todayStr);
-        const canEarnCredits = todayCommentCount < 2;
+        const canEarnCredits = card.review_status === 'approved' && todayCommentCount < 2;
         const hadHeatComment = Boolean(db.prepare(
             'SELECT 1 FROM character_comments WHERE card_id = ? AND user_id = ? LIMIT 1'
         ).get(req.params.cardId, userId));
@@ -5786,7 +6056,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         const params = [];
         const countParams = [];
         const whereParts = [];
-        if (status && ['pending', 'approved', 'rejected', 'unreviewed'].includes(status)) {
+        if (status && ['pending', 'approved', 'rejected', 'unreviewed', 'ai_pending'].includes(status)) {
             whereParts.push('cc.review_status = ?');
             params.push(status);
             countParams.push(status);
@@ -5839,7 +6109,10 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         if (card.review_status === 'unreviewed') {
-            return res.status(400).json({ error: '无审专区角色卡无需审核' });
+            return res.status(400).json({ error: '无收益专区角色卡无需审核' });
+        }
+        if (card.review_status === 'ai_pending') {
+            return res.status(400).json({ error: '角色卡正在等待 AI 审核' });
         }
 
         const now = new Date().toISOString();
@@ -6170,6 +6443,153 @@ app.put('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('New API settings save error:', err);
         res.status(500).json({ error: '保存 STA1N API 设置失败' });
+    }
+});
+
+function getAiReviewQueueStats() {
+    const stats = { pending: 0, processing: 0, allowed: 0, rejected: 0, skipped: 0 };
+    db.prepare('SELECT status, COUNT(*) AS count FROM ai_review_queue GROUP BY status').all().forEach(row => {
+        stats[row.status] = Number(row.count || 0);
+    });
+    return stats;
+}
+
+function buildAiReviewSettingsResponse() {
+    const dbApiKey = getSettingValue('ai_review_api_key');
+    const config = getAiReviewConfig();
+    return {
+        configured: isAiReviewConfigured(),
+        base_url: config.baseUrl,
+        model: config.model,
+        prompt: config.prompt,
+        api_key_configured: Boolean(config.apiKey),
+        api_key_masked: maskSecret(config.apiKey),
+        api_key_source: dbApiKey ? 'admin' : (AI_REVIEW_API_KEY ? 'environment' : 'none'),
+        queue: getAiReviewQueueStats()
+    };
+}
+
+app.get('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
+    try {
+        res.json(buildAiReviewSettingsResponse());
+    } catch (err) {
+        console.error('AI review settings load error:', err);
+        res.status(500).json({ error: '获取 AI 审核设置失败' });
+    }
+});
+
+app.put('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
+    try {
+        const baseUrl = normalizeBaseUrl(req.body.base_url || AI_REVIEW_DEFAULT_BASE_URL);
+        const model = String(req.body.model || '').trim();
+        const prompt = String(req.body.prompt || '').trim();
+        const apiKey = typeof req.body.api_key === 'string' ? req.body.api_key.trim() : '';
+        const clearApiKey = req.body.clear_api_key === true || req.body.clear_api_key === 'true';
+
+        if (!/^https?:\/\//i.test(baseUrl)) {
+            return res.status(400).json({ error: 'AI API 地址必须以 http:// 或 https:// 开头' });
+        }
+        if (model.length > 200) return res.status(400).json({ error: '模型名称过长' });
+        if (!prompt) return res.status(400).json({ error: '审核要求提示词不能为空' });
+        if (prompt.length > 10000) return res.status(400).json({ error: '审核要求提示词不能超过 10000 字' });
+        if (apiKey && apiKey.length < 8) return res.status(400).json({ error: 'API 密钥看起来太短了' });
+
+        setSettingValue('ai_review_base_url', baseUrl);
+        setSettingValue('ai_review_model', model);
+        setSettingValue('ai_review_prompt', prompt);
+        if (clearApiKey) {
+            db.prepare('DELETE FROM settings WHERE key = ?').run('ai_review_api_key');
+        } else if (apiKey) {
+            setSettingValue('ai_review_api_key', apiKey);
+        }
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_update_ai_review_settings',
+            targetType: 'settings',
+            targetId: 'ai_review',
+            ip: getRequestIp(req),
+            details: {
+                base_url: baseUrl,
+                model,
+                prompt_updated: true,
+                api_key_updated: Boolean(apiKey),
+                api_key_cleared: clearApiKey
+            }
+        });
+        scheduleAiReviewQueue();
+        res.json({ success: true, ...buildAiReviewSettingsResponse() });
+    } catch (err) {
+        console.error('AI review settings save error:', err);
+        res.status(500).json({ error: '保存 AI 审核设置失败' });
+    }
+});
+
+app.get('/api/admin/ai-review-models', authenticateAdmin, async (req, res) => {
+    const config = getAiReviewConfig();
+    if (!config.apiKey) return res.status(400).json({ error: '请先保存 API 密钥' });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_REVIEW_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${config.baseUrl}/models`, {
+            signal: controller.signal,
+            headers: { 'Authorization': `Bearer ${config.apiKey}` }
+        });
+        const body = await response.text();
+        if (!response.ok) throw new Error(`模型接口返回 ${response.status}: ${body.slice(0, 200)}`);
+        const payload = JSON.parse(body);
+        const source = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.models) ? payload.models : []);
+        const models = [...new Set(source.map(item => typeof item === 'string' ? item : item?.id).filter(Boolean))]
+            .sort((a, b) => a.localeCompare(b))
+            .slice(0, 500);
+        res.json({ models });
+    } catch (err) {
+        console.error('AI review models load error:', err);
+        res.status(502).json({ error: err.name === 'AbortError' ? '获取模型超时' : `获取模型失败：${err.message}` });
+    } finally {
+        clearTimeout(timeout);
+    }
+});
+
+app.get('/api/admin/ai-reviews', authenticateAdmin, (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page || '1', 10));
+        const limit = 30;
+        const offset = (page - 1) * limit;
+        const status = String(req.query.status || '').trim();
+        const search = String(req.query.search || '').trim().slice(0, 120);
+        const whereParts = [];
+        const params = [];
+        if (['pending', 'processing', 'allowed', 'rejected', 'skipped'].includes(status)) {
+            whereParts.push('q.status = ?');
+            params.push(status);
+        }
+        if (search) {
+            const value = `%${search}%`;
+            whereParts.push('(c.name LIKE ? OR u.username LIKE ? OR q.reason LIKE ? OR q.error LIKE ?)');
+            params.push(value, value, value, value);
+        }
+        const where = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+        const baseFrom = `FROM ai_review_queue q
+            LEFT JOIN character_cards c ON c.id = q.card_id
+            LEFT JOIN users u ON u.id = c.uploader_user_id`;
+        const total = Number(db.prepare(`SELECT COUNT(*) AS count ${baseFrom} ${where}`).get(...params).count || 0);
+        const reviews = db.prepare(
+            `SELECT q.id, q.card_id, q.status, q.decision, q.reason, q.error, q.model,
+                    q.attempts, q.created_at, q.started_at, q.completed_at,
+                    c.name AS card_name, c.review_status AS card_status,
+                    u.username AS uploader_username
+             ${baseFrom}
+             ${where}
+             ORDER BY q.id DESC
+             LIMIT ? OFFSET ?`
+        ).all(...params, limit, offset);
+        res.json({ reviews, total, page, totalPages: Math.ceil(total / limit), summary: getAiReviewQueueStats() });
+    } catch (err) {
+        console.error('AI review history load error:', err);
+        res.status(500).json({ error: '获取 AI 审核记录失败' });
     }
 });
 
@@ -6817,7 +7237,8 @@ function getBackupStats(database = db) {
         ui_templates: count('ui_templates'),
         ui_template_comments: count('ui_template_comments'),
         settings: count('settings'),
-        redemptions: count('newapi_redemptions')
+        redemptions: count('newapi_redemptions'),
+        ai_reviews: count('ai_review_queue')
     };
 }
 
@@ -7064,6 +7485,7 @@ function logDatabaseHealth() {
         'card_downloads',
         'ui_template_downloads',
         'newapi_redemptions',
+        'ai_review_queue',
         'ip_bans'
     ];
     const counts = {};
@@ -7098,6 +7520,7 @@ function logDatabaseHealth() {
 
 // ============== Initialize & Start ==============
 initDatabase();
+recoverAiReviewQueue();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);

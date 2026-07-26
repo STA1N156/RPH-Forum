@@ -274,6 +274,21 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS ai_review_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id TEXT UNIQUE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            decision TEXT,
+            reason TEXT,
+            error TEXT,
+            model TEXT,
+            attempts INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME,
+            completed_at DATETIME,
+            FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
@@ -303,6 +318,7 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ai_review_queue_status ON ai_review_queue(status, id);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_card_time ON card_downloads(card_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC);
@@ -603,7 +619,9 @@ function initDatabase() {
         announcement_enabled: 'false',
         announcement_title: '网站公告',
         announcement_content: '',
-        announcement_version: ''
+        announcement_version: '',
+        ai_review_base_url: 'https://cdn.sta1n.cn/v1',
+        ai_review_model: ''
     };
     const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [key, value] of Object.entries(defaultSettings)) {
