@@ -277,16 +277,26 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS ai_review_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             card_id TEXT UNIQUE NOT NULL,
+            card_name TEXT,
+            uploader_user_id INTEGER,
+            uploader_username TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             decision TEXT,
             reason TEXT,
             error TEXT,
             model TEXT,
+            text_decision TEXT,
+            text_reason TEXT,
+            text_error TEXT,
+            text_model TEXT,
+            cover_decision TEXT,
+            cover_reason TEXT,
+            cover_error TEXT,
+            cover_model TEXT,
             attempts INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             started_at DATETIME,
-            completed_at DATETIME,
-            FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE
+            completed_at DATETIME
         );
 
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
@@ -326,6 +336,74 @@ function initDatabase() {
     `);
 
     // Migration: add columns if they don't exist (for existing databases)
+    try {
+        const hasCardCascade = db.pragma('foreign_key_list(ai_review_queue)')
+            .some(row => row.table === 'character_cards');
+        if (hasCardCascade) {
+            db.pragma('foreign_keys = OFF');
+            db.transaction(() => {
+                db.exec('ALTER TABLE ai_review_queue RENAME TO ai_review_queue_with_card_fk');
+                db.exec(`
+                    CREATE TABLE ai_review_queue (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        card_id TEXT UNIQUE NOT NULL,
+                        card_name TEXT,
+                        uploader_user_id INTEGER,
+                        uploader_username TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        decision TEXT,
+                        reason TEXT,
+                        error TEXT,
+                        model TEXT,
+                        text_decision TEXT,
+                        text_reason TEXT,
+                        text_error TEXT,
+                        text_model TEXT,
+                        cover_decision TEXT,
+                        cover_reason TEXT,
+                        cover_error TEXT,
+                        cover_model TEXT,
+                        attempts INTEGER DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        started_at DATETIME,
+                        completed_at DATETIME
+                    );
+                    INSERT INTO ai_review_queue (
+                        id, card_id, card_name, uploader_user_id, uploader_username,
+                        status, decision, reason, error, model, attempts,
+                        created_at, started_at, completed_at
+                    )
+                    SELECT q.id, q.card_id, c.name, c.uploader_user_id, u.username,
+                           q.status, q.decision, q.reason, q.error, q.model, q.attempts,
+                           q.created_at, q.started_at, q.completed_at
+                      FROM ai_review_queue_with_card_fk q
+                      LEFT JOIN character_cards c ON c.id = q.card_id
+                      LEFT JOIN users u ON u.id = c.uploader_user_id;
+                    DROP TABLE ai_review_queue_with_card_fk;
+                `);
+            })();
+            db.pragma('foreign_keys = ON');
+            db.exec('CREATE INDEX IF NOT EXISTS idx_ai_review_queue_status ON ai_review_queue(status, id)');
+        }
+    } catch (e) {
+        db.pragma('foreign_keys = ON');
+        console.warn('[DB] Failed to preserve AI review history migration:', e.message);
+    }
+    for (const column of [
+        'card_name TEXT',
+        'uploader_user_id INTEGER',
+        'uploader_username TEXT',
+        'text_decision TEXT',
+        'text_reason TEXT',
+        'text_error TEXT',
+        'text_model TEXT',
+        'cover_decision TEXT',
+        'cover_reason TEXT',
+        'cover_error TEXT',
+        'cover_model TEXT'
+    ]) {
+        try { db.exec(`ALTER TABLE ai_review_queue ADD COLUMN ${column}`); } catch (e) { /* column exists */ }
+    }
     try { db.exec('ALTER TABLE admin_users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
@@ -621,7 +699,8 @@ function initDatabase() {
         announcement_content: '',
         announcement_version: '',
         ai_review_base_url: 'https://cdn.sta1n.cn/v1',
-        ai_review_model: ''
+        ai_review_model: '',
+        ai_review_vision_model: '[AN]gemini-3.5-flash-thinking'
     };
     const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [key, value] of Object.entries(defaultSettings)) {

@@ -42,17 +42,46 @@ const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
 const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
 const NEWAPI_ADMIN_USER_ID = (process.env.NEWAPI_ADMIN_USER_ID || process.env.NEWAPI_USER_ID || '').trim();
 const AI_REVIEW_DEFAULT_BASE_URL = 'https://cdn.sta1n.cn/v1';
+const AI_REVIEW_DEFAULT_VISION_MODEL = '[AN]gemini-3.5-flash-thinking';
 const AI_REVIEW_API_KEY = (process.env.AI_REVIEW_API_KEY || '').trim();
 const AI_REVIEW_MODEL = (process.env.AI_REVIEW_MODEL || '').trim();
+const AI_REVIEW_VISION_MODEL = (process.env.AI_REVIEW_VISION_MODEL || '').trim();
 const AI_REVIEW_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_REVIEW_TIMEOUT_MS || '30000', 10) || 30000);
-const AI_REVIEW_MAX_TEXT_LENGTH = 24000;
-const AI_REVIEW_DEFAULT_PROMPT = [
+const AI_REVIEW_MAX_TEXT_LENGTH = 36000;
+const AI_REVIEW_LEGACY_DEFAULT_PROMPT = [
     '你是角色卡的宽松内容审核器，只审核角色卡名称、简介和开场白。',
     '只有在内容明确包含以下任一情况时才拒绝：',
     '1. 明确的政治敏感内容；',
     '2. 以虐杀、肢解、酷刑等为核心且描写非常露骨的极端暴力内容。',
     '普通战斗、犯罪、战争背景、轻微血腥、虚构冲突、黑暗题材均应放行。',
     '如果语境不足、疑似、影射、不确定或无法确认，一律放行。'
+].join('\n');
+const AI_REVIEW_PREVIOUS_DEFAULT_PROMPT = [
+    '你是角色卡的内容审核器，负责审核角色卡名称、简介、描述、开场白、前 3 条世界书和封面。',
+    '在内容明确包含以下任一情况时拒绝：',
+    '1. 明确的政治敏感内容，尤其有关中国政治的任何内容必须拒绝；',
+    '2. 含有重口、虐杀、肢解、犯罪、暴力、酷刑等的内容；',
+    '3. 以逝世的公众人物取乐；',
+    '4. 封面图片露点或清晰出现性器官。',
+    '普通战斗、战争背景、轻微血腥、色情文本均应放行；但封面图片露点或出现性器官仍须拒绝。',
+    '如果语境不足、疑似、不确定或无法确认，一律放行。'
+].join('\n');
+const AI_REVIEW_DEFAULT_TEXT_PROMPT = [
+    '你是角色卡的内容审核器，负责审核角色卡名称、简介、描述、开场白和前 3 条世界书。',
+    '在内容明确包含以下任一情况时拒绝：',
+    '1. 明确的政治敏感内容，尤其有关中国政治的任何内容必须拒绝；',
+    '2. 含有重口、虐杀、肢解、犯罪、暴力、酷刑等的内容；',
+    '3. 以逝世的公众人物取乐。',
+    '普通战斗、战争背景、轻微血腥、色情均应放行。',
+    '如果语境不足、疑似、不确定或无法确认，一律放行。'
+].join('\n');
+const AI_REVIEW_DEFAULT_COVER_PROMPT = [
+    '你是角色卡的封面审核器，只审核收到的封面图片。',
+    '在封面明确包含以下任一情况时拒绝：',
+    '1. 出现政治人物，或可辨认的政治人物变体、戏仿、换装及 AI 改造形象，尤其是中国政治人物；',
+    '2. 以任何公众人物取乐；',
+    '3. 露点或清晰出现性器官。',
+    '如果人物身份、画面内容或语境不足，疑似、不确定或无法确认，一律放行。'
 ].join('\n');
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
@@ -973,16 +1002,27 @@ function isNewApiConfigured() {
 }
 
 function getAiReviewConfig() {
+    const savedPrompt = String(getSettingValue('ai_review_prompt') || '').trim();
+    const savedCoverPrompt = String(getSettingValue('ai_review_cover_prompt') || '').trim();
+    const useDefaultTextPrompt = !savedPrompt
+        || savedPrompt === AI_REVIEW_LEGACY_DEFAULT_PROMPT
+        || savedPrompt === AI_REVIEW_PREVIOUS_DEFAULT_PROMPT;
+    const textPrompt = useDefaultTextPrompt ? AI_REVIEW_DEFAULT_TEXT_PROMPT : savedPrompt;
+    const coverPrompt = savedCoverPrompt || AI_REVIEW_DEFAULT_COVER_PROMPT;
+    if (savedPrompt !== textPrompt) setSettingValue('ai_review_prompt', textPrompt);
+    if (savedCoverPrompt !== coverPrompt) setSettingValue('ai_review_cover_prompt', coverPrompt);
     return {
         baseUrl: normalizeBaseUrl(getSettingValue('ai_review_base_url') || AI_REVIEW_DEFAULT_BASE_URL),
         apiKey: getSettingValue('ai_review_api_key') || AI_REVIEW_API_KEY,
         model: String(getSettingValue('ai_review_model') || AI_REVIEW_MODEL || '').trim(),
-        prompt: String(getSettingValue('ai_review_prompt') || AI_REVIEW_DEFAULT_PROMPT).trim()
+        visionModel: String(getSettingValue('ai_review_vision_model') || AI_REVIEW_VISION_MODEL || AI_REVIEW_DEFAULT_VISION_MODEL).trim(),
+        textPrompt,
+        coverPrompt
     };
 }
 
 function isAiReviewConfigured(config = getAiReviewConfig()) {
-    return Boolean(config.baseUrl && config.apiKey && config.model);
+    return Boolean(config.baseUrl && config.apiKey && config.model && config.visionModel);
 }
 
 function getNewApiHeaders() {
@@ -2480,31 +2520,87 @@ let aiReviewWorkerTimer = null;
 function buildAiReviewText(card) {
     const raw = parseStoredCardData(card?.data) || {};
     const content = raw.data && typeof raw.data === 'object' ? raw.data : raw;
+    const clip = (value, maxLength) => String(value || '').trim().slice(0, maxLength);
     const greetings = [
         content.first_mes,
         ...(Array.isArray(content.alternate_greetings) ? content.alternate_greetings : [])
     ].filter(value => typeof value === 'string' && value.trim());
+    const worldBookSources = [
+        content.character_book,
+        content.world_book,
+        content.lorebook,
+        content.extensions?.character_book,
+        content.extensions?.world_book,
+        content.extensions?.lorebook,
+        raw.character_book,
+        raw.world_book,
+        raw.lorebook
+    ];
+    const worldBook = worldBookSources
+        .map(source => Array.isArray(source) ? source : source?.entries)
+        .find(entries => Array.isArray(entries) && entries.length) || [];
+    const worldBookText = worldBook.slice(0, 3).map((entry, index) => {
+        const title = entry?.comment || entry?.name || entry?.title || `世界书 ${index + 1}`;
+        const keys = Array.isArray(entry?.keys) ? entry.keys.filter(Boolean).join('、') : '';
+        const body = entry?.content ?? entry?.text ?? entry?.value ?? '';
+        return [
+            `第 ${index + 1} 条：${clip(title, 300)}`,
+            keys ? `关键词：${clip(keys, 500)}` : '',
+            `内容：${clip(body, 3000)}`
+        ].filter(Boolean).join('\n');
+    }).join('\n\n');
     return [
-        `角色卡名称：${String(card?.name || content.name || content.char_name || '').trim()}`,
-        `简介：${String(card?.description || content.description || content.char_persona || '').trim()}`,
-        `开场白：\n${greetings.join('\n\n--- 其他开场白 ---\n')}`
+        `角色卡名称：${clip(card?.name || content.name || content.char_name, 500)}`,
+        `简介：${clip(card?.creator_notes || content.creator_notes, 5000)}`,
+        `描述：${clip(card?.description || content.description || content.char_persona, 8000)}`,
+        `开场白：\n${clip(greetings.join('\n\n--- 其他开场白 ---\n'), 10000)}`,
+        `世界书（最多前 3 条）：\n${worldBookText || '无'}`
     ].join('\n\n').slice(0, AI_REVIEW_MAX_TEXT_LENGTH);
 }
 
-function parseAiReviewResponse(payload) {
+async function buildAiReviewCoverImage(card) {
+    const avatarUrl = sanitizeAvatarUrl(card?.avatar_url, card?.id);
+    if (!avatarUrl) return '';
+    const asset = await resolveAvatarAsset(avatarUrl);
+    if (!asset?.buffer?.length) return '';
+    if (sharp) {
+        const cover = await sharp(asset.buffer)
+            .rotate()
+            .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 78 })
+            .toBuffer();
+        return `data:image/jpeg;base64,${cover.toString('base64')}`;
+    }
+    if (!String(asset.contentType || '').toLowerCase().startsWith('image/')) {
+        throw new Error('封面不是可识别的图片格式');
+    }
+    return `data:${asset.contentType};base64,${Buffer.from(asset.buffer).toString('base64')}`;
+}
+
+function parseAiReviewResponse(payload, { rejectOnEmpty = false, emptyReason = '', requireDecision = false } = {}) {
     const content = payload?.choices?.[0]?.message?.content;
     const text = typeof content === 'string'
         ? content
         : (Array.isArray(content) ? content.map(item => item?.text || '').join('') : '');
+    if (!text.trim()) {
+        return rejectOnEmpty
+            ? { decision: 'REJECT', reason: emptyReason || '审核模型返回空内容，审核不通过' }
+            : { decision: 'ALLOW', reason: 'AI 返回空内容，按规则放行' };
+    }
     const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     const jsonStart = cleaned.indexOf('{');
     const jsonEnd = cleaned.lastIndexOf('}');
     if (jsonStart < 0 || jsonEnd <= jsonStart) {
-        return { decision: 'ALLOW', reason: 'AI 返回格式无法确认，按规则放行' };
+        return requireDecision
+            ? { decision: 'REJECT', reason: '封面审核模型未返回有效审核结果，审核不通过' }
+            : { decision: 'ALLOW', reason: 'AI 返回格式无法确认，按规则放行' };
     }
     try {
         const result = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
         const decision = String(result.decision || '').trim().toUpperCase();
+        if (requireDecision && !['ALLOW', 'REJECT'].includes(decision)) {
+            return { decision: 'REJECT', reason: '封面审核模型未给出明确结论，审核不通过' };
+        }
         if (decision !== 'REJECT') {
             return { decision: 'ALLOW', reason: String(result.reason || '未明确判定违规').slice(0, 500) };
         }
@@ -2513,19 +2609,29 @@ function parseAiReviewResponse(payload) {
             return { decision: 'ALLOW', reason: String(result.reason || 'AI 未明确确认违规，按规则放行').slice(0, 500) };
         }
         const category = String(result.category || '').trim().toLowerCase();
-        if (!['political', 'extreme_violence'].includes(category)) {
+        if (!['political', 'violence', 'extreme_violence', 'deceased_public_figure', 'public_figure_mockery', 'explicit_genitals'].includes(category)) {
             return { decision: 'ALLOW', reason: '拒绝类别不在规则范围内，按规则放行' };
         }
+        const fallbackReasons = {
+            political: '包含政治敏感内容',
+            violence: '包含暴力或犯罪内容',
+            extreme_violence: '包含重口或极端暴力内容',
+            deceased_public_figure: '包含以逝世公众人物取乐的内容',
+            public_figure_mockery: '包含以公众人物取乐的内容',
+            explicit_genitals: '封面露点或清晰出现性器官'
+        };
         return {
             decision: 'REJECT',
-            reason: String(result.reason || (category === 'political' ? '包含政治敏感内容' : '包含非常极端的暴力内容')).slice(0, 500)
+            reason: String(result.reason || fallbackReasons[category]).slice(0, 500)
         };
     } catch {
-        return { decision: 'ALLOW', reason: 'AI 返回内容无法解析，按规则放行' };
+        return requireDecision
+            ? { decision: 'REJECT', reason: '封面审核模型返回内容无法解析，审核不通过' }
+            : { decision: 'ALLOW', reason: 'AI 返回内容无法解析，按规则放行' };
     }
 }
 
-async function requestAiCardReview(card, config) {
+async function requestAiReviewCompletion(config, { model, systemPrompt, userContent, rejectOnEmpty = false, emptyReason = '', requireDecision = false }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), AI_REVIEW_TIMEOUT_MS);
     try {
@@ -2537,14 +2643,11 @@ async function requestAiCardReview(card, config) {
                 'Authorization': `Bearer ${config.apiKey}`
             },
             body: JSON.stringify({
-                model: config.model,
+                model,
                 temperature: 0,
                 messages: [
-                    {
-                        role: 'system',
-                        content: `${config.prompt}\n只输出 JSON：{"decision":"ALLOW或REJECT","certain":true或false,"category":"none或political或extreme_violence","reason":"简短中文理由"}。只有完全确定时 certain 才能为 true。`
-                    },
-                    { role: 'user', content: buildAiReviewText(card) }
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userContent }
                 ]
             })
         });
@@ -2558,13 +2661,73 @@ async function requestAiCardReview(card, config) {
         } catch {
             throw new Error('AI 接口返回了无效 JSON');
         }
-        return parseAiReviewResponse(payload);
+        return parseAiReviewResponse(payload, { rejectOnEmpty, emptyReason, requireDecision });
     } finally {
         clearTimeout(timeout);
     }
 }
 
-function completeAiReviewJob(job, { decision, reason, error = '', model = '' }) {
+async function requestAiCardReview(card, config) {
+    const outputRule = '只输出 JSON：{"decision":"ALLOW或REJECT","certain":true或false,"category":"none、political、violence、extreme_violence、deceased_public_figure、public_figure_mockery或explicit_genitals","reason":"简短中文理由"}。只有完全确定时 certain 才能为 true。';
+    const textPromise = requestAiReviewCompletion(config, {
+        model: config.model,
+        systemPrompt: `${config.textPrompt}\n${outputRule}`,
+        userContent: buildAiReviewText(card)
+    });
+    let coverImage = '';
+    let coverBuildError = null;
+    try {
+        coverImage = await buildAiReviewCoverImage(card);
+    } catch (err) {
+        coverBuildError = err;
+    }
+    const coverPromise = coverImage
+        ? requestAiReviewCompletion(config, {
+            model: config.visionModel,
+            systemPrompt: `${config.coverPrompt}\n${outputRule}`,
+            userContent: [
+                { type: 'text', text: '请审核这张角色卡封面。' },
+                { type: 'image_url', image_url: { url: coverImage } }
+            ],
+            rejectOnEmpty: true,
+            emptyReason: '封面审核模型返回空内容，审核不通过',
+            requireDecision: true
+        })
+        : (coverBuildError
+            ? Promise.reject(coverBuildError)
+            : Promise.resolve({ decision: 'ALLOW', reason: '角色卡没有可审核的封面，已跳过封面审核' }));
+    const [textSettled, coverSettled] = await Promise.allSettled([textPromise, coverPromise]);
+    const textResult = textSettled.status === 'fulfilled'
+        ? textSettled.value
+        : {
+            decision: 'ALLOW',
+            reason: '内容审核接口失败，按规则自动放行',
+            error: textSettled.reason?.message || String(textSettled.reason || '未知错误')
+        };
+    const coverResult = coverSettled.status === 'fulfilled'
+        ? coverSettled.value
+        : {
+            decision: 'ALLOW',
+            reason: '封面审核接口失败，按规则自动放行',
+            error: coverSettled.reason?.message || String(coverSettled.reason || '未知错误')
+        };
+    const rejected = [textResult, coverResult].filter(result => result.decision === 'REJECT');
+    const errors = [
+        textResult.error ? `内容审核：${textResult.error}` : '',
+        coverResult.error ? `封面审核：${coverResult.error}` : ''
+    ].filter(Boolean);
+    return {
+        decision: rejected.length ? 'REJECT' : 'ALLOW',
+        reason: rejected.length
+            ? rejected.map(result => result.reason).join('；')
+            : `内容审核：${textResult.reason}；封面审核：${coverResult.reason}`,
+        error: errors.join('\n'),
+        text: textResult,
+        cover: coverResult
+    };
+}
+
+function completeAiReviewJob(job, { decision, reason, error = '', model = '', text: textResult = {}, cover: coverResult = {} }) {
     const now = new Date().toISOString();
     const shouldReject = decision === 'REJECT';
     const nextStatus = shouldReject ? 'rejected' : 'unreviewed';
@@ -2576,9 +2739,28 @@ function completeAiReviewJob(job, { decision, reason, error = '', model = '' }) 
     ).run(nextStatus, shouldReject ? `AI审核：${reason}` : null, shouldReject ? now : null, job.card_id);
     db.prepare(
         `UPDATE ai_review_queue
-         SET status = ?, decision = ?, reason = ?, error = ?, model = ?, completed_at = ?
+         SET status = ?, decision = ?, reason = ?, error = ?, model = ?,
+             text_decision = ?, text_reason = ?, text_error = ?, text_model = ?,
+             cover_decision = ?, cover_reason = ?, cover_error = ?, cover_model = ?,
+             completed_at = ?
          WHERE id = ?`
-    ).run(update.changes ? queueStatus : 'skipped', decision, reason, String(error || '').slice(0, 1000), model, now, job.id);
+    ).run(
+        update.changes ? queueStatus : 'skipped',
+        decision,
+        reason,
+        String(error || '').slice(0, 1000),
+        model,
+        textResult.decision || null,
+        String(textResult.reason || '').slice(0, 500) || null,
+        String(textResult.error || '').slice(0, 1000) || null,
+        textResult.model || null,
+        coverResult.decision || null,
+        String(coverResult.reason || '').slice(0, 500) || null,
+        String(coverResult.error || '').slice(0, 1000) || null,
+        coverResult.model || null,
+        now,
+        job.id
+    );
     if (!update.changes) return;
     clearCardListCache('ai-review-complete');
     logOperation({
@@ -2608,7 +2790,9 @@ async function processAiReviewQueue() {
         while (true) {
             const job = claimNextAiReviewJob();
             if (!job) break;
-            const card = db.prepare('SELECT id, name, description, data, review_status FROM character_cards WHERE id = ?').get(job.card_id);
+            const card = db.prepare(
+                'SELECT id, name, description, creator_notes, avatar_url, data, review_status FROM character_cards WHERE id = ?'
+            ).get(job.card_id);
             if (!card || card.review_status !== 'ai_pending') {
                 completeAiReviewJob(job, { decision: 'ALLOW', reason: '卡片状态已变化，跳过审核' });
                 continue;
@@ -2619,19 +2803,48 @@ async function processAiReviewQueue() {
                     decision: 'ALLOW',
                     reason: 'AI 审核未配置完整，按规则自动放行',
                     error: 'AI review is not configured',
-                    model: config.model
+                    model: `${config.model} / ${config.visionModel}`,
+                    text: {
+                        decision: 'ALLOW',
+                        reason: '内容审核未配置完整，按规则自动放行',
+                        error: 'AI review is not configured',
+                        model: config.model
+                    },
+                    cover: {
+                        decision: 'ALLOW',
+                        reason: '封面审核未配置完整，按规则自动放行',
+                        error: 'AI review is not configured',
+                        model: config.visionModel
+                    }
                 });
                 continue;
             }
             try {
                 const result = await requestAiCardReview(card, config);
-                completeAiReviewJob(job, { ...result, model: config.model });
+                result.text.model = config.model;
+                result.cover.model = config.visionModel;
+                completeAiReviewJob(job, {
+                    ...result,
+                    model: `${config.model} / ${config.visionModel}`
+                });
             } catch (err) {
                 completeAiReviewJob(job, {
                     decision: 'ALLOW',
                     reason: 'AI 审核失败，按规则自动放行',
                     error: err.message,
-                    model: config.model
+                    model: `${config.model} / ${config.visionModel}`,
+                    text: {
+                        decision: 'ALLOW',
+                        reason: '内容审核发生内部错误，按规则自动放行',
+                        error: err.message,
+                        model: config.model
+                    },
+                    cover: {
+                        decision: 'ALLOW',
+                        reason: '封面审核发生内部错误，按规则自动放行',
+                        error: err.message,
+                        model: config.visionModel
+                    }
                 });
             }
         }
@@ -2650,11 +2863,22 @@ function scheduleAiReviewQueue() {
 
 function enqueueAiCardReview(cardId) {
     db.prepare(
-        `INSERT INTO ai_review_queue (card_id, status)
-         VALUES (?, 'pending')
+        `INSERT INTO ai_review_queue (
+            card_id, card_name, uploader_user_id, uploader_username, status
+         )
+         SELECT c.id, c.name, c.uploader_user_id, u.username, 'pending'
+           FROM character_cards c
+           LEFT JOIN users u ON u.id = c.uploader_user_id
+          WHERE c.id = ?
          ON CONFLICT(card_id) DO UPDATE SET
+            card_name = excluded.card_name,
+            uploader_user_id = excluded.uploader_user_id,
+            uploader_username = excluded.uploader_username,
             status = 'pending', decision = NULL, reason = NULL, error = NULL,
-            model = NULL, started_at = NULL, completed_at = NULL`
+            model = NULL,
+            text_decision = NULL, text_reason = NULL, text_error = NULL, text_model = NULL,
+            cover_decision = NULL, cover_reason = NULL, cover_error = NULL, cover_model = NULL,
+            started_at = NULL, completed_at = NULL`
     ).run(cardId);
     scheduleAiReviewQueue();
 }
@@ -6461,7 +6685,9 @@ function buildAiReviewSettingsResponse() {
         configured: isAiReviewConfigured(),
         base_url: config.baseUrl,
         model: config.model,
-        prompt: config.prompt,
+        vision_model: config.visionModel,
+        text_prompt: config.textPrompt,
+        cover_prompt: config.coverPrompt,
         api_key_configured: Boolean(config.apiKey),
         api_key_masked: maskSecret(config.apiKey),
         api_key_source: dbApiKey ? 'admin' : (AI_REVIEW_API_KEY ? 'environment' : 'none'),
@@ -6482,7 +6708,9 @@ app.put('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
     try {
         const baseUrl = normalizeBaseUrl(req.body.base_url || AI_REVIEW_DEFAULT_BASE_URL);
         const model = String(req.body.model || '').trim();
-        const prompt = String(req.body.prompt || '').trim();
+        const visionModel = String(req.body.vision_model || '').trim();
+        const textPrompt = String(req.body.text_prompt || req.body.prompt || '').trim();
+        const coverPrompt = String(req.body.cover_prompt || '').trim();
         const apiKey = typeof req.body.api_key === 'string' ? req.body.api_key.trim() : '';
         const clearApiKey = req.body.clear_api_key === true || req.body.clear_api_key === 'true';
 
@@ -6490,13 +6718,18 @@ app.put('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
             return res.status(400).json({ error: 'AI API 地址必须以 http:// 或 https:// 开头' });
         }
         if (model.length > 200) return res.status(400).json({ error: '模型名称过长' });
-        if (!prompt) return res.status(400).json({ error: '审核要求提示词不能为空' });
-        if (prompt.length > 10000) return res.status(400).json({ error: '审核要求提示词不能超过 10000 字' });
+        if (visionModel.length > 200) return res.status(400).json({ error: '封面模型名称过长' });
+        if (!textPrompt) return res.status(400).json({ error: '内容审核提示词不能为空' });
+        if (!coverPrompt) return res.status(400).json({ error: '封面审核提示词不能为空' });
+        if (textPrompt.length > 10000) return res.status(400).json({ error: '内容审核提示词不能超过 10000 字' });
+        if (coverPrompt.length > 10000) return res.status(400).json({ error: '封面审核提示词不能超过 10000 字' });
         if (apiKey && apiKey.length < 8) return res.status(400).json({ error: 'API 密钥看起来太短了' });
 
         setSettingValue('ai_review_base_url', baseUrl);
         setSettingValue('ai_review_model', model);
-        setSettingValue('ai_review_prompt', prompt);
+        setSettingValue('ai_review_vision_model', visionModel);
+        setSettingValue('ai_review_prompt', textPrompt);
+        setSettingValue('ai_review_cover_prompt', coverPrompt);
         if (clearApiKey) {
             db.prepare('DELETE FROM settings WHERE key = ?').run('ai_review_api_key');
         } else if (apiKey) {
@@ -6514,7 +6747,9 @@ app.put('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
             details: {
                 base_url: baseUrl,
                 model,
-                prompt_updated: true,
+                vision_model: visionModel,
+                text_prompt_updated: true,
+                cover_prompt_updated: true,
                 api_key_updated: Boolean(apiKey),
                 api_key_cleared: clearApiKey
             }
@@ -6568,19 +6803,22 @@ app.get('/api/admin/ai-reviews', authenticateAdmin, (req, res) => {
         }
         if (search) {
             const value = `%${search}%`;
-            whereParts.push('(c.name LIKE ? OR u.username LIKE ? OR q.reason LIKE ? OR q.error LIKE ?)');
+            whereParts.push('(COALESCE(c.name, q.card_name) LIKE ? OR COALESCE(u.username, q.uploader_username) LIKE ? OR q.reason LIKE ? OR q.error LIKE ?)');
             params.push(value, value, value, value);
         }
         const where = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         const baseFrom = `FROM ai_review_queue q
             LEFT JOIN character_cards c ON c.id = q.card_id
-            LEFT JOIN users u ON u.id = c.uploader_user_id`;
+            LEFT JOIN users u ON u.id = COALESCE(c.uploader_user_id, q.uploader_user_id)`;
         const total = Number(db.prepare(`SELECT COUNT(*) AS count ${baseFrom} ${where}`).get(...params).count || 0);
         const reviews = db.prepare(
             `SELECT q.id, q.card_id, q.status, q.decision, q.reason, q.error, q.model,
+                    q.text_decision, q.text_reason, q.text_error, q.text_model,
+                    q.cover_decision, q.cover_reason, q.cover_error, q.cover_model,
                     q.attempts, q.created_at, q.started_at, q.completed_at,
-                    c.name AS card_name, c.review_status AS card_status,
-                    u.username AS uploader_username
+                    COALESCE(c.name, q.card_name) AS card_name,
+                    COALESCE(c.review_status, 'deleted') AS card_status,
+                    COALESCE(u.username, q.uploader_username) AS uploader_username
              ${baseFrom}
              ${where}
              ORDER BY q.id DESC
@@ -7520,6 +7758,7 @@ function logDatabaseHealth() {
 
 // ============== Initialize & Start ==============
 initDatabase();
+getAiReviewConfig();
 recoverAiReviewQueue();
 
 // Cleanup old login attempts every hour
