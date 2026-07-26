@@ -5162,6 +5162,7 @@ app.put('/api/cards/:id', (req, res) => {
         } else if (decoded.role === 'user' && card.uploader_user_id === decoded.id) {
             const user = validateUserTokenPayload(decoded);
             if (!user) return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+            if (isModeratorUser(user)) return res.status(403).json({ error: '审核员不能编辑角色卡' });
             if (!userEmailBound(user)) return rejectUnboundEmail(req, res);
             if (card.uploader_user_id !== user.id) return res.status(403).json({ error: '无权编辑此卡片' });
             userType = 'user'; userId = user.id; username = user.username;
@@ -5345,7 +5346,7 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
 });
 
 // ============== Card Heat Adjustment (Admin or Moderator) ==============
-app.put('/api/cards/:id/heat', requireModeration, (req, res) => {
+app.put('/api/cards/:id/heat', authenticateAdmin, (req, res) => {
     try {
         const { id } = req.params;
         const card = db.prepare(
@@ -5386,10 +5387,9 @@ app.put('/api/cards/:id/heat', requireModeration, (req, res) => {
         db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         clearCardListCache('card-heat');
 
-        const actor = getModerationActor(req);
         logOperation({
-            userType: actor.userType, userId: actor.userId, username: actor.username,
-            action: req.admin ? 'admin_adjust_heat' : 'moderator_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: 'admin_adjust_heat', targetType: 'card', targetId: id, ip: getRequestIp(req),
             details: { name: card.name, views_count, downloads_count, comment_heat_count: commentHeatCount }
         });
 
