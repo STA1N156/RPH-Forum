@@ -998,6 +998,12 @@ function isCommentHiddenFromDisplay(content, blockWords = getCommentEmailBlockWo
         || blockWords.some(word => text.includes(normalizeCommentEmailBlockText(word)));
 }
 
+db.function('comment_is_hidden', { deterministic: true }, (content, blockWordsJson) => {
+    let blockWords = [];
+    try { blockWords = JSON.parse(blockWordsJson || '[]'); } catch {}
+    return isCommentHiddenFromDisplay(content, blockWords) ? 1 : 0;
+});
+
 function normalizeBaseUrl(value) {
     return String(value || '').trim().replace(/\/+$/, '');
 }
@@ -1468,6 +1474,24 @@ const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_C
 const cardListCache = new Map();
 let cardListCacheRevision = 1;
 
+function extractCardTags(creatorNotes) {
+    const tags = [];
+    const pattern = /#([^#\s]+)/g;
+    let match;
+    while ((match = pattern.exec(String(creatorNotes || ''))) !== null) tags.push(match[1]);
+    return tags;
+}
+
+const replaceCardTags = db.transaction((cardId, creatorNotes) => {
+    db.prepare('DELETE FROM character_card_tags WHERE card_id = ?').run(cardId);
+    const insert = db.prepare('INSERT OR IGNORE INTO character_card_tags (card_id, tag, tag_key) VALUES (?, ?, ?)');
+    for (const tag of extractCardTags(creatorNotes)) insert.run(cardId, tag, tag.toLowerCase());
+});
+
+function syncCardTags(cardId, creatorNotes) {
+    replaceCardTags(cardId, creatorNotes);
+}
+
 function getCardListCacheKey(req, sortMode, zone, representation = 'full') {
     if (req.admin) return `admin:${req.admin.id}:${zone}:${sortMode}:${representation}`;
     if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${zone}:${sortMode}:${representation}`;
@@ -1494,7 +1518,7 @@ function getFreshCardListCache(key) {
     return cached;
 }
 
-function setCardListCache(key, cards) {
+function setCardListCache(key, cards, totalCount = cards.length) {
     while (cardListCache.size >= CARD_LIST_CACHE_MAX_ENTRIES) {
         const firstKey = cardListCache.keys().next().value;
         cardListCache.delete(firstKey);
@@ -1506,6 +1530,7 @@ function setCardListCache(key, cards) {
         body,
         gzipBody,
         etag: `"cards-${cardListCacheRevision}-${etagHash}"`,
+        totalCount,
         revision: cardListCacheRevision,
         createdAt: Date.now()
     };
@@ -1515,6 +1540,7 @@ function setCardListCache(key, cards) {
 
 function sendCardListCache(req, res, cached) {
     res.set('ETag', cached.etag);
+    res.set('X-Total-Count', String(cached.totalCount));
     res.set('Cache-Control', 'private, max-age=0, must-revalidate');
     res.set('Vary', 'Accept-Encoding');
     res.type('application/json');
@@ -3486,10 +3512,65 @@ app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
         }
         const reviewed = db.prepare(`SELECT COUNT(*) AS count FROM character_cards WHERE ${reviewedWhere}`).get(...params).count;
         const unreviewed = db.prepare("SELECT COUNT(*) AS count FROM character_cards WHERE review_status = 'unreviewed'").get().count;
-        res.json({ reviewed, unreviewed });
+        let templateWhere = "review_status = 'approved'";
+        const templateParams = [];
+        if (req.admin || isModeratorUser(req.user)) {
+            templateWhere = '1 = 1';
+        } else if (req.user) {
+            templateWhere = "review_status = 'approved' OR uploader_user_id = ?";
+            templateParams.push(req.user.id);
+        }
+        const uiTemplates = db.prepare(`SELECT COUNT(*) AS count FROM ui_templates WHERE ${templateWhere}`).get(...templateParams).count;
+        res.json({ reviewed, unreviewed, ui_templates: uiTemplates });
     } catch (err) {
         console.error('Fetch card counts error:', err);
         res.status(500).json({ error: '获取卡片数量失败' });
+    }
+});
+
+app.get('/api/cards/tags', optionalUserAuth, (req, res) => {
+    try {
+        const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 200);
+        const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+        const cacheKey = getCardListCacheKey(req, 'tags', zone, `page-${limit}-${offset}`);
+        const cached = getFreshCardListCache(cacheKey);
+        if (cached) return sendCardListCache(req, res, cached);
+
+        const whereParts = [];
+        const params = [];
+        if (zone === 'unreviewed') {
+            whereParts.push("cc.review_status = 'unreviewed'");
+        } else if (req.admin || isModeratorUser(req.user)) {
+            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+        } else if (req.user) {
+            whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
+            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+            params.push(req.user.id);
+        } else {
+            whereParts.push("cc.review_status = 'approved'");
+        }
+
+        const hiddenTags = parseTagSettingValue(getSettingValue('hidden_tag_library')).map(tag => tag.toLowerCase());
+        if (hiddenTags.length > 0) {
+            whereParts.push(`cct.tag_key NOT IN (${hiddenTags.map(() => '?').join(', ')})`);
+            params.push(...hiddenTags);
+        }
+        const rows = db.prepare(
+            `SELECT MIN(cct.tag) AS tag, COUNT(*) AS count, COUNT(*) OVER() AS __total_count
+             FROM character_card_tags cct
+             JOIN character_cards cc ON cc.id = cct.card_id
+             WHERE ${whereParts.join(' AND ')}
+             GROUP BY cct.tag_key
+             ORDER BY count DESC, tag ASC
+             LIMIT ? OFFSET ?`
+        ).all(...params, limit, offset);
+        const totalCount = Number(rows[0]?.__total_count || 0);
+        const tags = rows.map(row => ({ tag: row.tag, count: row.count }));
+        return sendCardListCache(req, res, setCardListCache(cacheKey, tags, totalCount));
+    } catch (err) {
+        console.error('Fetch card tags error:', err);
+        res.status(500).json({ error: '获取标签失败' });
     }
 });
 
@@ -3498,12 +3579,20 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const sortMode = req.query.sort || 'latest';
         const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
         const idsOnly = req.query.ids_only === '1';
+        const searchQuery = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
+        const tagFilter = String(req.query.tag || '').trim().toLowerCase().slice(0, 100);
+        const mineOnly = req.query.mine === '1';
         const requestedLimit = parseInt(req.query.limit, 10);
-        const limit = !idsOnly && Number.isFinite(requestedLimit) && requestedLimit > 0
-            ? Math.min(requestedLimit, 100)
+        const limit = !idsOnly
+            ? (Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 10)
             : 0;
-        markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit });
-        const representation = idsOnly ? 'ids' : (limit ? `full-${limit}` : 'full');
+        const requestedOffset = parseInt(req.query.offset, 10);
+        const offset = limit && Number.isFinite(requestedOffset) && requestedOffset > 0
+            ? Math.min(requestedOffset, 1000000)
+            : 0;
+        markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit, offset, hasSearch: Boolean(searchQuery), hasTag: Boolean(tagFilter), mineOnly });
+        const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly])).digest('hex').slice(0, 12);
+        const representation = `${idsOnly ? 'ids' : (limit ? `full-${limit}-${offset}` : 'full')}-${filterHash}`;
         const cacheKey = getCardListCacheKey(req, sortMode, zone, representation);
         const cached = getFreshCardListCache(cacheKey);
         if (cached) {
@@ -3517,6 +3606,9 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const periodModifier = getRankingPeriodModifier(sortMode);
         const whereParts = [];
         const params = [];
+        const joinParams = [];
+        const orderParams = [];
+        let joinClause = '';
         let orderByClause = 'cc.created_at DESC';
 
         if (zone === 'unreviewed') {
@@ -3530,6 +3622,32 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
+        }
+
+        if (mineOnly) {
+            if (req.admin || isModeratorUser(req.user)) {
+                whereParts.push("cc.review_status = 'pending'");
+            } else if (req.user) {
+                whereParts.push('cc.uploader_user_id = ?');
+                params.push(req.user.id);
+            } else {
+                whereParts.push('1 = 0');
+            }
+        }
+
+        if (searchQuery) {
+            const searchPattern = `%${searchQuery}%`;
+            whereParts.push("(LOWER(COALESCE(cc.name, '')) LIKE ? OR LOWER(COALESCE(cc.description, '')) LIKE ? OR LOWER(COALESCE(cc.creator_notes, '')) LIKE ?)");
+            params.push(searchPattern, searchPattern, searchPattern);
+            if (sortMode === 'latest') {
+                orderByClause = "CASE WHEN LOWER(COALESCE(cc.name, '')) LIKE ? THEN 0 ELSE 1 END, cc.created_at DESC";
+                orderParams.push(searchPattern);
+            }
+        }
+
+        if (tagFilter) {
+            joinClause = 'JOIN character_card_tags filter_tag ON filter_tag.card_id = cc.id AND filter_tag.tag_key = ?';
+            joinParams.push(tagFilter);
         }
 
         if (sortMode === 'featured') {
@@ -3548,7 +3666,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
         const selectColumns = idsOnly
             ? 'cc.id'
-            : `cc.id, cc.name, cc.description, cc.creator_notes,
+            : `${limit ? 'COUNT(*) OVER() AS __total_count, ' : ''}cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
@@ -3560,10 +3678,11 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
         const rawCards = db.prepare(
             `SELECT ${selectColumns}
              FROM character_cards cc
+             ${joinClause}
              ${whereClause}
              ORDER BY ${orderByClause}
-             ${limit ? 'LIMIT ?' : ''}`
-        ).all(...params, ...(limit ? [limit] : []));
+             ${limit ? 'LIMIT ? OFFSET ?' : ''}`
+        ).all(...joinParams, ...params, ...orderParams, ...(limit ? [limit, offset] : []));
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
         if (idsOnly) {
             const ids = rawCards.map(card => card.id);
@@ -3571,12 +3690,16 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             markPerf(req, 'cards-cache-store', { rows: ids.length, bytes: newCache.body.length, gzipBytes: newCache.gzipBody.length, idsOnly: true });
             return sendCardListCache(req, res, newCache);
         }
-        const cards = rawCards.map(card => sanitizeCharacterCardForClient(
-            attachUiTemplateSummary(card),
-            { viewer: { admin: req.admin, user: req.user } }
-        ));
+        const totalCount = limit ? Number(rawCards[0]?.__total_count || 0) : rawCards.length;
+        const cards = rawCards.map(card => {
+            delete card.__total_count;
+            return sanitizeCharacterCardForClient(
+                attachUiTemplateSummary(card),
+                { viewer: { admin: req.admin, user: req.user } }
+            );
+        });
         markPerf(req, 'cards-normalize-summary', { rows: cards.length });
-        const newCache = setCardListCache(cacheKey, cards);
+        const newCache = setCardListCache(cacheKey, cards, totalCount);
         markPerf(req, 'cards-cache-store', { rows: cards.length, bytes: newCache.body.length, gzipBytes: newCache.gzipBody.length });
         return sendCardListCache(req, res, newCache);
     } catch (err) {
@@ -3589,10 +3712,17 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
-        markPerf(req, 'ui-templates-start', { sortMode });
+        const searchQuery = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
+        const mineOnly = req.query.mine === '1';
+        const requestedLimit = parseInt(req.query.limit, 10);
+        const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 10;
+        const requestedOffset = parseInt(req.query.offset, 10);
+        const offset = limit && Number.isFinite(requestedOffset) && requestedOffset > 0 ? Math.min(requestedOffset, 1000000) : 0;
+        markPerf(req, 'ui-templates-start', { sortMode, limit, offset, hasSearch: Boolean(searchQuery), mineOnly });
         const whereParts = [];
         const params = [];
-        let orderByClause = 'created_at DESC';
+        const orderParams = [];
+        let orderByClause = 'ui_templates.created_at DESC';
 
         if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
@@ -3601,6 +3731,27 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
             params.push(req.user.id);
         } else {
             whereParts.push("review_status = 'approved'");
+        }
+
+        if (mineOnly) {
+            if (req.admin || isModeratorUser(req.user)) {
+                whereParts.push("review_status = 'pending'");
+            } else if (req.user) {
+                whereParts.push('uploader_user_id = ?');
+                params.push(req.user.id);
+            } else {
+                whereParts.push('1 = 0');
+            }
+        }
+
+        if (searchQuery) {
+            const searchPattern = `%${searchQuery}%`;
+            whereParts.push("(LOWER(COALESCE(title, '')) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ? OR LOWER(COALESCE(file_name, '')) LIKE ?)");
+            params.push(searchPattern, searchPattern, searchPattern);
+            if (sortMode === 'latest') {
+                orderByClause = "CASE WHEN LOWER(COALESCE(title, '')) LIKE ? THEN 0 ELSE 1 END, created_at DESC";
+                orderParams.push(searchPattern);
+            }
         }
 
         const templateCommentCountSql = templateCommentCountExpr('ui_templates');
@@ -3624,7 +3775,7 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
         const rawTemplates = db.prepare(
-            `SELECT id, title, description, file_name, file_ext, mime_type,
+            `SELECT ${limit ? 'COUNT(*) OVER() AS __total_count, ' : ''}id, title, description, file_name, file_ext, mime_type,
                     substr(content, 1, 65536) AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
@@ -3632,12 +3783,17 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
                     ${templateCommentHeatCountSql} AS comment_heat_count
              FROM ui_templates
              ${whereClause}
-             ORDER BY ${orderByClause}`
-        ).all(...params);
+             ORDER BY ${orderByClause}
+             ${limit ? 'LIMIT ? OFFSET ?' : ''}`
+        ).all(...params, ...orderParams, ...(limit ? [limit, offset] : []));
+        const totalCount = limit ? Number(rawTemplates[0]?.__total_count || 0) : rawTemplates.length;
+        for (const row of rawTemplates) delete row.__total_count;
         const previewBytes = rawTemplates.reduce((sum, row) => sum + Buffer.byteLength(row.content_preview_source || '', 'utf8'), 0);
         markPerf(req, 'ui-templates-db-read', { rows: rawTemplates.length, previewBytes });
         const templates = rawTemplates.map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
         markPerf(req, 'ui-templates-sanitize', { rows: templates.length });
+        res.setHeader('X-Total-Count', String(totalCount));
+        res.setHeader('Access-Control-Expose-Headers', 'X-Total-Count');
         res.json(templates);
         markPerf(req, 'ui-templates-response-json', { rows: templates.length });
     } catch (err) {
@@ -3980,6 +4136,9 @@ app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
             || isModeratorUser(req.user)
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
+        template.already_downloaded = Boolean(req.user && db.prepare(
+            'SELECT 1 FROM ui_template_downloads WHERE template_id = ? AND user_id = ? LIMIT 1'
+        ).get(req.params.id, req.user.id));
 
         if (!req.admin && !isModeratorUser(req.user) && !(req.user && template.uploader_user_id === req.user.id)) {
             const viewLimit = recordAccountViewHeat(req, 'ui_template', req.params.id);
@@ -4018,9 +4177,15 @@ function prepareUiTemplateDownload(req, templateId) {
 
     let newCredits = null;
     let downloadCounted = false;
+    let previouslyDownloaded = false;
     const recordDownload = db.transaction(() => {
+        if (req.user && !isOwner && !isModerator) {
+            previouslyDownloaded = Boolean(db.prepare(
+                'SELECT 1 FROM ui_template_downloads WHERE template_id = ? AND user_id = ? LIMIT 1'
+            ).get(templateId, req.user.id));
+        }
         if (!req.admin && !isModerator) {
-            if (!isOwner) {
+            if (!isOwner && !previouslyDownloaded) {
                 const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                 if (result.changes === 0) {
                     const error = new Error('下载次数不足');
@@ -4031,7 +4196,7 @@ function prepareUiTemplateDownload(req, templateId) {
             newCredits = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(req.user.id)?.download_credits ?? null;
         }
 
-        if (!isOwner && !req.admin && !isModerator) {
+        if (!isOwner && !req.admin && !isModerator && !previouslyDownloaded) {
             const inserted = db.prepare(
                 `INSERT OR IGNORE INTO ui_template_downloads (template_id, user_id)
                  VALUES (?, ?)`
@@ -4045,7 +4210,7 @@ function prepareUiTemplateDownload(req, templateId) {
     recordDownload();
 
     const latestDownloads = db.prepare('SELECT downloads_count FROM ui_templates WHERE id = ?').get(templateId)?.downloads_count ?? template.downloads_count ?? 0;
-    return { template, newCredits, downloadCounted, downloadsCount: latestDownloads };
+    return { template, newCredits, downloadCounted, downloadsCount: latestDownloads, previouslyDownloaded };
 }
 
 app.get('/api/ui-templates/:id/download', requireUserOrAdmin, (req, res) => {
@@ -4092,6 +4257,7 @@ app.post('/api/ui-templates/:id/download', requireUserOrAdmin, (req, res) => {
             new_credits: result.newCredits,
             download_counted: result.downloadCounted,
             downloads_count: result.downloadsCount,
+            previously_downloaded: result.previouslyDownloaded,
             download_url: `/api/ui-templates/${encodeURIComponent(req.params.id)}/download/file`
         });
     } catch (err) {
@@ -5118,6 +5284,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 throw insertErr;
             }
         }
+        syncCardTags(id, creator_notes || '');
 
         if (reviewStatus === 'ai_pending') {
             try {
@@ -5373,6 +5540,7 @@ app.put('/api/cards/:id', (req, res) => {
             db.prepare(`UPDATE character_cards SET ${fields.join(', ')} WHERE id = ?`).run(...values);
         });
         updateCard();
+        syncCardTags(req.params.id, nextCreatorNotes || '');
         if (needsAiReview) {
             try {
                 enqueueAiCardReview(req.params.id);
@@ -5759,54 +5927,83 @@ function getVisibleComments(req, options) {
         commentTable, likesTable, targetColumn, targetId,
         ownerTable, ownerAlias, userId
     } = options;
-    const paginated = req.query.limit !== undefined;
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
-    const allComments = db.prepare(
-        `SELECT c.*, u.username AS author_name,
-                (SELECT owner.uploader_user_id FROM ${ownerTable} owner WHERE owner.id = c.${targetColumn}) AS ${ownerAlias}
-         FROM ${commentTable} c
-         LEFT JOIN users u ON c.user_id = u.id
-         WHERE c.${targetColumn} = ?
-         ORDER BY c.created_at DESC, c.id DESC`
-    ).all(targetId);
-
     const blockWords = getCommentEmailBlockWords();
-    const hiddenIds = new Set(
-        allComments.filter(comment => isCommentHiddenFromDisplay(comment.content, blockWords)).map(comment => comment.id)
-    );
-    const byId = new Map(allComments.map(comment => [comment.id, comment]));
-    const findRootId = (comment) => {
-        let current = comment;
-        const visited = new Set();
-        while (current?.reply_to_id) {
-            if (visited.has(current.id)) return null;
-            visited.add(current.id);
-            current = byId.get(current.reply_to_id);
-            if (!current) return null;
-        }
-        return current?.id || null;
-    };
-    const rootIdByComment = new Map(allComments.map(comment => [comment.id, findRootId(comment)]));
-    const visibleComments = allComments.filter(comment => {
-        const rootId = rootIdByComment.get(comment.id);
-        return rootId && !hiddenIds.has(comment.id) && !hiddenIds.has(rootId);
-    });
-    const visibleRoots = visibleComments.filter(comment => !comment.reply_to_id);
-    const pageRoots = paginated ? visibleRoots.slice(offset, offset + limit) : visibleRoots;
-    const pageRootIds = new Set(pageRoots.map(comment => comment.id));
-    const pageComments = visibleComments
-        .filter(comment => !paginated || pageRootIds.has(rootIdByComment.get(comment.id)))
+    const blockWordsJson = JSON.stringify(blockWords);
+    const pageRoots = db.prepare(
+        `SELECT c.id
+         FROM ${commentTable} c
+         WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
+           AND comment_is_hidden(c.content, ?) = 0
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT ? OFFSET ?`
+    ).all(targetId, blockWordsJson, limit, offset);
+    const rootIds = pageRoots.map(row => row.id);
+    let pageTree = [];
+    if (rootIds.length > 0) {
+        const rootPlaceholders = rootIds.map(() => '?').join(', ');
+        pageTree = db.prepare(
+            `WITH RECURSIVE comment_tree(id) AS (
+                SELECT id FROM ${commentTable} WHERE id IN (${rootPlaceholders})
+                UNION ALL
+                SELECT child.id
+                FROM ${commentTable} child
+                JOIN comment_tree parent ON child.reply_to_id = parent.id
+                WHERE child.${targetColumn} = ?
+             )
+             SELECT c.*, u.username AS author_name, owner.uploader_user_id AS ${ownerAlias}
+             FROM comment_tree tree
+             JOIN ${commentTable} c ON c.id = tree.id
+             LEFT JOIN users u ON c.user_id = u.id
+             LEFT JOIN ${ownerTable} owner ON owner.id = c.${targetColumn}
+             ORDER BY c.created_at DESC, c.id DESC`
+        ).all(...rootIds, targetId);
+    }
+
+    const hiddenIds = new Set(pageTree.filter(comment => isCommentHiddenFromDisplay(comment.content, blockWords)).map(comment => comment.id));
+    const byId = new Map(pageTree.map(comment => [comment.id, comment]));
+    const pageComments = pageTree
+        .filter(comment => !hiddenIds.has(comment.id))
         .map(comment => {
             if (!comment.reply_to_id || !hiddenIds.has(comment.reply_to_id)) return comment;
             let parent = byId.get(comment.reply_to_id);
             while (parent && hiddenIds.has(parent.id)) parent = byId.get(parent.reply_to_id);
-            return { ...comment, reply_to_id: parent?.id || comment.reply_to_id };
+            return { ...comment, reply_to_id: parent?.id || null };
         });
 
-    const hotComment = visibleComments
-        .filter(comment => Number(comment.likes_count || 0) >= 5)
-        .sort((a, b) => Number(b.likes_count || 0) - Number(a.likes_count || 0))[0];
+    const rootTotal = db.prepare(
+        `SELECT COUNT(*) AS count FROM ${commentTable} c
+         WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
+           AND comment_is_hidden(c.content, ?) = 0`
+    ).get(targetId, blockWordsJson).count;
+    const visibleTreeSql = `
+        WITH RECURSIVE visible_tree(id) AS (
+            SELECT c.id FROM ${commentTable} c
+            WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
+              AND comment_is_hidden(c.content, ?) = 0
+            UNION ALL
+            SELECT child.id
+            FROM ${commentTable} child
+            JOIN visible_tree parent ON child.reply_to_id = parent.id
+            WHERE child.${targetColumn} = ?
+        )`;
+    const total = db.prepare(
+        `${visibleTreeSql}
+         SELECT COUNT(*) AS count
+         FROM visible_tree tree
+         JOIN ${commentTable} c ON c.id = tree.id
+         WHERE comment_is_hidden(c.content, ?) = 0`
+    ).get(targetId, blockWordsJson, targetId, blockWordsJson).count;
+    const hotComment = db.prepare(
+        `${visibleTreeSql}
+         SELECT c.id
+         FROM visible_tree tree
+         JOIN ${commentTable} c ON c.id = tree.id
+         WHERE comment_is_hidden(c.content, ?) = 0 AND c.likes_count >= 5
+         ORDER BY c.likes_count DESC, c.created_at DESC
+         LIMIT 1`
+    ).get(targetId, blockWordsJson, targetId, blockWordsJson);
     let likedCommentIds = new Set();
     if (userId && pageComments.length > 0) {
         const commentPlaceholders = pageComments.map(() => '?').join(', ');
@@ -5822,12 +6019,11 @@ function getVisibleComments(req, options) {
         user_liked: likedCommentIds.has(comment.id),
         is_hot: Boolean(hotComment && hotComment.id === comment.id)
     }));
-    if (!paginated) return result;
     return {
         comments: result,
-        total: visibleComments.length,
-        root_total: visibleRoots.length,
-        has_more: offset + pageRoots.length < visibleRoots.length,
+        total,
+        root_total: rootTotal,
+        has_more: offset + pageRoots.length < rootTotal,
         next_offset: offset + pageRoots.length
     };
 }
@@ -7178,6 +7374,7 @@ app.put('/api/admin/settings', authenticateAdmin, (req, res) => {
             if (!ALLOWED_SETTINGS_KEYS.has(key)) continue;
             stmt.run(key, String(value), now);
         }
+        if (Object.keys(updates).some(key => TAG_SETTING_KEYS.has(key))) clearCardListCache('tag-settings');
         const hasAnnouncementUpdate = Object.prototype.hasOwnProperty.call(updates, 'announcement_title')
             || Object.prototype.hasOwnProperty.call(updates, 'announcement_content')
             || Object.prototype.hasOwnProperty.call(updates, 'announcement_enabled')
