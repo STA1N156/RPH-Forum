@@ -987,6 +987,14 @@ function isCommentEmailBlocked(content) {
     return getCommentEmailBlockWords().some(word => text.includes(normalizeCommentEmailBlockText(word)));
 }
 
+function isCommentHiddenFromDisplay(content, blockWords = getCommentEmailBlockWords()) {
+    const text = normalizeCommentEmailBlockText(content);
+    if (!text) return false;
+    const compactText = text.replace(/\s+/g, '');
+    return /^\d+$/.test(compactText)
+        || blockWords.some(word => text.includes(normalizeCommentEmailBlockText(word)));
+}
+
 function normalizeBaseUrl(value) {
     return String(value || '').trim().replace(/\/+$/, '');
 }
@@ -5727,6 +5735,84 @@ function countTodayCreditComments(userId, todayStr) {
 }
 
 // ============== Comment Routes ==============
+function getVisibleComments(req, options) {
+    const {
+        commentTable, likesTable, targetColumn, targetId,
+        ownerTable, ownerAlias, userId
+    } = options;
+    const paginated = req.query.limit !== undefined;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const allComments = db.prepare(
+        `SELECT c.*, u.username AS author_name,
+                (SELECT owner.uploader_user_id FROM ${ownerTable} owner WHERE owner.id = c.${targetColumn}) AS ${ownerAlias}
+         FROM ${commentTable} c
+         LEFT JOIN users u ON c.user_id = u.id
+         WHERE c.${targetColumn} = ?
+         ORDER BY c.created_at DESC, c.id DESC`
+    ).all(targetId);
+
+    const blockWords = getCommentEmailBlockWords();
+    const hiddenIds = new Set(
+        allComments.filter(comment => isCommentHiddenFromDisplay(comment.content, blockWords)).map(comment => comment.id)
+    );
+    const byId = new Map(allComments.map(comment => [comment.id, comment]));
+    const findRootId = (comment) => {
+        let current = comment;
+        const visited = new Set();
+        while (current?.reply_to_id) {
+            if (visited.has(current.id)) return null;
+            visited.add(current.id);
+            current = byId.get(current.reply_to_id);
+            if (!current) return null;
+        }
+        return current?.id || null;
+    };
+    const rootIdByComment = new Map(allComments.map(comment => [comment.id, findRootId(comment)]));
+    const visibleComments = allComments.filter(comment => {
+        const rootId = rootIdByComment.get(comment.id);
+        return rootId && !hiddenIds.has(comment.id) && !hiddenIds.has(rootId);
+    });
+    const visibleRoots = visibleComments.filter(comment => !comment.reply_to_id);
+    const pageRoots = paginated ? visibleRoots.slice(offset, offset + limit) : visibleRoots;
+    const pageRootIds = new Set(pageRoots.map(comment => comment.id));
+    const pageComments = visibleComments
+        .filter(comment => !paginated || pageRootIds.has(rootIdByComment.get(comment.id)))
+        .map(comment => {
+            if (!comment.reply_to_id || !hiddenIds.has(comment.reply_to_id)) return comment;
+            let parent = byId.get(comment.reply_to_id);
+            while (parent && hiddenIds.has(parent.id)) parent = byId.get(parent.reply_to_id);
+            return { ...comment, reply_to_id: parent?.id || comment.reply_to_id };
+        });
+
+    const hotComment = visibleComments
+        .filter(comment => Number(comment.likes_count || 0) >= 5)
+        .sort((a, b) => Number(b.likes_count || 0) - Number(a.likes_count || 0))[0];
+    let likedCommentIds = new Set();
+    if (userId && pageComments.length > 0) {
+        const commentPlaceholders = pageComments.map(() => '?').join(', ');
+        const liked = db.prepare(
+            `SELECT comment_id FROM ${likesTable}
+             WHERE user_id = ? AND comment_id IN (${commentPlaceholders})`
+        ).all(userId, ...pageComments.map(comment => comment.id));
+        likedCommentIds = new Set(liked.map(row => row.comment_id));
+    }
+
+    const result = pageComments.map(comment => ({
+        ...comment,
+        user_liked: likedCommentIds.has(comment.id),
+        is_hot: Boolean(hotComment && hotComment.id === comment.id)
+    }));
+    if (!paginated) return result;
+    return {
+        comments: result,
+        total: visibleComments.length,
+        root_total: visibleRoots.length,
+        has_more: offset + pageRoots.length < visibleRoots.length,
+        next_offset: offset + pageRoots.length
+    };
+}
+
 app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
     try {
         const cardId = req.params.cardId;
@@ -5741,43 +5827,17 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
 
-        const comments = db.prepare(
-            `SELECT c.*, u.username as author_name,
-                    (SELECT cc2.uploader_user_id FROM character_cards cc2 WHERE cc2.id = c.card_id) as card_uploader_id
-             FROM character_comments c 
-             LEFT JOIN users u ON c.user_id = u.id 
-             WHERE c.card_id = ? 
-             ORDER BY c.created_at ASC`
-        ).all(cardId);
-        markPerf(req, 'comments-db-read', { rows: comments.length });
-
-        // Find the hot comment (highest likes >= 5)
-        const hotComment = db.prepare(
-            `SELECT id FROM character_comments 
-             WHERE card_id = ? AND likes_count >= 5 
-             ORDER BY likes_count DESC LIMIT 1`
-        ).get(cardId);
-        markPerf(req, 'comments-hot-read', { found: Boolean(hotComment) });
-
-        // Check which comments the current user has liked
-        let likedCommentIds = new Set();
-        if (userId) {
-            const liked = db.prepare(
-                'SELECT comment_id FROM comment_likes WHERE user_id = ? AND comment_id IN (SELECT id FROM character_comments WHERE card_id = ?)'
-            ).all(userId, cardId);
-            likedCommentIds = new Set(liked.map(l => l.comment_id));
-            markPerf(req, 'comments-liked-read', { rows: liked.length });
-        }
-
-        const result = comments.map(c => ({
-            ...c,
-            user_liked: likedCommentIds.has(c.id),
-            is_hot: hotComment && hotComment.id === c.id
-        }));
-        markPerf(req, 'comments-map', { rows: result.length });
-
+        const result = getVisibleComments(req, {
+            commentTable: 'character_comments',
+            likesTable: 'comment_likes',
+            targetColumn: 'card_id',
+            targetId: cardId,
+            ownerTable: 'character_cards',
+            ownerAlias: 'card_uploader_id',
+            userId
+        });
+        markPerf(req, 'comments-visible', { rows: Array.isArray(result) ? result.length : result.comments.length, total: result.total });
         res.json(result);
-        markPerf(req, 'comments-response-json', { rows: result.length });
     } catch (err) {
         console.error('Fetch comments error:', err);
         res.status(500).json({ error: '获取评论失败' });
@@ -5908,6 +5968,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         }
         res.json({
             comment,
+            comment_hidden: isCommentHiddenFromDisplay(comment.content),
             new_credits: updatedUser.download_credits,
             credits_earned: canEarnCredits,
             card_metrics: getCardMetrics(req.params.cardId, { viewer: { user: req.user } })
@@ -5932,40 +5993,17 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
-        const comments = db.prepare(
-            `SELECT c.*, u.username as author_name,
-                    (SELECT ut.uploader_user_id FROM ui_templates ut WHERE ut.id = c.template_id) as template_uploader_id
-             FROM ui_template_comments c
-             LEFT JOIN users u ON c.user_id = u.id
-             WHERE c.template_id = ?
-             ORDER BY c.created_at ASC`
-        ).all(templateId);
-        markPerf(req, 'ui-comments-db-read', { rows: comments.length });
-
-        const hotComment = db.prepare(
-            `SELECT id FROM ui_template_comments
-             WHERE template_id = ? AND likes_count >= 5
-             ORDER BY likes_count DESC LIMIT 1`
-        ).get(templateId);
-        markPerf(req, 'ui-comments-hot-read', { found: Boolean(hotComment) });
-
-        let likedCommentIds = new Set();
-        if (userId) {
-            const liked = db.prepare(
-                'SELECT comment_id FROM ui_template_comment_likes WHERE user_id = ? AND comment_id IN (SELECT id FROM ui_template_comments WHERE template_id = ?)'
-            ).all(userId, templateId);
-            likedCommentIds = new Set(liked.map(l => l.comment_id));
-            markPerf(req, 'ui-comments-liked-read', { rows: liked.length });
-        }
-
-        const result = comments.map(c => ({
-            ...c,
-            user_liked: likedCommentIds.has(c.id),
-            is_hot: hotComment && hotComment.id === c.id
-        }));
-        markPerf(req, 'ui-comments-map', { rows: result.length });
+        const result = getVisibleComments(req, {
+            commentTable: 'ui_template_comments',
+            likesTable: 'ui_template_comment_likes',
+            targetColumn: 'template_id',
+            targetId: templateId,
+            ownerTable: 'ui_templates',
+            ownerAlias: 'template_uploader_id',
+            userId
+        });
+        markPerf(req, 'ui-comments-visible', { rows: Array.isArray(result) ? result.length : result.comments.length, total: result.total });
         res.json(result);
-        markPerf(req, 'ui-comments-response-json', { rows: result.length });
     } catch (err) {
         console.error('Fetch UI template comments error:', err);
         res.status(500).json({ error: '获取评论失败' });
@@ -6087,6 +6125,7 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         }
         res.json({
             comment,
+            comment_hidden: isCommentHiddenFromDisplay(comment.content),
             new_credits: updatedUser.download_credits,
             credits_earned: canEarnCredits,
             template_metrics: getUiTemplateMetrics(req.params.templateId, { viewer: { user: req.user } })
