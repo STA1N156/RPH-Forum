@@ -5118,17 +5118,23 @@
                                 var body = document.body;
                                 var html = document.documentElement;
                                 if (!body || !html) { resizePending = false; return; }
-                                var contentBottom = 0;
+                                var bodyTop = body.getBoundingClientRect().top;
+                                var contentBottom = bodyTop;
                                 for (var i = 0; i < body.children.length; i++) {
                                     var child = body.children[i];
                                     if (/^(SCRIPT|STYLE|LINK)$/.test(child.tagName)) continue;
                                     if (window.getComputedStyle(child).position === 'fixed') continue;
                                     var rect = child.getBoundingClientRect();
-                                    contentBottom = Math.max(contentBottom, rect.bottom, child.offsetTop + child.offsetHeight);
+                                    var marginBottom = parseFloat(window.getComputedStyle(child).marginBottom) || 0;
+                                    contentBottom = Math.max(contentBottom, rect.bottom + marginBottom, bodyTop + child.offsetTop + child.offsetHeight);
                                 }
-                                var viewportHeight = Math.max(window.innerHeight || 0, html.clientHeight || 0);
-                                var scrollHeight = Math.max(body.scrollHeight, html.scrollHeight);
-                                var height = Math.ceil(scrollHeight > viewportHeight + 1 ? scrollHeight : contentBottom);
+                                if (body.childNodes.length) {
+                                    var range = document.createRange();
+                                    range.selectNodeContents(body);
+                                    var rangeRect = range.getBoundingClientRect();
+                                    contentBottom = Math.max(contentBottom, rangeRect.bottom);
+                                }
+                                var height = Math.max(1, Math.ceil(contentBottom - bodyTop));
                                 if (Math.abs(height - lastHeight) > 1) {
                                     lastHeight = height;
                                     window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: height }, '*');
@@ -6051,10 +6057,7 @@
                         const nextHeight = Math.min(Math.max(height, 1), 50000);
                         const currentHeight = sourceFrame.getBoundingClientRect().height;
                         if (Math.abs(nextHeight - currentHeight) <= 1) return;
-                        const isFeedbackGrowth = nextHeight > currentHeight && nextHeight - currentHeight <= 8;
-                        const feedbackCount = isFeedbackGrowth ? Number(sourceFrame.dataset.rphFeedbackCount || 0) + 1 : 0;
-                        sourceFrame.dataset.rphFeedbackCount = String(feedbackCount);
-                        if (feedbackCount < 2) sourceFrame.style.height = nextHeight + 'px';
+                        sourceFrame.style.height = nextHeight + 'px';
                     } else if (data.type === 'slash_command') {
                         showToast(`触发指令：${data.content}`, 'success');
                     }
