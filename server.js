@@ -1468,11 +1468,11 @@ const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_C
 const cardListCache = new Map();
 let cardListCacheRevision = 1;
 
-function getCardListCacheKey(req, sortMode, zone) {
-    if (req.admin) return `admin:${req.admin.id}:${zone}:${sortMode}`;
-    if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${zone}:${sortMode}`;
-    if (req.user) return `user:${req.user.id}:${zone}:${sortMode}`;
-    return `guest:${zone}:${sortMode}`;
+function getCardListCacheKey(req, sortMode, zone, representation = 'full') {
+    if (req.admin) return `admin:${req.admin.id}:${zone}:${sortMode}:${representation}`;
+    if (isModeratorUser(req.user)) return `moderator:${req.user.id}:${zone}:${sortMode}:${representation}`;
+    if (req.user) return `user:${req.user.id}:${zone}:${sortMode}:${representation}`;
+    return `guest:${zone}:${sortMode}:${representation}`;
 }
 
 function hasRequestEtag(req, etag) {
@@ -3497,8 +3497,14 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
         const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
-        markPerf(req, 'cards-start', { sortMode, zone });
-        const cacheKey = getCardListCacheKey(req, sortMode, zone);
+        const idsOnly = req.query.ids_only === '1';
+        const requestedLimit = parseInt(req.query.limit, 10);
+        const limit = !idsOnly && Number.isFinite(requestedLimit) && requestedLimit > 0
+            ? Math.min(requestedLimit, 100)
+            : 0;
+        markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit });
+        const representation = idsOnly ? 'ids' : (limit ? `full-${limit}` : 'full');
+        const cacheKey = getCardListCacheKey(req, sortMode, zone, representation);
         const cached = getFreshCardListCache(cacheKey);
         if (cached) {
             markPerf(req, 'cards-cache-hit', { bytes: cached.body.length, gzipBytes: cached.gzipBody?.length || 0 });
@@ -3540,8 +3546,9 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
-        const rawCards = db.prepare(
-            `SELECT cc.id, cc.name, cc.description, cc.creator_notes,
+        const selectColumns = idsOnly
+            ? 'cc.id'
+            : `cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
@@ -3549,12 +3556,21 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     COALESCE(cc.ui_template_count, 0) AS ui_template_count,
                     COALESCE(cc.ui_template_variable_count, 0) AS ui_template_variable_count,
                     ${commentCountSql} AS comment_count,
-                    ${commentHeatCountSql} AS comment_heat_count
+                    ${commentHeatCountSql} AS comment_heat_count`;
+        const rawCards = db.prepare(
+            `SELECT ${selectColumns}
              FROM character_cards cc
              ${whereClause}
-             ORDER BY ${orderByClause}`
-        ).all(...params);
+             ORDER BY ${orderByClause}
+             ${limit ? 'LIMIT ?' : ''}`
+        ).all(...params, ...(limit ? [limit] : []));
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
+        if (idsOnly) {
+            const ids = rawCards.map(card => card.id);
+            const newCache = setCardListCache(cacheKey, ids);
+            markPerf(req, 'cards-cache-store', { rows: ids.length, bytes: newCache.body.length, gzipBytes: newCache.gzipBody.length, idsOnly: true });
+            return sendCardListCache(req, res, newCache);
+        }
         const cards = rawCards.map(card => sanitizeCharacterCardForClient(
             attachUiTemplateSummary(card),
             { viewer: { admin: req.admin, user: req.user } }

@@ -549,7 +549,7 @@
             <!-- Card List -->
             <div v-else class="forum-card-list flex flex-col gap-4 animate-fade-in">
 
-                    <div v-if="contentSection === 'uitemplates'" v-for="template in pagedUiTemplates" :key="cardSort + '-' + template.id"
+                    <div v-if="contentSection === 'uitemplates'" v-for="template in pagedUiTemplates" :key="template.id"
                          @click="openTemplateDetail(template)"
                          class="content-card group relative flex bg-white rounded-3xl border border-blue-100 shadow-sm hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden cursor-pointer min-h-[12rem] sm:min-h-[13.5rem] h-auto">
                         <div v-if="template.is_featured" class="absolute top-2.5 left-2.5 z-10">
@@ -642,7 +642,7 @@
                         </div>
                     </div>
 
-                    <div v-if="contentSection !== 'uitemplates'" v-for="card in pagedCards" :key="cardSort + '-' + card.id"
+                    <div v-if="contentSection !== 'uitemplates'" v-for="card in pagedCards" :key="card.id"
                          @click="isR18Card(card) && !r18Confirmed ? showR18Disclaimer() : previewCard(card)"
                          class="content-card group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
@@ -665,7 +665,7 @@
                         <div class="absolute inset-0 flex items-center justify-center">
                             <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
                         </div>
-                        <img :src="card.thumbnail_url || defaultAvatar" :data-card-id="card.id" loading="lazy" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
+                        <img v-lazy-card-image="card.thumbnail_url || defaultAvatar" :data-card-id="card.id" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
                         
                         <!-- Download Count - Admin or card owner in Mine tab -->
                         <div v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
@@ -2164,7 +2164,7 @@
             }
         };
 
-        createApp({
+        const app = createApp({
             components: { CommentComposer },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
@@ -2562,10 +2562,11 @@
                     }
                 };
 
-                const handleAdminLogout = () => {
-                    fetch(API_BASE + '/api/auth/logout', { method: 'POST' }).catch(() => {});
+                const handleAdminLogout = async () => {
+                    try { await fetch(API_BASE + '/api/auth/logout', { method: 'POST' }); } catch {}
                     isAdmin.value = false;
                     currentTab.value = 'all';
+                    clearCardListCaches();
                     fetchCards();
                     fetchUiTemplates();
                     showToast('已退出管理员模式', 'info');
@@ -2756,11 +2757,14 @@
                     userToken.value = '';
                     currentUser.value = null;
                     userTokenStorage.removeItem('user_token');
+                    clearCardListCaches();
                     r18ConfirmedRaw.value = false;
                     safeStorage.removeItem('r18_confirmed');
                     showEmailBindModal.value = false;
                     showNewApiModal.value = false;
                     showUserSettingsModal.value = false;
+                    fetchCards();
+                    fetchUiTemplates();
                     showToast('已退出登录', 'info');
                 };
 
@@ -2994,7 +2998,7 @@
                             clearInterval(announcementConfirmTimer);
                             announcementConfirmTimer = null;
                         }
-                    }, 1000);
+                    }, 100);
                 };
 
                 const applyAnnouncementSettings = (settings = {}) => {
@@ -3266,10 +3270,15 @@
                     if (sortMode === 'daily' || sortMode === 'weekly' || sortMode === 'monthly') {
                         // Time-range rankings are already ordered by the server using activity in that period.
                     } else if (sortMode === 'hot') {
-                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a));
+                        result.sort((a, b) => computeHeatScore(b) - computeHeatScore(a)
+                            || Number(b.downloads_count || 0) - Number(a.downloads_count || 0)
+                            || createdTime(b) - createdTime(a));
+                    } else if (sortMode === 'featured') {
+                        result = result.filter(c => Number(c.is_featured || 0) === 1);
+                        result.sort((a, b) => createdTime(b) - createdTime(a));
                     } else if (sortMode === 'updated') {
                         result = result.filter(c => updatedTime(c) > createdTime(c));
-                        result.sort((a, b) => updatedTime(b) - updatedTime(a));
+                        result.sort((a, b) => updatedTime(b) - updatedTime(a) || createdTime(b) - createdTime(a));
                     } else {
                         result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     }
@@ -3353,6 +3362,93 @@
                 let cardsRequestId = 0;
                 let cardCountsRequestId = 0;
                 let uiTemplatesRequestId = 0;
+                let fullCardCatalogTimer = null;
+                const INITIAL_CARD_BATCH_SIZE = 10;
+                const PERIOD_CARD_SORTS = new Set(['daily', 'weekly', 'monthly']);
+                const cardCatalogCache = new Map();
+                const cardRankOrderCache = new Map();
+                const cardRankOrderRequests = new Map();
+                const cardFullCatalogRequests = new Set();
+
+                const getCardCacheScope = () => {
+                    if (isAdmin.value) return 'admin';
+                    if (userToken.value) return `user:${userToken.value}`;
+                    return 'guest';
+                };
+
+                const clearCardListCaches = () => {
+                    cardCatalogCache.clear();
+                    cardRankOrderCache.clear();
+                    cardRankOrderRequests.clear();
+                    cardFullCatalogRequests.clear();
+                    if (fullCardCatalogTimer) clearTimeout(fullCardCatalogTimer);
+                    fullCardCatalogTimer = null;
+                };
+
+                const getCardCatalogKey = (scope, zone) => `${scope}:${zone}`;
+                const getCardRankKey = (scope, zone, sort) => `${scope}:${zone}:${sort}`;
+                const getCardRequestHeaders = () => {
+                    const headers = {};
+                    if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                    else if (userToken.value) Object.assign(headers, userAuthHeaders());
+                    return headers;
+                };
+
+                const prepareCardList = (items) => items.map(card => {
+                    parseCreatorNotes(card);
+                    card.ui_template_count = Number(card.ui_template_count || 0);
+                    card.has_ui_templates = isUiTemplateCard(card);
+                    const assetVersion = getCardAssetVersion(card);
+                    card.thumbnail_url = buildCardAssetUrl(card.id, 'thumbnail', assetVersion);
+                    card.preview_image_url = buildCardAssetUrl(card.id, 'preview-image', assetVersion);
+                    card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
+                    return card;
+                });
+
+                const orderCardsById = (items, orderedIds) => {
+                    const byId = new Map(items.map(card => [card.id, card]));
+                    const ordered = orderedIds.map(id => byId.get(id)).filter(Boolean);
+                    const included = new Set(orderedIds);
+                    return ordered.concat(items.filter(card => !included.has(card.id)));
+                };
+
+                const loadCardRankOrder = (sort, zone, scope) => {
+                    const key = getCardRankKey(scope, zone, sort);
+                    if (cardRankOrderCache.has(key)) return Promise.resolve(cardRankOrderCache.get(key));
+                    if (cardRankOrderRequests.has(key)) return cardRankOrderRequests.get(key);
+                    const request = fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(sort) + '&zone=' + zone + '&ids_only=1', {
+                        headers: getCardRequestHeaders()
+                    }).then(async resp => {
+                        if (!resp.ok) throw new Error('排行加载失败');
+                        const ids = await resp.json();
+                        if (!Array.isArray(ids)) throw new Error('排行数据格式错误');
+                        cardRankOrderCache.set(key, ids);
+                        return ids;
+                    }).finally(() => cardRankOrderRequests.delete(key));
+                    cardRankOrderRequests.set(key, request);
+                    return request;
+                };
+
+                const applyCardSort = async (items, sort, zone, scope, requestId) => {
+                    cards.value = items;
+                    if (!PERIOD_CARD_SORTS.has(sort)) return;
+                    const orderedIds = await loadCardRankOrder(sort, zone, scope);
+                    if (requestId !== cardsRequestId || sort !== cardSort.value || zone !== (contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed')) return;
+                    cards.value = orderCardsById(items, orderedIds);
+                };
+
+                const scheduleCardRankPrefetch = (catalog, zone, scope) => {
+                    if (!catalog.complete || catalog.rankPrefetchStarted) return;
+                    catalog.rankPrefetchStarted = true;
+                    const run = async () => {
+                        for (const sort of PERIOD_CARD_SORTS) {
+                            if (scope !== getCardCacheScope()) return;
+                            try { await loadCardRankOrder(sort, zone, scope); } catch {}
+                        }
+                    };
+                    if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 4000 });
+                    else setTimeout(run, 1500);
+                };
 
                 const fetchCardSectionCounts = async () => {
                     const requestId = ++cardCountsRequestId;
@@ -3369,41 +3465,79 @@
                     } catch {}
                 };
 
-                const fetchCards = async ({ showLoading = false } = {}) => {
-                    fetchCardSectionCounts();
-                    const requestId = ++cardsRequestId;
+                const scheduleFullCardCatalog = (zone, scope) => {
+                    if (fullCardCatalogTimer) clearTimeout(fullCardCatalogTimer);
+                    fullCardCatalogTimer = setTimeout(() => {
+                        fullCardCatalogTimer = null;
+                        const activeZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
+                        if (scope === getCardCacheScope() && zone === activeZone) fetchCards();
+                    }, 1000);
+                };
+
+                const fetchCards = async ({ showLoading = false, preferCache = false, initialBatch = false } = {}) => {
                     const requestedSort = cardSort.value;
                     const requestedZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
-                    const showFullLoading = showLoading || (cards.value.length === 0 && contentSection.value !== 'uitemplates');
+                    const requestedScope = getCardCacheScope();
+                    const catalogKey = getCardCatalogKey(requestedScope, requestedZone);
+                    if (!initialBatch && cardFullCatalogRequests.has(catalogKey)) return;
+                    fetchCardSectionCounts();
+                    const requestId = ++cardsRequestId;
+                    const cachedCatalog = cardCatalogCache.get(catalogKey);
+                    const showFullLoading = !cachedCatalog && (showLoading || (cards.value.length === 0 && contentSection.value !== 'uitemplates'));
                     if (showFullLoading) loading.value = true;
+                    if (cachedCatalog) {
+                        loading.value = false;
+                        await applyCardSort(cachedCatalog.items, requestedSort, requestedZone, requestedScope, requestId);
+                        if (cachedCatalog.complete) scheduleCardRankPrefetch(cachedCatalog, requestedZone, requestedScope);
+                        else scheduleFullCardCatalog(requestedZone, requestedScope);
+                        if (preferCache) return;
+                    }
+                    if (!initialBatch) {
+                        if (fullCardCatalogTimer) clearTimeout(fullCardCatalogTimer);
+                        fullCardCatalogTimer = null;
+                        cardFullCatalogRequests.add(catalogKey);
+                    }
                     try {
-                        const headers = {};
-                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
-                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(requestedSort) + '&zone=' + requestedZone, { headers });
-                        if (resp.status === 304) return;
+                        const batchQuery = initialBatch ? '&limit=' + INITIAL_CARD_BATCH_SIZE : '';
+                        const resp = await fetch(API_BASE + '/api/cards?sort=latest&zone=' + requestedZone + batchQuery, { headers: getCardRequestHeaders() });
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
-                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value || requestedZone !== (contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed')) return;
                         const items = Array.isArray(data) ? data : (data.items || []);
-                        // Process tags for each card
-                        cards.value = items.map(card => {
-                            parseCreatorNotes(card);
-                            card.ui_template_count = Number(card.ui_template_count || 0);
-                            card.has_ui_templates = isUiTemplateCard(card);
-                            // Use lightweight cached images instead of the original asset in common views.
-                            const assetVersion = getCardAssetVersion(card);
-                            card.thumbnail_url = buildCardAssetUrl(card.id, 'thumbnail', assetVersion);
-                            card.preview_image_url = buildCardAssetUrl(card.id, 'preview-image', assetVersion);
-                            card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
-                            return card;
-                        });
+                        const catalog = {
+                            items: prepareCardList(items),
+                            complete: !initialBatch || items.length < INITIAL_CARD_BATCH_SIZE,
+                            rankPrefetchStarted: false
+                        };
+                        cardCatalogCache.set(catalogKey, catalog);
+                        const activeScope = getCardCacheScope();
+                        if (activeScope !== requestedScope) cardCatalogCache.set(getCardCatalogKey(activeScope, requestedZone), catalog);
+                        for (const sort of PERIOD_CARD_SORTS) cardRankOrderCache.delete(getCardRankKey(activeScope, requestedZone, sort));
+                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value || requestedZone !== (contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed')) return;
+                        await applyCardSort(catalog.items, requestedSort, requestedZone, activeScope, requestId);
+                        if (catalog.complete) scheduleCardRankPrefetch(catalog, requestedZone, activeScope);
+                        else scheduleFullCardCatalog(requestedZone, activeScope);
                     } catch (err) {
                         if (requestId !== cardsRequestId) return;
                         console.error('Fetch error:', err);
                         showToast('加载失败，请检查服务器连接', 'error');
                     } finally {
+                        if (!initialBatch) cardFullCatalogRequests.delete(catalogKey);
                         if (showFullLoading && requestId === cardsRequestId) loading.value = false;
+                    }
+                };
+
+                const switchCardSort = async () => {
+                    const requestId = ++cardsRequestId;
+                    const zone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
+                    const scope = getCardCacheScope();
+                    const catalog = cardCatalogCache.get(getCardCatalogKey(scope, zone));
+                    if (!catalog) return fetchCards({ showLoading: true });
+                    loading.value = false;
+                    try {
+                        await applyCardSort(catalog.items, cardSort.value, zone, scope, requestId);
+                        if (!catalog.complete) fetchCards();
+                    } catch (err) {
+                        if (requestId === cardsRequestId) showToast(err.message || '排行加载失败', 'error');
                     }
                 };
 
@@ -5843,7 +5977,7 @@
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(cardSort, () => {
                     if (contentSection.value === 'uitemplates') fetchUiTemplates({ showLoading: true });
-                    else fetchCards({ showLoading: true });
+                    else switchCardSort();
                 });
                 watch(contentSection, (section) => {
                     if (section === 'unreviewed' && cardSort.value === 'featured') {
@@ -5851,7 +5985,7 @@
                         return;
                     }
                     if (section === 'uitemplates') fetchUiTemplates({ showLoading: true });
-                    else fetchCards({ showLoading: true });
+                    else fetchCards({ showLoading: true, preferCache: true });
                 });
                 watch(() => showUserAuthModal.value, (val) => {
                     if (val && userAuthMode.value !== 'login') resetCaptcha();
@@ -5916,7 +6050,7 @@
 
                 onMounted(() => {
                     loadPublicSettings();
-                    fetchCards({ showLoading: true });
+                    fetchCards({ showLoading: true, initialBatch: true });
                     checkAdminToken();
                     checkUserToken();
                     trackVisit();
@@ -5936,6 +6070,7 @@
                     window.removeEventListener('message', handleWindowMessage);
                     if (commentsLoadObserver) commentsLoadObserver.disconnect();
                     if (tagLibraryLoadObserver) tagLibraryLoadObserver.disconnect();
+                    if (fullCardCatalogTimer) clearTimeout(fullCardCatalogTimer);
                     if (announcementPollTimer) {
                         clearInterval(announcementPollTimer);
                         announcementPollTimer = null;
@@ -5986,7 +6121,40 @@
                     currentPage, totalPages, pageNumbers, currentListLength, jumpPageInput, jumpToPage
                 };
             }
-        }).mount('#app');
+        });
+
+        const loadCardImage = (element) => {
+            const source = element.dataset.lazySource;
+            if (source && element.getAttribute('src') !== source) element.src = source;
+        };
+        const cardImageObserver = 'IntersectionObserver' in window
+            ? new IntersectionObserver(entries => {
+                entries.forEach(entry => {
+                    if (!entry.isIntersecting) return;
+                    loadCardImage(entry.target);
+                    cardImageObserver.unobserve(entry.target);
+                });
+            }, { rootMargin: '200px 0px' })
+            : null;
+        app.directive('lazy-card-image', {
+            mounted(element, binding) {
+                element.dataset.lazySource = String(binding.value || '');
+                if (cardImageObserver) cardImageObserver.observe(element);
+                else loadCardImage(element);
+            },
+            updated(element, binding) {
+                const source = String(binding.value || '');
+                if (source === element.dataset.lazySource) return;
+                element.dataset.lazySource = source;
+                element.style.opacity = '0';
+                if (cardImageObserver) cardImageObserver.observe(element);
+                else loadCardImage(element);
+            },
+            unmounted(element) {
+                cardImageObserver?.unobserve(element);
+            }
+        });
+        app.mount('#app');
     </script>
 </body>
 </html>
