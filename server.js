@@ -1412,7 +1412,7 @@ function cardCommentCountExpr(cardAlias = 'character_cards') {
 }
 
 function cardCommentHeatCountExpr(cardAlias = 'character_cards') {
-    return `COALESCE(${cardAlias}.comment_count_override, (SELECT COUNT(DISTINCT COALESCE(CAST(cmt.user_id AS TEXT), cmt.id)) FROM character_comments cmt WHERE cmt.card_id = ${cardAlias}.id))`;
+    return cardCommentCountExpr(cardAlias);
 }
 
 function templateCommentCountExpr(templateAlias = 'ui_templates') {
@@ -1420,7 +1420,7 @@ function templateCommentCountExpr(templateAlias = 'ui_templates') {
 }
 
 function templateCommentHeatCountExpr(templateAlias = 'ui_templates') {
-    return `COALESCE(${templateAlias}.comment_count_override, (SELECT COUNT(DISTINCT COALESCE(CAST(utc.user_id AS TEXT), utc.id)) FROM ui_template_comments utc WHERE utc.template_id = ${templateAlias}.id))`;
+    return templateCommentCountExpr(templateAlias);
 }
 
 function getRankingPeriodModifier(sortMode) {
@@ -1432,7 +1432,7 @@ function cardPeriodHeatExpr(cardAlias, periodModifier) {
     return `(
         (SELECT COUNT(*) FROM content_view_events cve
          WHERE cve.content_type = 'card' AND cve.content_id = ${cardAlias}.id AND cve.created_at >= ${cutoff}) * ${VIEW_HEAT_WEIGHT}
-        + (SELECT COUNT(DISTINCT COALESCE(CAST(cmt.user_id AS TEXT), cmt.id)) FROM character_comments cmt
+        + (SELECT COUNT(*) FROM character_comments cmt
            WHERE cmt.card_id = ${cardAlias}.id AND cmt.created_at >= ${cutoff}) * ${COMMENT_HEAT_WEIGHT}
         + (SELECT COUNT(*) FROM card_downloads cd
            WHERE cd.card_id = ${cardAlias}.id AND cd.created_at >= ${cutoff}) * ${DOWNLOAD_HEAT_WEIGHT}
@@ -1444,7 +1444,7 @@ function templatePeriodHeatExpr(templateAlias, periodModifier) {
     return `(
         (SELECT COUNT(*) FROM content_view_events cve
          WHERE cve.content_type = 'ui_template' AND cve.content_id = ${templateAlias}.id AND cve.created_at >= ${cutoff}) * ${VIEW_HEAT_WEIGHT}
-        + (SELECT COUNT(DISTINCT COALESCE(CAST(utc.user_id AS TEXT), utc.id)) FROM ui_template_comments utc
+        + (SELECT COUNT(*) FROM ui_template_comments utc
            WHERE utc.template_id = ${templateAlias}.id AND utc.created_at >= ${cutoff}) * ${COMMENT_HEAT_WEIGHT}
         + (SELECT COUNT(*) FROM ui_template_downloads utd
            WHERE utd.template_id = ${templateAlias}.id AND utd.created_at >= ${cutoff}) * ${DOWNLOAD_HEAT_WEIGHT}
@@ -6019,12 +6019,8 @@ async function getVisibleComments(req, options) {
             WHERE child.${targetColumn} = ?
         )`;
     const totalQuery = sqliteReadPool.get(
-        `${visibleTreeSql}
-         SELECT COUNT(*) AS count
-         FROM visible_tree tree
-         JOIN ${commentTable} c ON c.id = tree.id
-         WHERE comment_is_hidden(c.content, ?) = 0`,
-        [targetId, blockWordsJson, targetId, blockWordsJson]
+        `SELECT COUNT(*) AS count FROM ${commentTable} WHERE ${targetColumn} = ?`,
+        [targetId]
     );
     const hotCommentQuery = sqliteReadPool.get(
         `${visibleTreeSql}
