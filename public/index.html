@@ -3275,6 +3275,7 @@
                 let catalogAuthReady = null;
                 let cardRequestController = null;
                 let uiTemplatesRequestController = null;
+                let cardTagsRequestController = null;
                 const cardPageCache = new Map();
                 const uiTemplatePageCache = new Map();
                 const CARD_PAGE_SIZE = 10;
@@ -3320,10 +3321,14 @@
                     if (tagLibraryLoading.value && !reset) return;
                     const requestId = ++cardTagsRequestId;
                     const requestedZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
+                    if (reset) cardTagsRequestController?.abort();
+                    const controller = new AbortController();
+                    cardTagsRequestController = controller;
                     if (reset) {
                         tagLibraryVisibleCount.value = TAG_LIBRARY_PAGE_SIZE;
                     }
                     tagLibraryLoading.value = true;
+                    const timeout = setTimeout(() => controller.abort(), 15000);
                     try {
                         const params = new URLSearchParams({
                             zone: requestedZone,
@@ -3331,7 +3336,8 @@
                             offset: String(reset ? 0 : databaseTags.value.length)
                         });
                         const resp = await fetch(API_BASE + '/api/cards/tags?' + params.toString(), {
-                            headers: getCardRequestHeaders()
+                            headers: getCardRequestHeaders(),
+                            signal: controller.signal
                         });
                         if (!resp.ok) throw new Error('加载失败');
                         const items = await resp.json();
@@ -3350,8 +3356,10 @@
                         const total = Number(resp.headers.get('X-Total-Count'));
                         tagLibraryTotal.value = Number.isFinite(total) ? total : merged.length;
                     } catch (err) {
-                        if (requestId === cardTagsRequestId) console.error('Fetch card tags error:', err);
+                        if (requestId === cardTagsRequestId && err.name !== 'AbortError') console.error('Fetch card tags error:', err);
                     } finally {
+                        clearTimeout(timeout);
+                        if (cardTagsRequestController === controller) cardTagsRequestController = null;
                         if (requestId === cardTagsRequestId) tagLibraryLoading.value = false;
                     }
                 };
@@ -6077,6 +6085,7 @@
                     clearTimeout(filterFetchTimer);
                     cardRequestController?.abort();
                     uiTemplatesRequestController?.abort();
+                    cardTagsRequestController?.abort();
                     if (announcementPollTimer) {
                         clearInterval(announcementPollTimer);
                         announcementPollTimer = null;
