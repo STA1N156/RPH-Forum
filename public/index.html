@@ -869,13 +869,16 @@
                     <div class="flex items-center gap-2">
                         <svg class="w-5 h-5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
                         <span class="font-bold text-gray-800">标签库</span>
-                        <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{{ tagLibraryDisplayTotal }} 个</span>
+                        <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{{ tagLibraryLoading && tagLibraryDisplayTotal === 0 ? '加载中' : tagLibraryDisplayTotal + ' 个' }}</span>
                     </div>
                     <button @click="showTagLibrary = false" class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                 </div>
                 <div class="p-5 overflow-y-auto">
+                    <div v-if="tagLibraryLoading && visibleTagLibrary.length === 0" class="min-h-24 flex items-center justify-center gap-2 text-xs font-bold text-gray-400">
+                        <span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载标签
+                    </div>
                     <div class="flex flex-wrap gap-2">
                         <button v-for="item in visibleTagLibrary" :key="item.tag"
                                 @click="searchTag(item.tag); showTagLibrary = false"
@@ -2588,7 +2591,7 @@
                 const handleLogoClick = () => {
                     tagLibraryVisibleCount.value = TAG_LIBRARY_PAGE_SIZE;
                     showTagLibrary.value = true;
-                    fetchCardTags({ reset: true });
+                    if (databaseTags.value.length === 0 && !tagLibraryLoading.value) fetchCardTags({ reset: true });
                 };
 
                 // User Auth Functions
@@ -3318,8 +3321,6 @@
                     const requestId = ++cardTagsRequestId;
                     const requestedZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
                     if (reset) {
-                        databaseTags.value = [];
-                        tagLibraryTotal.value = 0;
                         tagLibraryVisibleCount.value = TAG_LIBRARY_PAGE_SIZE;
                     }
                     tagLibraryLoading.value = true;
@@ -3327,7 +3328,7 @@
                         const params = new URLSearchParams({
                             zone: requestedZone,
                             limit: String(TAG_LIBRARY_PAGE_SIZE),
-                            offset: String(databaseTags.value.length)
+                            offset: String(reset ? 0 : databaseTags.value.length)
                         });
                         const resp = await fetch(API_BASE + '/api/cards/tags?' + params.toString(), {
                             headers: getCardRequestHeaders()
