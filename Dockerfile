@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --include=optional
 
-COPY server.js database.js ./
+COPY server.js database.js sqlite-read-pool.js ./
 COPY public/ ./public/
 
 # Create data directory for SQLite persistence
