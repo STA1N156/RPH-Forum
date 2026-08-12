@@ -17,9 +17,11 @@ try {
 } catch (err) {
     console.warn('[Server] sharp unavailable, image compression disabled:', err.message);
 }
-const { db, initDatabase, cleanupLoginAttempts, cleanupOldLogs } = require('./database');
+const { db, DB_PATH, initDatabase, cleanupLoginAttempts, cleanupOldLogs } = require('./database');
+const { SqliteReadPool } = require('./sqlite-read-pool');
 
 const app = express();
+let sqliteReadPool = null;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = parseInt(process.env.PORT) || 9191;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -3500,7 +3502,7 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
     return metrics;
 }
 
-app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
+app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
     try {
         let reviewedWhere = "review_status = 'approved'";
         const params = [];
@@ -3510,8 +3512,8 @@ app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
             reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending') AND (review_status = 'approved' OR uploader_user_id = ?)";
             params.push(req.user.id);
         }
-        const reviewed = db.prepare(`SELECT COUNT(*) AS count FROM character_cards WHERE ${reviewedWhere}`).get(...params).count;
-        const unreviewed = db.prepare("SELECT COUNT(*) AS count FROM character_cards WHERE review_status = 'unreviewed'").get().count;
+        const reviewedQuery = sqliteReadPool.get(`SELECT COUNT(*) AS count FROM character_cards WHERE ${reviewedWhere}`, params);
+        const unreviewedQuery = sqliteReadPool.get("SELECT COUNT(*) AS count FROM character_cards WHERE review_status = 'unreviewed'", []);
         let templateWhere = "review_status = 'approved'";
         const templateParams = [];
         if (req.admin || isModeratorUser(req.user)) {
@@ -3520,7 +3522,14 @@ app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
             templateWhere = "review_status = 'approved' OR uploader_user_id = ?";
             templateParams.push(req.user.id);
         }
-        const uiTemplates = db.prepare(`SELECT COUNT(*) AS count FROM ui_templates WHERE ${templateWhere}`).get(...templateParams).count;
+        const [reviewedRow, unreviewedRow, uiTemplatesRow] = await Promise.all([
+            reviewedQuery,
+            unreviewedQuery,
+            sqliteReadPool.get(`SELECT COUNT(*) AS count FROM ui_templates WHERE ${templateWhere}`, templateParams)
+        ]);
+        const reviewed = reviewedRow.count;
+        const unreviewed = unreviewedRow.count;
+        const uiTemplates = uiTemplatesRow.count;
         res.json({ reviewed, unreviewed, ui_templates: uiTemplates });
     } catch (err) {
         console.error('Fetch card counts error:', err);
@@ -3528,7 +3537,7 @@ app.get('/api/cards/counts', optionalUserAuth, (req, res) => {
     }
 });
 
-app.get('/api/cards/tags', optionalUserAuth, (req, res) => {
+app.get('/api/cards/tags', optionalUserAuth, async (req, res) => {
     try {
         const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 200);
@@ -3556,15 +3565,16 @@ app.get('/api/cards/tags', optionalUserAuth, (req, res) => {
             whereParts.push(`cct.tag_key NOT IN (${hiddenTags.map(() => '?').join(', ')})`);
             params.push(...hiddenTags);
         }
-        const rows = db.prepare(
+        const rows = await sqliteReadPool.all(
             `SELECT MIN(cct.tag) AS tag, COUNT(*) AS count, COUNT(*) OVER() AS __total_count
              FROM character_card_tags cct
              JOIN character_cards cc ON cc.id = cct.card_id
              WHERE ${whereParts.join(' AND ')}
              GROUP BY cct.tag_key
              ORDER BY count DESC, tag ASC
-             LIMIT ? OFFSET ?`
-        ).all(...params, limit, offset);
+             LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
+        );
         const totalCount = Number(rows[0]?.__total_count || 0);
         const tags = rows.map(row => ({ tag: row.tag, count: row.count }));
         return sendCardListCache(req, res, setCardListCache(cacheKey, tags, totalCount));
@@ -3574,7 +3584,7 @@ app.get('/api/cards/tags', optionalUserAuth, (req, res) => {
     }
 });
 
-app.get('/api/cards', optionalUserAuth, (req, res) => {
+app.get('/api/cards', optionalUserAuth, async (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
         const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
@@ -3664,9 +3674,18 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
+        const totalQuery = idsOnly
+            ? Promise.resolve({ count: 0 })
+            : sqliteReadPool.get(
+                `SELECT COUNT(*) AS count
+                 FROM character_cards cc
+                 ${joinClause}
+                 ${whereClause}`,
+                [...joinParams, ...params]
+            );
         const selectColumns = idsOnly
             ? 'cc.id'
-            : `${limit ? 'COUNT(*) OVER() AS __total_count, ' : ''}cc.id, cc.name, cc.description, cc.creator_notes,
+            : `cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
                     cc.views_count, cc.is_featured, cc.review_status,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
@@ -3675,14 +3694,17 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
                     COALESCE(cc.ui_template_variable_count, 0) AS ui_template_variable_count,
                     ${commentCountSql} AS comment_count,
                     ${commentHeatCountSql} AS comment_heat_count`;
-        const rawCards = db.prepare(
+        const cardsQuery = sqliteReadPool.all(
             `SELECT ${selectColumns}
              FROM character_cards cc
              ${joinClause}
              ${whereClause}
              ORDER BY ${orderByClause}
-             ${limit ? 'LIMIT ? OFFSET ?' : ''}`
-        ).all(...joinParams, ...params, ...orderParams, ...(limit ? [limit, offset] : []));
+             ${limit ? 'LIMIT ? OFFSET ?' : ''}`,
+            [...joinParams, ...params, ...orderParams, ...(limit ? [limit, offset] : [])]
+        );
+        const [totalRow, rawCards] = await Promise.all([totalQuery, cardsQuery]);
+        const totalCount = Number(totalRow.count || 0);
         markPerf(req, 'cards-db-read', { rows: rawCards.length });
         if (idsOnly) {
             const ids = rawCards.map(card => card.id);
@@ -3690,9 +3712,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
             markPerf(req, 'cards-cache-store', { rows: ids.length, bytes: newCache.body.length, gzipBytes: newCache.gzipBody.length, idsOnly: true });
             return sendCardListCache(req, res, newCache);
         }
-        const totalCount = limit ? Number(rawCards[0]?.__total_count || 0) : rawCards.length;
         const cards = rawCards.map(card => {
-            delete card.__total_count;
             return sanitizeCharacterCardForClient(
                 attachUiTemplateSummary(card),
                 { viewer: { admin: req.admin, user: req.user } }
@@ -3709,7 +3729,7 @@ app.get('/api/cards', optionalUserAuth, (req, res) => {
 });
 
 // ============== UI Template Routes ==============
-app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
+app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
     try {
         const sortMode = req.query.sort || 'latest';
         const searchQuery = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
@@ -3774,8 +3794,14 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
-        const rawTemplates = db.prepare(
-            `SELECT ${limit ? 'COUNT(*) OVER() AS __total_count, ' : ''}id, title, description, file_name, file_ext, mime_type,
+        const totalQuery = sqliteReadPool.get(
+            `SELECT COUNT(*) AS count
+             FROM ui_templates
+             ${whereClause}`,
+            params
+        );
+        const templatesQuery = sqliteReadPool.all(
+            `SELECT id, title, description, file_name, file_ext, mime_type,
                     substr(content, 1, 65536) AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
@@ -3784,10 +3810,11 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
              FROM ui_templates
              ${whereClause}
              ORDER BY ${orderByClause}
-             ${limit ? 'LIMIT ? OFFSET ?' : ''}`
-        ).all(...params, ...orderParams, ...(limit ? [limit, offset] : []));
-        const totalCount = limit ? Number(rawTemplates[0]?.__total_count || 0) : rawTemplates.length;
-        for (const row of rawTemplates) delete row.__total_count;
+             ${limit ? 'LIMIT ? OFFSET ?' : ''}`,
+            [...params, ...orderParams, ...(limit ? [limit, offset] : [])]
+        );
+        const [totalRow, rawTemplates] = await Promise.all([totalQuery, templatesQuery]);
+        const totalCount = Number(totalRow.count || 0);
         const previewBytes = rawTemplates.reduce((sum, row) => sum + Buffer.byteLength(row.content_preview_source || '', 'utf8'), 0);
         markPerf(req, 'ui-templates-db-read', { rows: rawTemplates.length, previewBytes });
         const templates = rawTemplates.map(row => sanitizeUiTemplateRow(row, { viewer: { admin: req.admin, user: req.user } }));
@@ -5922,7 +5949,7 @@ function countTodayCreditComments(userId, todayStr) {
 }
 
 // ============== Comment Routes ==============
-function getVisibleComments(req, options) {
+async function getVisibleComments(req, options) {
     const {
         commentTable, likesTable, targetColumn, targetId,
         ownerTable, ownerAlias, userId
@@ -5931,19 +5958,20 @@ function getVisibleComments(req, options) {
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
     const blockWords = getCommentEmailBlockWords();
     const blockWordsJson = JSON.stringify(blockWords);
-    const pageRoots = db.prepare(
+    const pageRoots = await sqliteReadPool.all(
         `SELECT c.id
          FROM ${commentTable} c
          WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
            AND comment_is_hidden(c.content, ?) = 0
          ORDER BY c.created_at DESC, c.id DESC
-         LIMIT ? OFFSET ?`
-    ).all(targetId, blockWordsJson, limit, offset);
+         LIMIT ? OFFSET ?`,
+        [targetId, blockWordsJson, limit, offset]
+    );
     const rootIds = pageRoots.map(row => row.id);
     let pageTree = [];
     if (rootIds.length > 0) {
         const rootPlaceholders = rootIds.map(() => '?').join(', ');
-        pageTree = db.prepare(
+        pageTree = await sqliteReadPool.all(
             `WITH RECURSIVE comment_tree(id) AS (
                 SELECT id FROM ${commentTable} WHERE id IN (${rootPlaceholders})
                 UNION ALL
@@ -5957,8 +5985,9 @@ function getVisibleComments(req, options) {
              JOIN ${commentTable} c ON c.id = tree.id
              LEFT JOIN users u ON c.user_id = u.id
              LEFT JOIN ${ownerTable} owner ON owner.id = c.${targetColumn}
-             ORDER BY c.created_at DESC, c.id DESC`
-        ).all(...rootIds, targetId);
+             ORDER BY c.created_at DESC, c.id DESC`,
+            [...rootIds, targetId]
+        );
     }
 
     const hiddenIds = new Set(pageTree.filter(comment => isCommentHiddenFromDisplay(comment.content, blockWords)).map(comment => comment.id));
@@ -5972,11 +6001,12 @@ function getVisibleComments(req, options) {
             return { ...comment, reply_to_id: parent?.id || null };
         });
 
-    const rootTotal = db.prepare(
+    const rootTotalQuery = sqliteReadPool.get(
         `SELECT COUNT(*) AS count FROM ${commentTable} c
          WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
-           AND comment_is_hidden(c.content, ?) = 0`
-    ).get(targetId, blockWordsJson).count;
+           AND comment_is_hidden(c.content, ?) = 0`,
+        [targetId, blockWordsJson]
+    );
     const visibleTreeSql = `
         WITH RECURSIVE visible_tree(id) AS (
             SELECT c.id FROM ${commentTable} c
@@ -5988,31 +6018,39 @@ function getVisibleComments(req, options) {
             JOIN visible_tree parent ON child.reply_to_id = parent.id
             WHERE child.${targetColumn} = ?
         )`;
-    const total = db.prepare(
+    const totalQuery = sqliteReadPool.get(
         `${visibleTreeSql}
          SELECT COUNT(*) AS count
          FROM visible_tree tree
          JOIN ${commentTable} c ON c.id = tree.id
-         WHERE comment_is_hidden(c.content, ?) = 0`
-    ).get(targetId, blockWordsJson, targetId, blockWordsJson).count;
-    const hotComment = db.prepare(
+         WHERE comment_is_hidden(c.content, ?) = 0`,
+        [targetId, blockWordsJson, targetId, blockWordsJson]
+    );
+    const hotCommentQuery = sqliteReadPool.get(
         `${visibleTreeSql}
          SELECT c.id
          FROM visible_tree tree
          JOIN ${commentTable} c ON c.id = tree.id
          WHERE comment_is_hidden(c.content, ?) = 0 AND c.likes_count >= 5
          ORDER BY c.likes_count DESC, c.created_at DESC
-         LIMIT 1`
-    ).get(targetId, blockWordsJson, targetId, blockWordsJson);
-    let likedCommentIds = new Set();
+         LIMIT 1`,
+        [targetId, blockWordsJson, targetId, blockWordsJson]
+    );
+    let likedQuery = Promise.resolve([]);
     if (userId && pageComments.length > 0) {
         const commentPlaceholders = pageComments.map(() => '?').join(', ');
-        const liked = db.prepare(
+        likedQuery = sqliteReadPool.all(
             `SELECT comment_id FROM ${likesTable}
-             WHERE user_id = ? AND comment_id IN (${commentPlaceholders})`
-        ).all(userId, ...pageComments.map(comment => comment.id));
-        likedCommentIds = new Set(liked.map(row => row.comment_id));
+             WHERE user_id = ? AND comment_id IN (${commentPlaceholders})`,
+            [userId, ...pageComments.map(comment => comment.id)]
+        );
     }
+    const [rootTotalRow, totalRow, hotComment, liked] = await Promise.all([
+        rootTotalQuery, totalQuery, hotCommentQuery, likedQuery
+    ]);
+    const rootTotal = rootTotalRow.count;
+    const total = totalRow.count;
+    const likedCommentIds = new Set(liked.map(row => row.comment_id));
 
     const result = pageComments.map(comment => ({
         ...comment,
@@ -6028,12 +6066,12 @@ function getVisibleComments(req, options) {
     };
 }
 
-app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
+app.get('/api/cards/:cardId/comments', optionalUserAuth, async (req, res) => {
     try {
         const cardId = req.params.cardId;
         const userId = req.user ? req.user.id : null;
         markPerf(req, 'comments-start', { cardId, userId: userId || null });
-        const card = db.prepare('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?').get(cardId);
+        const card = await sqliteReadPool.get('SELECT id, uploader_user_id, review_status FROM character_cards WHERE id = ?', [cardId]);
         markPerf(req, 'comments-card-read', { found: Boolean(card), reviewStatus: card?.review_status || null });
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         const canView = isPublicCardStatus(card.review_status)
@@ -6042,7 +6080,7 @@ app.get('/api/cards/:cardId/comments', optionalUserAuth, (req, res) => {
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
 
-        const result = getVisibleComments(req, {
+        const result = await getVisibleComments(req, {
             commentTable: 'character_comments',
             likesTable: 'comment_likes',
             targetColumn: 'card_id',
@@ -6194,12 +6232,12 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
     }
 });
 
-app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) => {
+app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, async (req, res) => {
     try {
         const templateId = req.params.templateId;
         const userId = req.user ? req.user.id : null;
         markPerf(req, 'ui-comments-start', { templateId, userId: userId || null });
-        const template = db.prepare('SELECT id, uploader_user_id, review_status FROM ui_templates WHERE id = ?').get(templateId);
+        const template = await sqliteReadPool.get('SELECT id, uploader_user_id, review_status FROM ui_templates WHERE id = ?', [templateId]);
         markPerf(req, 'ui-comments-template-read', { found: Boolean(template), reviewStatus: template?.review_status || null });
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
@@ -6208,7 +6246,7 @@ app.get('/api/ui-templates/:templateId/comments', optionalUserAuth, (req, res) =
             || (req.user && template.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '模板不存在' });
 
-        const result = getVisibleComments(req, {
+        const result = await getVisibleComments(req, {
             commentTable: 'ui_template_comments',
             likesTable: 'ui_template_comment_likes',
             targetColumn: 'template_id',
@@ -8102,6 +8140,8 @@ function logDatabaseHealth() {
 
 // ============== Initialize & Start ==============
 initDatabase();
+sqliteReadPool = new SqliteReadPool(DB_PATH);
+console.log(`[DB] SQLite read pool started with ${sqliteReadPool.size} workers`);
 getAiReviewConfig();
 recoverAiReviewQueue();
 
@@ -8127,9 +8167,11 @@ const server = app.listen(PORT, HOST, () => {
 function gracefulShutdown(signal) {
     console.log(`[Server] ${signal} received, shutting down...`);
     server.close(() => {
-        db.close();
-        console.log('[Server] Database closed, exiting.');
-        process.exit(0);
+        sqliteReadPool.close().finally(() => {
+            db.close();
+            console.log('[Server] Database closed, exiting.');
+            process.exit(0);
+        });
     });
     setTimeout(() => { process.exit(1); }, 5000);
 }

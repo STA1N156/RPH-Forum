@@ -3272,19 +3272,10 @@
                 let catalogAuthReady = null;
                 let cardRequestController = null;
                 let uiTemplatesRequestController = null;
-                let cardPrefetchController = null;
-                let uiTemplatesPrefetchController = null;
                 const cardPageCache = new Map();
                 const uiTemplatePageCache = new Map();
                 const CARD_PAGE_SIZE = 10;
                 const CATALOG_PAGE_CACHE_TTL_MS = 60000;
-
-                const stopCatalogPrefetch = () => {
-                    cardPrefetchController?.abort();
-                    uiTemplatesPrefetchController?.abort();
-                    cardPrefetchController = null;
-                    uiTemplatesPrefetchController = null;
-                };
 
                 const cacheCatalogPage = (cache, key, page, value) => {
                     if (!cache.has(key) && cache.size >= 12) cache.delete(cache.keys().next().value);
@@ -3311,7 +3302,6 @@
                     uiTemplatesRequestController?.abort();
                     cardRequestController = null;
                     uiTemplatesRequestController = null;
-                    stopCatalogPrefetch();
                     cardPageCache.clear();
                     uiTemplatePageCache.clear();
                 };
@@ -3376,53 +3366,6 @@
                     return card;
                 });
 
-                const startCatalogPrefetch = ({ type, key, params, total, currentPage: activePage }) => {
-                    const isCard = type === 'card';
-                    if (isCard) cardPrefetchController?.abort();
-                    else uiTemplatesPrefetchController?.abort();
-                    const controller = new AbortController();
-                    if (isCard) cardPrefetchController = controller;
-                    else uiTemplatesPrefetchController = controller;
-                    const cache = isCard ? cardPageCache : uiTemplatePageCache;
-                    const totalPagesToFetch = Math.ceil(total / CARD_PAGE_SIZE);
-                    const pageOrder = [];
-                    for (let page = activePage + 1; page <= totalPagesToFetch; page += 10) pageOrder.push(page);
-                    for (let page = 1; page <= activePage; page += 10) pageOrder.push(page);
-                    setTimeout(async () => {
-                        try {
-                            for (const startPage of pageOrder) {
-                                const endPage = Math.min(startPage + 9, totalPagesToFetch);
-                                if (controller.signal.aborted || Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index).every(page => getFreshCatalogPage(cache, key, page))) continue;
-                                const pageParams = new URLSearchParams(params);
-                                pageParams.set('limit', String((endPage - startPage + 1) * CARD_PAGE_SIZE));
-                                pageParams.set('offset', String((startPage - 1) * CARD_PAGE_SIZE));
-                                const endpoint = isCard ? '/api/cards?' : '/api/ui-templates?';
-                                const resp = await fetch(API_BASE + endpoint + pageParams.toString(), {
-                                    headers: getCardRequestHeaders(),
-                                    signal: controller.signal,
-                                    priority: 'low'
-                                });
-                                if (!resp.ok) break;
-                                const items = await resp.json();
-                                if (controller.signal.aborted) break;
-                                const responseTotal = Number(resp.headers.get('X-Total-Count'));
-                                const normalizedItems = isCard ? prepareCardList(items) : items;
-                                for (let index = 0; index < normalizedItems.length; index += CARD_PAGE_SIZE) {
-                                    cacheCatalogPage(cache, key, startPage + Math.floor(index / CARD_PAGE_SIZE), {
-                                        items: normalizedItems.slice(index, index + CARD_PAGE_SIZE),
-                                        total: Number.isFinite(responseTotal) ? responseTotal : total
-                                    });
-                                }
-                            }
-                        } catch (err) {
-                            if (err.name !== 'AbortError') console.error('Catalog prefetch error:', err);
-                        } finally {
-                            if (isCard && cardPrefetchController === controller) cardPrefetchController = null;
-                            if (!isCard && uiTemplatesPrefetchController === controller) uiTemplatesPrefetchController = null;
-                        }
-                    }, 80);
-                };
-
                 const fetchCardSectionCounts = async () => {
                     const requestId = ++cardCountsRequestId;
                     try {
@@ -3445,7 +3388,6 @@
                     uiTemplatesRequestController?.abort();
                     uiTemplatesRequestController = null;
                     uiTemplatesRequestId += 1;
-                    uiTemplatesPrefetchController?.abort();
                     const requestedSort = cardSort.value;
                     const requestedSection = contentSection.value;
                     const requestedZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
@@ -3457,7 +3399,6 @@
                     fetchCardSectionCounts();
                     const requestId = ++cardsRequestId;
                     cardRequestController?.abort();
-                    cardPrefetchController?.abort();
                     if (force) {
                         cardPageCache.clear();
                         fetchCardTags({ reset: true });
@@ -3480,7 +3421,6 @@
                         pendingCardPage.value = null;
                         loading.value = false;
                         cardPageLoading.value = false;
-                        startCatalogPrefetch({ type: 'card', key: queryKey, params, total: cached.total, currentPage: requestedPage });
                         return;
                     }
                     const controller = new AbortController();
@@ -3488,7 +3428,6 @@
                     loading.value = true;
                     cardPageLoading.value = true;
                     pendingCardPage.value = requestedPage;
-                    const requestTimeout = setTimeout(() => controller.abort(), 15000);
                     try {
                         const resp = await fetch(API_BASE + '/api/cards?' + params.toString(), {
                             headers: getCardRequestHeaders(),
@@ -3513,14 +3452,12 @@
                         cardCatalogTotal.value = total;
                         currentPage.value = requestedPage;
                         pendingCardPage.value = null;
-                        startCatalogPrefetch({ type: 'card', key: queryKey, params, total, currentPage: requestedPage });
                     } catch (err) {
-                        if (requestId !== cardsRequestId || err.name === 'AbortError' && controller !== cardRequestController) return;
+                        if (requestId !== cardsRequestId || err.name === 'AbortError') return;
                         console.error('Fetch error:', err);
                         pendingCardPage.value = null;
                         showToast('这一页加载失败，请重试', 'error');
                     } finally {
-                        clearTimeout(requestTimeout);
                         if (controller === cardRequestController) cardRequestController = null;
                         if (requestId === cardsRequestId) cardPageLoading.value = false;
                         if (requestId === cardsRequestId) loading.value = false;
@@ -3534,7 +3471,6 @@
                     cardRequestController?.abort();
                     cardRequestController = null;
                     cardsRequestId += 1;
-                    cardPrefetchController?.abort();
                     const requestId = ++uiTemplatesRequestId;
                     const requestedSort = cardSort.value;
                     const requestedQuery = String(searchQuery.value || '').trim();
@@ -3542,7 +3478,6 @@
                     const requestedPage = Math.max(1, Number(page) || 1);
                     const requestedScope = getCatalogScope();
                     uiTemplatesRequestController?.abort();
-                    uiTemplatesPrefetchController?.abort();
                     if (force) uiTemplatePageCache.clear();
                     const params = new URLSearchParams({
                         sort: requestedSort,
@@ -3560,7 +3495,6 @@
                         pendingCardPage.value = null;
                         loading.value = false;
                         cardPageLoading.value = false;
-                        startCatalogPrefetch({ type: 'template', key: queryKey, params, total: cached.total, currentPage: requestedPage });
                         return;
                     }
                     const controller = new AbortController();
@@ -3568,7 +3502,6 @@
                     loading.value = true;
                     cardPageLoading.value = true;
                     pendingCardPage.value = requestedPage;
-                    const requestTimeout = setTimeout(() => controller.abort(), 15000);
                     try {
                         const resp = await fetch(API_BASE + '/api/ui-templates?' + params.toString(), {
                             headers: getCardRequestHeaders(),
@@ -3589,14 +3522,12 @@
                         uiTemplatesTotal.value = responseTotal;
                         currentPage.value = requestedPage;
                         pendingCardPage.value = null;
-                        startCatalogPrefetch({ type: 'template', key: queryKey, params, total: responseTotal, currentPage: requestedPage });
                     } catch (err) {
-                        if (requestId !== uiTemplatesRequestId || err.name === 'AbortError' && controller !== uiTemplatesRequestController) return;
+                        if (requestId !== uiTemplatesRequestId || err.name === 'AbortError') return;
                         console.error('Fetch UI templates error:', err);
                         pendingCardPage.value = null;
                         showToast('这一页模板加载失败，请重试', 'error');
                     } finally {
-                        clearTimeout(requestTimeout);
                         if (controller === uiTemplatesRequestController) uiTemplatesRequestController = null;
                         if (requestId === uiTemplatesRequestId) cardPageLoading.value = false;
                         if (requestId === uiTemplatesRequestId) loading.value = false;
@@ -3605,7 +3536,6 @@
 
                 const applyTemplateMetrics = (templateId, metrics) => {
                     if (!templateId || !metrics) return;
-                    uiTemplatesPrefetchController?.abort();
                     uiTemplatePageCache.clear();
                     const apply = (template) => {
                         if (!template) return;
@@ -3623,7 +3553,6 @@
 
                 const applyCardMetrics = (cardId, metrics) => {
                     if (!cardId || !metrics) return;
-                    cardPrefetchController?.abort();
                     cardPageCache.clear();
                     const apply = (card) => {
                         if (!card) return;
@@ -4645,7 +4574,6 @@
                         }
                         showToast(result.is_featured ? '已设为精选' : '已取消精选', 'success');
                         cardPageCache.clear();
-                        cardPrefetchController?.abort();
                         if (cardSort.value === 'featured') fetchCards();
                     } catch (err) {
                         showToast('精选操作失败: ' + err.message, 'error');
@@ -4673,7 +4601,6 @@
                         }
                         showToast(result.is_featured ? '已设为精选模板' : '已取消精选模板', 'success');
                         uiTemplatePageCache.clear();
-                        uiTemplatesPrefetchController?.abort();
                         if (cardSort.value === 'featured') fetchUiTemplates();
                     } catch (err) {
                         showToast('精选模板失败: ' + err.message, 'error');
@@ -6028,7 +5955,6 @@
                 let filterFetchTimer = null;
                 watch([searchQuery, selectedTag], () => {
                     clearTimeout(filterFetchTimer);
-                    stopCatalogPrefetch();
                     if (contentSection.value === 'uitemplates') {
                         uiTemplatesRequestController?.abort();
                         uiTemplatesRequestId += 1;
@@ -6150,7 +6076,6 @@
                     clearTimeout(filterFetchTimer);
                     cardRequestController?.abort();
                     uiTemplatesRequestController?.abort();
-                    stopCatalogPrefetch();
                     if (announcementPollTimer) {
                         clearInterval(announcementPollTimer);
                         announcementPollTimer = null;

@@ -308,6 +308,9 @@ function initDatabase() {
         );
 
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_cards_review_created ON character_cards(review_status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_cards_review_updated ON character_cards(review_status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_cards_review_featured ON character_cards(review_status, is_featured, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status);
         CREATE INDEX IF NOT EXISTS idx_card_tags_lookup ON character_card_tags(tag_key, card_id);
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
@@ -765,4 +768,4 @@ function cleanupOldLogs() {
     db.prepare("DELETE FROM content_view_events WHERE created_at < datetime('now', '-31 days')").run();
 }
 
-module.exports = { db, initDatabase, cleanupLoginAttempts, cleanupOldLogs };
+module.exports = { db, DB_PATH, initDatabase, cleanupLoginAttempts, cleanupOldLogs };
