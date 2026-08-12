@@ -990,8 +990,11 @@ function isCommentEmailBlocked(content) {
 function isCommentHiddenFromDisplay(content, blockWords = getCommentEmailBlockWords()) {
     const text = normalizeCommentEmailBlockText(content);
     if (!text) return false;
-    const compactText = text.replace(/\s+/g, '');
+    const trimmedText = text.trim();
+    const compactText = trimmedText.replace(/\s+/g, '');
     return /^\d+$/.test(compactText)
+        || /^[a-z]+$/.test(trimmedText)
+        || /^已[\p{L}\p{N}]{0,8}下载(?:成功|完成|了)?[!！。.]*$/u.test(compactText)
         || blockWords.some(word => text.includes(normalizeCommentEmailBlockText(word)));
 }
 

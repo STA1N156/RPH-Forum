@@ -887,10 +887,10 @@
                             <span class="text-[10px] font-bold opacity-60">{{ item.count }}</span>
                         </button>
                     </div>
-                    <button v-if="visibleTagLibrary.length < allTags.length" @click="loadMoreTags"
-                            class="mt-5 w-full rounded-xl border border-blue-100 bg-blue-50 py-2.5 text-xs font-bold text-blue-600 transition-colors hover:bg-blue-100">
-                        加载更多（{{ visibleTagLibrary.length }} / {{ allTags.length }}）
-                    </button>
+                    <div v-if="visibleTagLibrary.length < allTags.length" ref="tagLibraryLoadSentinel"
+                         class="mt-4 min-h-12 flex items-center justify-center py-3 text-xs font-bold text-gray-400">
+                        <span class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>继续加载标签（{{ visibleTagLibrary.length }} / {{ allTags.length }}）</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2189,6 +2189,8 @@
                 const hiddenTagLibrary = ref([]);
                 const TAG_LIBRARY_PAGE_SIZE = 200;
                 const tagLibraryVisibleCount = ref(TAG_LIBRARY_PAGE_SIZE);
+                const tagLibraryLoadSentinel = ref(null);
+                let tagLibraryLoadObserver = null;
                 const ANNOUNCEMENT_SEEN_KEY = 'rph_announcement_seen_version';
                 const announcement = reactive({
                     enabled: false,
@@ -3132,6 +3134,16 @@
                         allTags.value.length
                     );
                 };
+
+                watch(tagLibraryLoadSentinel, (element) => {
+                    if (tagLibraryLoadObserver) tagLibraryLoadObserver.disconnect();
+                    tagLibraryLoadObserver = null;
+                    if (!element || !('IntersectionObserver' in window)) return;
+                    tagLibraryLoadObserver = new IntersectionObserver((entries) => {
+                        if (entries.some(entry => entry.isIntersecting)) loadMoreTags();
+                    }, { rootMargin: '200px 0px' });
+                    tagLibraryLoadObserver.observe(element);
+                }, { flush: 'post' });
 
                 const searchTag = (tag) => {
                     if (searchQuery.value === tag) {
@@ -4984,7 +4996,17 @@
                                 var body = document.body;
                                 var html = document.documentElement;
                                 if (!body || !html) { resizePending = false; return; }
-                                var height = Math.ceil(Math.max(body.scrollHeight, body.offsetHeight, html.scrollHeight, html.offsetHeight));
+                                var contentBottom = 0;
+                                for (var i = 0; i < body.children.length; i++) {
+                                    var child = body.children[i];
+                                    if (/^(SCRIPT|STYLE|LINK)$/.test(child.tagName)) continue;
+                                    if (window.getComputedStyle(child).position === 'fixed') continue;
+                                    var rect = child.getBoundingClientRect();
+                                    contentBottom = Math.max(contentBottom, rect.bottom, child.offsetTop + child.offsetHeight);
+                                }
+                                var viewportHeight = Math.max(window.innerHeight || 0, html.clientHeight || 0);
+                                var scrollHeight = Math.max(body.scrollHeight, html.scrollHeight);
+                                var height = Math.ceil(scrollHeight > viewportHeight + 1 ? scrollHeight : contentBottom);
                                 if (Math.abs(height - lastHeight) > 1) {
                                     lastHeight = height;
                                     window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: height }, '*');
@@ -5005,7 +5027,12 @@
                                 var command = target.getAttribute('data-slash');
                                 if (command) window.triggerSlash(command);
                             }
-                            updateHeight();
+                            var startedAt = Date.now();
+                            var trackTransition = function() {
+                                updateHeight();
+                                if (Date.now() - startedAt < 600) requestAnimationFrame(trackTransition);
+                            };
+                            trackTransition();
                         });
                         document.addEventListener('DOMContentLoaded', updateHeight);
                         if (window.ResizeObserver) {
@@ -5908,6 +5935,7 @@
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
                     window.removeEventListener('message', handleWindowMessage);
                     if (commentsLoadObserver) commentsLoadObserver.disconnect();
+                    if (tagLibraryLoadObserver) tagLibraryLoadObserver.disconnect();
                     if (announcementPollTimer) {
                         clearInterval(announcementPollTimer);
                         announcementPollTimer = null;
@@ -5954,7 +5982,7 @@
                     editingCard, showEditModal, isEditUploading, startEditCard, handleEditFileSelect, confirmEditCard,
                     // Visit Tracking
                     totalVisits,
-                    tagsExpanded, showTagLibrary, allTags, visibleTagLibrary, loadMoreTags,
+                    tagsExpanded, showTagLibrary, allTags, visibleTagLibrary, tagLibraryLoadSentinel,
                     currentPage, totalPages, pageNumbers, currentListLength, jumpPageInput, jumpToPage
                 };
             }
