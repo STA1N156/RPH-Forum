@@ -4,6 +4,7 @@
   "description": "角色卡广场 - RP Character Card Forum",
   "main": "server.js",
   "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o public/app.css --minify",
     "start": "node server.js",
     "dev": "node server.js"
   },
@@ -16,5 +17,8 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
   }
 }

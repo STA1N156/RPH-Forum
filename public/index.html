@@ -9,96 +9,11 @@
     <meta http-equiv="Expires" content="0">
     <title>万相广场</title>
     <meta name="description" content="发现、分享与收藏角色卡和 UI 模板。">
-    <script src="/tailwind.js"></script>
+    <link rel="stylesheet" href="/app.css">
     <script src="/vue.global.js"></script>
     <!-- Local API backend replaces Supabase -->
     <script src="/marked.min.js"></script>
     <script src="/purify.min.js"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['PingFang SC', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'Noto Sans', 'sans-serif', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'],
-                    },
-                    colors: {
-                        gray: {
-                            50: '#f9fafb',
-                            100: '#f3f4f6',
-                            200: '#e5e7eb',
-                            300: '#d1d5db',
-                            400: '#9ca3af',
-                            500: '#6b7280',
-                            600: '#4b5563',
-                            700: '#374151',
-                            800: '#1f2937',
-                            900: '#111827',
-                        },
-                        primary: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            200: '#bfdbfe',
-                            300: '#93c5fd',
-                            400: '#60a5fa',
-                            500: '#3b82f6',
-                            600: '#2563eb',
-                            700: '#1d4ed8',
-                            800: '#1e40af',
-                            900: '#1e3a8a',
-                        }
-                    },
-                    animation: {
-                        'fade-in': 'fadeIn 0.3s ease-out',
-                        'slide-up': 'slideUp 0.3s ease-out',
-                        'slide-down': 'slideDown 0.3s ease-out',
-                        'scale-in': 'scaleIn 0.2s ease-out',
-                        'detail-scale-in': 'detailScaleIn 0.48s cubic-bezier(0.22, 1, 0.36, 1)',
-                        'slide-up-mobile': 'slideUpMobile 0.5s cubic-bezier(0.32, 0.72, 0, 1)',
-                        'detail-slide-up-mobile': 'detailSlideUpMobile 0.72s cubic-bezier(0.22, 1, 0.36, 1)',
-                        'zoom-in': 'zoomIn 0.3s ease-out',
-                    },
-                    keyframes: {
-                        fadeIn: {
-                            '0%': { opacity: '0' },
-                            '100%': { opacity: '1' },
-                        },
-                        slideUp: {
-                            '0%': { transform: 'translateY(20px)', opacity: '0' },
-                            '100%': { transform: 'translateY(0)', opacity: '1' },
-                        },
-                        slideDown: {
-                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
-                            '100%': { transform: 'translateY(0)', opacity: '1' },
-                        },
-                        scaleIn: {
-                            '0%': { transform: 'scale(0.95)', opacity: '0' },
-                            '100%': { transform: 'scale(1)', opacity: '1' },
-                        },
-                        detailScaleIn: {
-                            '0%': { transform: 'scale(0.94) translateY(18px)', opacity: '0' },
-                            '100%': { transform: 'scale(1) translateY(0)', opacity: '1' },
-                        },
-                        slideUpMobile: {
-                            '0%': { transform: 'translateY(100%)' },
-                            '100%': { transform: 'translateY(0)' },
-                        },
-                        detailSlideUpMobile: {
-                            '0%': { transform: 'translateY(100%)' },
-                            '100%': { transform: 'translateY(0)' },
-                        },
-                        zoomIn: {
-                            '0%': { transform: 'scale(0.9)', opacity: '0' },
-                            '100%': { transform: 'scale(1)', opacity: '1' },
-                        }
-                    },
-                    boxShadow: {
-                        'soft': '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
-                        'card': '0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)',
-                    }
-                }
-            }
-        }
-    </script>
     <style>
         [v-cloak] { display: none !important; }
 
@@ -496,13 +411,9 @@
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                         发布 +3
                     </div>
-                    <div class="px-2.5 py-1 bg-purple-50 text-purple-600 border border-purple-100 text-xs font-bold rounded-xl whitespace-nowrap flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        注册 +1
-                    </div>
                     <div v-if="contentSection !== 'unreviewed'" class="px-2.5 py-1 bg-green-50 text-green-600 border border-green-100 text-xs font-bold rounded-xl whitespace-nowrap flex items-center gap-1">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-                        评论 +2（日限2次）
+                        评论 +2（日限3次）
                     </div>
                 </div>
             </div>
@@ -1352,7 +1263,7 @@
         <div v-if="selectedCard" class="fixed inset-0 z-50 flex md:items-center justify-center bg-black/60 animate-fade-in md:p-4 md:backdrop-blur-sm md:transition-all md:duration-300">
 
             <!-- Mobile Container (Parallax Scroll) -->
-            <div v-if="!previewAsset.loading" class="md:hidden w-full h-full relative overflow-y-auto scroll-smooth-mobile no-scrollbar animate-detail-slide-up-mobile"
+                <div v-if="!previewAsset.loading && windowWidth < 768" class="md:hidden w-full h-full relative overflow-y-auto scroll-smooth-mobile no-scrollbar animate-detail-slide-up-mobile"
                  @scroll="handleMobileScroll">
                 
                 <!-- Close Button -->
@@ -1453,8 +1364,7 @@
                                     开场白
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
-                                <!-- Force iframe remounting so each open starts from a clean render state. -->
-                                <div :key="selectedCard.renderId" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
+                                <div :key="selectedCard.id + '-first-message'" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
                             </section>
 
                             <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
@@ -1464,7 +1374,7 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 <div class="space-y-6">
-                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.renderId + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
+                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.id + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
                                         <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
                                         <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
                                     </div>
@@ -1571,7 +1481,7 @@
             </div>
 
             <!-- Fixed Footer Actions (Mobile) -->
-            <div v-if="!previewAsset.loading" class="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[60] flex gap-3 safe-area-pb">
+                <div v-if="!previewAsset.loading && windowWidth < 768" class="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[60] flex gap-3 safe-area-pb">
                  <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
                          class="flex-1 py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
                          :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white active:scale-[0.98]' : 'bg-gray-200 text-gray-500 cursor-not-allowed'">
@@ -1587,7 +1497,7 @@
             </div>
 
             <!-- Desktop Container (Unchanged) -->
-            <div v-if="!previewAsset.loading" class="hidden md:flex bg-white w-full h-auto max-h-[90vh] max-w-6xl rounded-[2.5rem] flex-row shadow-2xl overflow-hidden animate-detail-scale-in relative">
+                <div v-if="!previewAsset.loading && windowWidth >= 768" class="hidden md:flex bg-white w-full h-auto max-h-[90vh] max-w-6xl rounded-[2.5rem] flex-row shadow-2xl overflow-hidden animate-detail-scale-in relative">
                 
                 <!-- Left: Image Section -->
                 <div class="relative w-2/5 h-auto flex-shrink-0 bg-gray-100">
@@ -1677,8 +1587,7 @@
                                     开场白
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
-                                <!-- Force iframe remounting so each open starts from a clean render state. -->
-                                <div :key="selectedCard.renderId" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
+                                <div :key="selectedCard.id + '-first-message'" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
                             </section>
 
                             <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
@@ -1688,7 +1597,7 @@
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 <div class="space-y-6">
-                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.renderId + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
+                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.id + '-ui-template-' + template.id" class="rounded-3xl border border-gray-100 bg-white/70 p-3 shadow-sm overflow-hidden">
                                         <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
                                         <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
                                     </div>
@@ -2210,7 +2119,7 @@
                         <textarea ref="input" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" @keydown.ctrl.enter.prevent="$emit('submit')" rows="3" :placeholder="replyName ? '写下你的回复...' : (isLoggedIn ? '写下你的评论（至少5个字）...' : '请先登录后再评论...')" class="bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-primary-500 outline-none transition-colors resize-none" :disabled="!isLoggedIn"></textarea>
                         <div class="flex items-center justify-between gap-3">
                             <span v-if="!isLoggedIn" class="text-xs text-gray-400"><button type="button" @click="$emit('login')" class="text-primary-600 font-bold hover:underline">登录</button> 后即可评论</span>
-                            <span v-else class="text-xs text-gray-400">{{ replyName ? 'Ctrl + Enter 快速回复' : (earnsCredits ? '每条评论（≥5字）可获得 2 次下载机会（每日限 2 次）' : '无收益专区评论不奖励下载次数') }}</span>
+                    <span v-else class="text-xs text-gray-400">{{ replyName ? 'Ctrl + Enter 快速回复' : (earnsCredits ? '每条评论（≥5字）可获得 2 次下载机会（每日限 3 次）' : '无收益专区评论不奖励下载次数') }}</span>
                             <button type="button" @click="$emit('submit')" :disabled="!isLoggedIn" class="bg-primary-600 text-white px-6 py-2 rounded-xl text-sm font-bold shadow-md shadow-primary-200 active:scale-95 transition-all disabled:opacity-50">{{ replyName ? '回复' : '发布' }}</button>
                         </div>
                     </div>
@@ -2506,7 +2415,7 @@
                     return '登录';
                 });
                 const authSubtitle = computed(() => {
-                    if (userAuthMode.value === 'register') return '用邮箱验证码完成注册，注册即送 1 次下载机会';
+                    if (userAuthMode.value === 'register') return '用邮箱验证码完成注册，注册即送 2 次下载机会';
                     if (userAuthMode.value === 'forgot') return '验证邮箱后可以设置新密码';
                     return '登录后评论可获取下载次数';
                 });
@@ -2597,8 +2506,6 @@
                         const resp = await fetch(API_BASE + '/api/auth/me');
                         if (resp.ok) {
                             isAdmin.value = true;
-                            fetchCards();
-                            fetchUiTemplates();
                         } else {
                             isAdmin.value = false;
                         }
@@ -2666,8 +2573,6 @@
                                 await resetCaptcha();
                                 return;
                             }
-                            fetchCards();
-                            fetchUiTemplates();
                         } else {
                             userToken.value = '';
                             currentUser.value = null;
@@ -2816,7 +2721,7 @@
                             return;
                         }
                         if (userAuthMode.value === 'register') {
-                            showToast('注册成功！赠送 1 次下载机会', 'success');
+                        showToast('注册成功！赠送 2 次下载机会', 'success');
                             captchaState.verified = false;
                         } else {
                             showToast('登录成功', 'success');
@@ -4637,147 +4542,57 @@
                     return text.replace(/\{\{char\}\}/gi, getCharacterDisplayName(content));
                 };
 
-                const applyRegexScripts = (text, content, raw) => {
+                const applyRegexScripts = (text, content = {}, raw = {}) => {
                     if (!text) return '';
-                    
-                    const charName = getCharacterDisplayName(content);
-                    const protectedSegmentPattern = /(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)/gi;
-                    const protectedSegmentExactPattern = /^(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)$/i;
-                    const replaceOutsideProtectedSegments = (source, regex, replacement) => {
-                        return source.split(protectedSegmentPattern).map(part => {
-                            if (!part || protectedSegmentExactPattern.test(part)) return part;
-                            return part.replace(regex, replacement);
-                        }).join('');
-                    };
-                    
-                    // Detect full HTML documents so the document block can be isolated from regex processing.
-                    const htmlDocPattern = /(<!doctype html>|<html\b[^>]*>)/i;
-                    const trimmed = text.trim();
-                    const htmlMatch = trimmed.match(htmlDocPattern);
-                    
-                    let mainText = text;
-                    let protectedHtml = '';
-                    let hasProtectedHtml = false;
-                    let preText = '', postText = '';
+                    let result = applyDisplayMacros(String(text), content);
+                    const scripts = content.extensions?.regex_scripts
+                        || raw.extensions?.regex_scripts
+                        || content.regex_scripts
+                        || raw.regex_scripts
+                        || content.data?.extensions?.regex_scripts;
+                    if (!scripts) return result;
 
-                    if (htmlMatch) {
-                        const startIndex = text.indexOf(htmlMatch[0]);
-                        const closeTag = '</html>';
-                        const closeIndex = text.toLowerCase().lastIndexOf(closeTag);
-                        
-                        if (closeIndex !== -1 && closeIndex > startIndex) {
-                            const endIndex = closeIndex + closeTag.length;
-                            protectedHtml = text.substring(startIndex, endIndex);
-                            preText = text.substring(0, startIndex);
-                            postText = text.substring(endIndex);
-                            hasProtectedHtml = true;
-                            // Macro replacement still applies to the protected HTML block.
-                            protectedHtml = protectedHtml.replace(/\{\{char\}\}/gi, charName);
-                        }
-                    }
+                    const protectedParts = /(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)/gi;
+                    const protectedPart = /^(<!DOCTYPE html>[\s\S]*?<\/html>|<html\b[^>]*>[\s\S]*?<\/html>|<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>|```[\s\S]*?```|`[^`]+`|<\/?[a-zA-Z][\w:-]*[^>]*>)$/i;
+                    const replacePlainText = (source, regex, replacement) => source
+                        .split(protectedParts)
+                        .map(part => (!part || protectedPart.test(part)) ? part : part.replace(regex, replacement))
+                        .join('');
 
-                    // Apply regex scripts only to the non-HTML segments when a protected document block exists.
-                    // Otherwise, process the full text payload.
-                    let result = hasProtectedHtml ? (preText + "___HTML_BLOCK_PLACEHOLDER___" + postText) : text;
+                    (Array.isArray(scripts) ? scripts : Object.values(scripts)).forEach(script => {
+                        if (!script || script.disabled === true || script.promptOnly) return;
+                        try {
+                            let pattern = script.regex || script.findRegex;
+                            let flags = script.flags || script.regexFlags || 'g';
+                            const replacement = Object.prototype.hasOwnProperty.call(script, 'replacement')
+                                ? script.replacement
+                                : (script.replaceString || '');
+                            if (!pattern) return;
 
-                    // 1. Apply base macro substitution to the mutable text region.
-                    result = result.replace(/\{\{char\}\}/gi, charName);
-                    
-                    // 2. Apply regex scripts using the same field resolution order as importCharacter.
-                    let scripts = [];
-                    
-                    // Path 1: V2 / SillyTavern standard location.
-                    if (content.extensions && content.extensions.regex_scripts) {
-                        scripts = content.extensions.regex_scripts;
-                    }
-                    // Path 2: extensions stored on the raw root object.
-                    else if (raw.extensions && raw.extensions.regex_scripts) {
-                        scripts = raw.extensions.regex_scripts;
-                    }
-                    // Path 3: legacy top-level regex script fields.
-                    else if (content.regex_scripts || raw.regex_scripts) {
-                        scripts = content.regex_scripts || raw.regex_scripts;
-                    }
-                    // Path 4: nested data payloads from non-standard exports.
-                    else if (content.data && content.data.extensions && content.data.extensions.regex_scripts) {
-                        scripts = content.data.extensions.regex_scripts;
-                    }
-
-                    if (scripts) {
-                        // Support both array-based and object-based script collections.
-                        const scriptList = Array.isArray(scripts) ? scripts : Object.values(scripts);
-                        console.log('[Regex] Found scripts count:', scriptList.length);
-                        
-                        scriptList.forEach(script => {
-                            try {
-                                // Normalize enablement semantics before evaluating the script.
-                                // ST uses 'disabled', we might use 'enabled' in some contexts, but ST cards usually have 'disabled'
-                                // Default is enabled if disabled is undefined or false
-                                const isDisabled = script.disabled === true;
-                                if (isDisabled) return;
-
-                                // Skip prompt-only scripts because the plaza preview is display-only.
-                                if (script.promptOnly) return;
-
-                                // Resolve the pattern, flags, and replacement fields.
-                                let regexPattern = script.regex || script.findRegex;
-                                let flags = script.flags || script.regexFlags || 'g';
-                                const replacement = script.hasOwnProperty('replacement')
-                                    ? script.replacement
-                                    : (script.replaceString || '');
-
-                                if (!regexPattern) return;
-
-                                // Parse inline /pattern/flags syntax when present.
-                                if (typeof regexPattern === 'string' && regexPattern.startsWith('/') && regexPattern.lastIndexOf('/') > 0) {
-                                    const lastSlash = regexPattern.lastIndexOf('/');
-                                    const potentialFlags = regexPattern.substring(lastSlash + 1);
-                                    // Accept only valid JavaScript regex flags.
-                                    if (/^[gimsuy]*$/.test(potentialFlags)) {
-                                        flags = potentialFlags;
-                                        regexPattern = regexPattern.substring(1, lastSlash);
-                                    }
+                            if (typeof pattern === 'string' && pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+                                const lastSlash = pattern.lastIndexOf('/');
+                                const inlineFlags = pattern.slice(lastSlash + 1);
+                                if (/^[gimsuy]*$/.test(inlineFlags)) {
+                                    flags = inlineFlags;
+                                    pattern = pattern.slice(1, lastSlash);
                                 }
-                                
-                                // Convert common SillyTavern inline modifiers into JavaScript flags.
-                                if (regexPattern.includes('(?s)')) {
-                                    regexPattern = regexPattern.replace(/\(\?s\)/g, '');
-                                    if (!flags.includes('s')) flags += 's';
-                                }
-                                if (regexPattern.includes('(?i)')) {
-                                    regexPattern = regexPattern.replace(/\(\?i\)/g, '');
-                                    if (!flags.includes('i')) flags += 'i';
-                                }
-                                if (regexPattern.includes('(?m)')) {
-                                    regexPattern = regexPattern.replace(/\(\?m\)/g, '');
-                                    if (!flags.includes('m')) flags += 'm';
-                                }
-
-                                const re = new RegExp(regexPattern, flags);
-                                const oldResult = result;
-                                
-                                // Plain text regexes should not rewrite generated HTML tags, code fences, script/style blocks, or full HTML docs.
-                                const shouldProtectHtml = typeof regexPattern === 'string' && !/[<>]/.test(regexPattern) && !regexPattern.includes('```');
-                                result = shouldProtectHtml
-                                    ? replaceOutsideProtectedSegments(result, re, replacement)
-                                    : result.replace(re, replacement);
-                                
-                                if (oldResult !== result) {
-                                    console.log('[Regex] Applied:', script.scriptName || script.name || regexPattern, '=>', replacement);
-                                }
-                            } catch (e) {
-                                console.warn('应用正则脚本失败:', e, script);
                             }
-                        });
-                    } else {
-                        console.log('[Regex] No scripts found in card data');
-                    }
-                    
-                    // Restore the protected HTML document block after regex processing.
-                    if (hasProtectedHtml) {
-                        result = result.replace("___HTML_BLOCK_PLACEHOLDER___", protectedHtml);
-                    }
-                    
+                            [['(?s)', 's'], ['(?i)', 'i'], ['(?m)', 'm']].forEach(([modifier, flag]) => {
+                                if (typeof pattern === 'string' && pattern.includes(modifier)) {
+                                    pattern = pattern.split(modifier).join('');
+                                    if (!flags.includes(flag)) flags += flag;
+                                }
+                            });
+
+                            flags = Array.from(new Set(String(flags))).join('');
+                            const regex = new RegExp(pattern, flags);
+                            result = !/[<>]/.test(pattern) && !pattern.includes('```')
+                                ? replacePlainText(result, regex, replacement)
+                                : result.replace(regex, replacement);
+                        } catch (error) {
+                            console.warn('应用正则脚本失败:', error.message);
+                        }
+                    });
                     return result;
                 };
 
@@ -4950,9 +4765,13 @@
                     return extractUiTemplatePreviewItems([{ htmlTemplate: buildUiTemplateEmptyMarkup('该模板文件不是可直接渲染的 HTML UI') }], baseOptions);
                 };
 
+                const uiTemplateRenderCache = new WeakMap();
                 const renderUiTemplatePreview = (template) => {
+                    if (template && uiTemplateRenderCache.has(template)) return uiTemplateRenderCache.get(template);
                     const html = renderUiTemplateSource(template);
-                    return html ? renderMarkdown(html) : '';
+                    const rendered = html ? renderMarkdown(html) : '';
+                    if (template && typeof template === 'object') uiTemplateRenderCache.set(template, rendered);
+                    return rendered;
                 };
 
                 const selectedTemplatePreviewItems = computed(() => buildStandaloneUiTemplatePreviewItems(selectedTemplate.value));
@@ -4961,7 +4780,6 @@
                     if (!dataOverride && card?._display?.detail_ready) {
                         return {
                             ...card,
-                            renderId: Date.now(),
                             _display: {
                                 personality: card._display.personality || '',
                                 first_mes: card._display.first_mes || '',
@@ -4981,7 +4799,6 @@
                     return {
                         ...card,
                         data: dataOverride || card.data,
-                        renderId: Date.now(),
                         _display: {
                             personality: processedPersonality,
                             first_mes: processedFirstMes,
@@ -5091,7 +4908,7 @@
                 });
 
                 const canDownloadSelectedCard = computed(() => {
-                    if (!selectedCard.value || previewOpening.active || previewAsset.loading || !previewAsset.ready || isDownloadingCard.value) {
+                    if (!selectedCard.value || previewOpening.active || previewAsset.loading || !previewAsset.ready || selectedCardDetailLoading.value || isDownloadingCard.value) {
                         return false;
                     }
                     return true;
@@ -5102,6 +4919,7 @@
                         const isOwner = isCardOwnedByCurrentUser(selectedCard.value);
                         const isFreeDownload = selectedCard.value.review_status === 'unreviewed';
                         if (!canModerate.value && !isOwner && !isLoggedIn.value) return '登录后下载';
+                        if (selectedCard.value.already_downloaded) return '再次下载（不消耗次数）';
                         if (!isFreeDownload && !canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
                         if (isFreeDownload) return '下载角色卡';
                     }
@@ -5133,120 +4951,63 @@
 
                 const buildExecutableHtmlDocument = (rawHtml, frameId) => {
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-                    const hudCSS = '.sinan-hud{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding:12px;background:linear-gradient(to bottom right,rgba(255,255,255,0.9),rgba(255,255,255,0.6));border-radius:12px;border:1px solid rgba(0,0,0,0.08);backdrop-filter:blur(4px)}.char-card{flex:1 1 140px;background:#fff;padding:10px;border-radius:8px;border-left:4px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px;font-size:12px;position:relative;overflow:hidden;transition:transform 0.2s}.char-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(0,0,0,0.1)}.char-name{font-weight:700;font-size:14px;color:#374151;display:flex;justify-content:space-between;align-items:center}.char-mood{color:#6b7280;font-size:12px}.char-loc{color:#9ca3af;font-size:11px;margin-top:auto;padding-top:4px}.bar-bg{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden;margin-top:6px}.bar-fill{height:100%;background:#10b981;border-radius:2px}.c-tongqiu{border-left-color:#f59e0b}.c-tongqiu .bar-fill{background:#f59e0b}.c-yufan{border-left-color:#3b82f6}.c-yufan .bar-fill{background:#3b82f6}.c-linghu{border-left-color:#8b5cf6}.c-linghu .bar-fill{background:#8b5cf6}.c-chongtian{border-left-color:#ef4444}.c-chongtian .bar-fill{background:#ef4444}';
-                    const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:auto!important;word-wrap:break-word!important;box-sizing:border-box!important;overflow:hidden!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;height:auto!important;}table{display:block!important;overflow-x:auto!important;max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}.container,.reality-panel,.app-container{max-width:100%!important;width:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;border:none!important;height:auto!important;min-height:0!important;}body>div:first-child{margin:0!important;max-width:100%!important;height:auto!important;min-height:0!important;}#app{height:auto!important;min-height:auto!important;}.bottom-safe{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;}' + hudCSS + '</style>';
+                    const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:auto!important;word-wrap:break-word!important;box-sizing:border-box!important;overflow:hidden!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;height:auto!important;}table{display:block!important;overflow-x:auto!important;max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}.container,.reality-panel,.app-container{max-width:100%!important;width:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;border:none!important;height:auto!important;min-height:0!important;}body>div:first-child{margin:0!important;max-width:100%!important;height:auto!important;min-height:0!important;}#app{height:auto!important;min-height:auto!important;}.bottom-safe{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;}</style>';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
-                    const scriptShim = `
-                        <script>
-                            const rphFrameId = ${JSON.stringify(String(frameId || ''))};
-                            window.triggerSlash = function(text) {
-                                console.log('Slash triggered:', text);
-                                try {
-                                    window.parent.postMessage({ type: 'slash_command', content: text, frameId: rphFrameId }, '*');
-                                } catch (e) {
-                                    console.error('TriggerSlash error:', e);
+                    const resizeScript = `<script>
+                        const rphFrameId = ${JSON.stringify(String(frameId || ''))};
+                        window.triggerSlash = function(text) {
+                            window.parent.postMessage({ type: 'slash_command', content: text, frameId: rphFrameId }, '*');
+                        };
+                        let lastHeight = 0;
+                        let resizePending = false;
+                        function updateHeight() {
+                            if (resizePending) return;
+                            resizePending = true;
+                            requestAnimationFrame(function() {
+                                var body = document.body;
+                                var html = document.documentElement;
+                                if (!body || !html) { resizePending = false; return; }
+                                var height = Math.max(body.scrollHeight, html.scrollHeight) + 4;
+                                if (height !== lastHeight) {
+                                    lastHeight = height;
+                                    window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: height }, '*');
                                 }
-                            };
-
-                            let lastHeight = 0;
-                            let isUpdating = false;
-                            function updateHeight() {
-                                if (isUpdating) return;
-                                isUpdating = true;
-                                setTimeout(function() {
-                                    var body = document.body;
-                                    var html = document.documentElement;
-                                    if (!body || !html) {
-                                        isUpdating = false;
-                                        return;
-                                    }
-                                    var maxBottom = 0;
-                                    for (var i = 0; i < body.children.length; i++) {
-                                        var child = body.children[i];
-                                        if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE' || child.tagName === 'LINK') continue;
-                                        var style = window.getComputedStyle(child);
-                                        if (style.position === 'fixed') continue;
-                                        var rect = child.getBoundingClientRect();
-                                        var itemMax = Math.max(rect.bottom, child.offsetTop + child.offsetHeight);
-                                        if (itemMax > maxBottom) maxBottom = itemMax;
-                                    }
-                                    var bodyStyle = window.getComputedStyle(body);
-                                    var marginBottom = parseFloat(bodyStyle.marginBottom) || 0;
-                                    var newHeight = Math.max(maxBottom + marginBottom, body.scrollHeight) + 4;
-                                    if (Math.abs(newHeight - lastHeight) > 0) {
-                                        lastHeight = newHeight;
-                                        window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: newHeight }, '*');
-                                    }
-                                    isUpdating = false;
-                                }, 0);
-                            }
-
-                            window.addEventListener('load', function() {
-                                updateHeight();
-                                setTimeout(updateHeight, 200);
-                                setTimeout(updateHeight, 1000);
+                                resizePending = false;
                             });
-                            window.addEventListener('resize', updateHeight);
-                            window.addEventListener('click', function(event) {
-                                var slashTarget = event.target && event.target.closest && event.target.closest('[data-slash]');
-                                if (slashTarget) {
-                                    event.preventDefault();
-                                    var command = slashTarget.getAttribute('data-slash');
-                                    if (command) window.triggerSlash(command);
-                                }
-                                var start = Date.now();
-                                var tick = function() {
-                                    if (Date.now() - start >= 600) return;
-                                    updateHeight();
-                                    requestAnimationFrame(tick);
-                                };
-                                tick();
-                            });
-                            window.addEventListener('DOMContentLoaded', function() {
-                                if (window.ResizeObserver && document.body) {
-                                    ro.observe(document.body);
-                                }
-                                document.querySelectorAll('img').forEach(function(img) {
-                                    img.addEventListener('load', updateHeight);
-                                });
-                                updateHeight();
-                            });
-                            if (window.ResizeObserver) {
-                                var ro = new ResizeObserver(updateHeight);
-                                if (document.body) ro.observe(document.body);
-                            } else {
-                                setInterval(updateHeight, 1000);
-                            }
-                            if (document.readyState === 'complete') updateHeight();
-                        <\/script>
-                    `;
-
-                    let content = rawHtml || '';
-                    const trimmed = content.trim();
-                    if (/^\s*(<!doctype|<html)/i.test(trimmed)) {
-                        const headRegex = /<head(\s[^>]*)?>/i;
-                        const htmlRegex = /<html(\s[^>]*)?>/i;
-                        if (headRegex.test(content)) {
-                            return content.replace(headRegex, (match) => match + metaViewport + resetStyle + jqueryScript + scriptShim);
                         }
-                        if (htmlRegex.test(content)) {
-                            return content.replace(htmlRegex, (match) => match + '<head>' + metaViewport + resetStyle + jqueryScript + scriptShim + '</head>');
+                        window.addEventListener('load', function() {
+                            updateHeight();
+                            setTimeout(updateHeight, 200);
+                            setTimeout(updateHeight, 1000);
+                        });
+                        window.addEventListener('resize', updateHeight);
+                        window.addEventListener('click', function(event) {
+                            var target = event.target && event.target.closest && event.target.closest('[data-slash]');
+                            if (target) {
+                                event.preventDefault();
+                                var command = target.getAttribute('data-slash');
+                                if (command) window.triggerSlash(command);
+                            }
+                            updateHeight();
+                        });
+                        document.addEventListener('DOMContentLoaded', updateHeight);
+                        if (window.ResizeObserver) {
+                            var observer = new ResizeObserver(updateHeight);
+                            if (document.body) observer.observe(document.body);
+                        } else {
+                            setInterval(updateHeight, 1000);
                         }
-                        return metaViewport + resetStyle + jqueryScript + scriptShim + content;
+                        if (document.readyState === 'complete') updateHeight();
+                    <\/script>`;
+                    const content = String(rawHtml || '');
+                    const injection = metaViewport + resetStyle + jqueryScript + resizeScript;
+                    const headRegex = /<head(\s[^>]*)?>/i;
+                    const htmlRegex = /<html(\s[^>]*)?>/i;
+                    if (/^\s*(<!doctype|<html)/i.test(content)) {
+                        if (headRegex.test(content)) return content.replace(headRegex, match => match + injection);
+                        if (htmlRegex.test(content)) return content.replace(htmlRegex, match => match + '<head>' + injection + '</head>');
                     }
-
-                    return `<!DOCTYPE html>
-<html>
-<head>
-${metaViewport}
-${resetStyle}
-${jqueryScript}
-${scriptShim}
-</head>
-<body>
-${content}
-</body>
-</html>`;
+                    return `<!DOCTYPE html><html><head>${injection}</head><body>${content}</body></html>`;
                 };
 
                 const createIframe = (rawHtml) => {
@@ -5254,6 +5015,7 @@ ${content}
                     const frameId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
                     iframe.className = 'w-full border-t border-gray-200 bg-white shadow-sm block executable-html-frame';
                     iframe.dataset.rphFrameId = frameId;
+                    iframe.loading = 'lazy';
                     iframe.style.height = 'auto';
                     iframe.style.overflow = 'hidden';
                     iframe.style.transition = 'height 0.2s ease-out';
@@ -5265,7 +5027,6 @@ ${content}
                     iframe.srcdoc = buildExecutableHtmlDocument(rawHtml, frameId);
                     return iframe;
                 };
-
                 const fetchComments = async (targetId, targetType = 'card') => {
                     loadingComments.value = true;
                     comments.value = [];
@@ -5567,15 +5328,14 @@ ${content}
                     }
                 };
 
-                const renderMarkdown = (text) => {
+                const renderMarkdownUncached = (text) => {
                     if (!text) return '';
                     const trimmed = text.trim();
                     
                     const cleanConfig = {
-                        ADD_TAGS: ['details', 'summary', 'svg', 'path', 'g', 'circle', 'rect', 'defs', 'linearGradient', 'stop', 'div', 'span'],
-                        ADD_ATTR: ['style', 'open', 'class', 'id', 'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'stroke-linecap', 'stroke-linejoin', 'x1', 'y1', 'x2', 'y2', 'offset', 'stop-color', 'stop-opacity', 'width', 'height'],
-                        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
-                        FORBID_ATTR: ['onclick', 'onerror', 'onload', 'onmouseover', 'onfocus', 'oninput', 'onchange', 'srcdoc', 'sandbox'],
+                        ADD_TAGS: ['details', 'summary', 'iframe', 'svg', 'path', 'g', 'circle', 'rect', 'defs', 'linearGradient', 'stop', 'style', 'div', 'span', 'script', 'button', 'input'],
+                        ADD_ATTR: ['style', 'open', 'srcdoc', 'sandbox', 'frameborder', 'allow', 'allowfullscreen', 'class', 'id', 'viewBox', 'fill', 'stroke', 'stroke-width', 'd', 'stroke-linecap', 'stroke-linejoin', 'x1', 'y1', 'x2', 'y2', 'offset', 'stop-color', 'stop-opacity', 'width', 'height', 'onclick', 'type', 'value', 'checked', 'data-slash'],
+                        FORBID_ATTR: ['onmouseover', 'onload'],
                         FORCE_BODY: true
                     };
                     const renderHtmlFrame = (rawHtml) => {
@@ -5659,6 +5419,16 @@ ${content}
                     return html;
                 };
 
+                const markdownRenderCache = new Map();
+                const renderMarkdown = (text) => {
+                    const source = String(text || '');
+                    if (markdownRenderCache.has(source)) return markdownRenderCache.get(source);
+                    const rendered = renderMarkdownUncached(source);
+                    if (markdownRenderCache.size >= 2000) markdownRenderCache.delete(markdownRenderCache.keys().next().value);
+                    markdownRenderCache.set(source, rendered);
+                    return rendered;
+                };
+
                 const renderAnnouncementMarkdown = (text) => {
                     const source = String(text || '').trim();
                     if (!source) return '';
@@ -5714,7 +5484,7 @@ ${content}
                     }
 
                     // Credit Check
-                    if (!isFreeDownload && !canModerate.value && !isOwner) {
+                    if (!isFreeDownload && !canModerate.value && !isOwner && !card.already_downloaded) {
                         if (downloadCredits.value <= 0) {
                             if (!isLoggedIn.value) {
                                 showUserAuthModal.value = true;
@@ -5751,6 +5521,7 @@ ${content}
                         if (data.new_credits !== undefined && currentUser.value) {
                             currentUser.value = { ...currentUser.value, download_credits: data.new_credits };
                         }
+                        if (isLoggedIn.value) card.already_downloaded = true;
 
                         if (!data.download_url) {
                             throw new Error('下载链接生成失败');
@@ -5763,7 +5534,7 @@ ${content}
                         } else {
                             triggerDirectDownload(data.download_url, fallbackName);
                         }
-                        showToast('下载已开始', 'success');
+                        showToast(data.previously_downloaded ? '下载已开始，本次不消耗下载次数' : '下载已开始', 'success');
                     } catch (err) {
                         console.error('Download error:', err);
                         showToast(err.message || '下载失败', 'error', 4000);
@@ -5985,8 +5756,8 @@ ${content}
                 // Reset to page 1 when filters change
                 watch([searchQuery, cardSort, currentTab, contentSection], () => { currentPage.value = 1; });
                 watch(cardSort, () => {
-                    fetchCards({ showLoading: contentSection.value !== 'uitemplates' });
-                    fetchUiTemplates({ showLoading: contentSection.value === 'uitemplates' });
+                    if (contentSection.value === 'uitemplates') fetchUiTemplates({ showLoading: true });
+                    else fetchCards({ showLoading: true });
                 });
                 watch(contentSection, (section) => {
                     if (section === 'unreviewed' && cardSort.value === 'featured') {
@@ -6044,20 +5815,15 @@ ${content}
                     if (!sourceFrame) return;
                     if (data.type === 'rph_iframe_resize') {
                         const height = Number(data.height);
-                        if (Number.isFinite(height)) {
-                            sourceFrame.style.height = Math.min(Math.max(height, 1), 50000) + 'px';
-                        }
-                        return;
-                    }
-                    if (data.type === 'slash_command') {
+                        if (Number.isFinite(height)) sourceFrame.style.height = Math.min(Math.max(height, 1), 50000) + 'px';
+                    } else if (data.type === 'slash_command') {
                         showToast(`触发指令：${data.content}`, 'success');
                     }
                 };
 
                 onMounted(() => {
                     loadPublicSettings();
-                    fetchCards();
-                    fetchUiTemplates();
+                    fetchCards({ showLoading: true });
                     checkAdminToken();
                     checkUserToken();
                     trackVisit();
@@ -6096,7 +5862,7 @@ ${content}
                     toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
                     formatTemplateVariableBadge, formatCardUiVariableBadge,
-                    handleMobileScroll,
+                    handleMobileScroll, windowWidth,
                     isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderAnnouncementMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
                     comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,

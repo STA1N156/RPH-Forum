@@ -38,7 +38,7 @@ function initDatabase() {
             newapi_penalty_cookies REAL DEFAULT 0,
             comment_email_notifications INTEGER DEFAULT 1,
             password_hash TEXT NOT NULL,
-            download_credits INTEGER DEFAULT 1,
+            download_credits INTEGER DEFAULT 2,
             token_version INTEGER DEFAULT 0,
             is_moderator INTEGER DEFAULT 0,
             is_banned INTEGER DEFAULT 0,

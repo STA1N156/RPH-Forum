@@ -94,6 +94,9 @@ const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PE
 const VIEW_HEAT_WEIGHT = 1.0;
 const COMMENT_HEAT_WEIGHT = 2;
 const DOWNLOAD_HEAT_WEIGHT = 2.5;
+const REGISTRATION_DOWNLOAD_CREDITS = 2;
+const COMMENT_REWARD_CREDITS = 2;
+const DAILY_CREDIT_COMMENT_LIMIT = 3;
 const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_WINDOW_HOURS || '24', 10) || 24);
 const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
 const NEWAPI_USER_STATUS_ENABLED = 1;
@@ -345,7 +348,7 @@ app.use((req, res, next) => {
 
 const htmlAssetCache = new Map();
 const publicAssetCache = new Map();
-const CACHED_PUBLIC_ASSETS = new Set(['tailwind.js', 'vue.global.js', 'marked.min.js', 'purify.min.js']);
+const CACHED_PUBLIC_ASSETS = new Set(['app.css', 'vue.global.js', 'marked.min.js', 'purify.min.js']);
 
 function getCachedHtmlAsset(fileName) {
     const filePath = path.join(PUBLIC_DIR, fileName);
@@ -414,7 +417,7 @@ function getCachedPublicAsset(fileName) {
         lastModified: stat.mtime.toUTCString(),
         size: stat.size,
         mtimeMs: stat.mtimeMs,
-        contentType: 'application/javascript; charset=utf-8'
+        contentType: fileName.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8'
     };
     publicAssetCache.set(fileName, nextCache);
     return nextCache;
@@ -1897,8 +1900,8 @@ app.post('/api/user/register', async (req, res) => {
         const hash = await bcrypt.hash(password, 12);
         const now = new Date().toISOString();
         const result = db.prepare(
-            'INSERT INTO users (username, email, email_verified, password_hash, download_credits, comment_email_notifications, last_login) VALUES (?, ?, 1, ?, 1, 1, ?)'
-        ).run(normalizedUsername, email, hash, now);
+            'INSERT INTO users (username, email, email_verified, password_hash, download_credits, comment_email_notifications, last_login) VALUES (?, ?, 1, ?, ?, 1, ?)'
+        ).run(normalizedUsername, email, hash, REGISTRATION_DOWNLOAD_CREDITS, now);
 
         const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
         logOperation({ userType: 'user', userId: user.id, username: user.username, action: 'register', targetType: 'user', targetId: String(user.id), ip: getRequestIp(req) });
@@ -3595,7 +3598,7 @@ app.get('/api/ui-templates', optionalUserAuth, (req, res) => {
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
         const rawTemplates = db.prepare(
             `SELECT id, title, description, file_name, file_ext, mime_type,
-                    content AS content_preview_source, file_size,
+                    substr(content, 1, 65536) AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
                     rejection_reason, uploader_ip_address, created_at, latest_rank_at, updated_at,
                     ${templateCommentCountSql} AS comment_count,
@@ -4367,6 +4370,78 @@ async function buildCardDownloadFile(card) {
     return injectCardMetadataIntoPng(pngBuffer, card.data);
 }
 
+const CARD_DOWNLOAD_CACHE_VERSION = 'card-download-v1';
+const CARD_DOWNLOAD_CACHE_DIR = path.join(SERVER_DATA_DIR, 'card-download-cache');
+const CARD_DOWNLOAD_MEMORY_MAX = 50;
+const cardDownloadCache = new Map();
+const cardDownloadBuildPromises = new Map();
+
+function rememberCardDownload(cacheKey, buffer) {
+    cardDownloadCache.delete(cacheKey);
+    while (cardDownloadCache.size >= CARD_DOWNLOAD_MEMORY_MAX) {
+        cardDownloadCache.delete(cardDownloadCache.keys().next().value);
+    }
+    cardDownloadCache.set(cacheKey, buffer);
+    return buffer;
+}
+
+function makeCardDownloadCacheKey(card) {
+    const signature = crypto.createHash('sha1')
+        .update(CARD_DOWNLOAD_CACHE_VERSION)
+        .update('\0')
+        .update(String(card.id || ''))
+        .update('\0')
+        .update(String(card.avatar_url || ''))
+        .update('\0')
+        .update(JSON.stringify(card.data ?? null))
+        .digest('hex')
+        .slice(0, 24);
+    return `${getCardCacheFilePrefix(card.id)}-${signature}.png`;
+}
+
+async function getCardDownloadFile(card) {
+    const cacheKey = makeCardDownloadCacheKey(card);
+    if (cardDownloadCache.has(cacheKey)) return rememberCardDownload(cacheKey, cardDownloadCache.get(cacheKey));
+
+    const cachePath = path.join(CARD_DOWNLOAD_CACHE_DIR, cacheKey);
+    try {
+        const cached = await fs.promises.readFile(cachePath);
+        return rememberCardDownload(cacheKey, cached);
+    } catch {}
+
+    if (cardDownloadBuildPromises.has(cacheKey)) return cardDownloadBuildPromises.get(cacheKey);
+    const buildPromise = buildCardDownloadFile(card).then((buffer) => {
+        rememberCardDownload(cacheKey, buffer);
+        fs.promises.mkdir(CARD_DOWNLOAD_CACHE_DIR, { recursive: true })
+            .then(() => fs.promises.writeFile(cachePath, buffer))
+            .catch(err => console.warn('[CardDownload] cache write failed:', err.message));
+        return buffer;
+    }).finally(() => cardDownloadBuildPromises.delete(cacheKey));
+    cardDownloadBuildPromises.set(cacheKey, buildPromise);
+    return buildPromise;
+}
+
+function clearCardDownloadCache(cardId) {
+    const prefix = `${getCardCacheFilePrefix(cardId)}-`;
+    for (const key of cardDownloadCache.keys()) {
+        if (key.startsWith(prefix)) cardDownloadCache.delete(key);
+    }
+    clearCardCacheFiles(CARD_DOWNLOAD_CACHE_DIR, cardId, 'card-download');
+}
+
+function warmCardDownloadCache(cardId) {
+    setImmediate(() => {
+        const card = db.prepare('SELECT id, name, avatar_url, data FROM character_cards WHERE id = ?').get(cardId);
+        if (!card) return;
+        try {
+            card.data = card.data ? JSON.parse(card.data) : null;
+        } catch {
+            card.data = null;
+        }
+        getCardDownloadFile(card).catch(err => console.warn('[CardDownload] warmup failed:', err.message));
+    });
+}
+
 function cacheThumbnail(cardId, body, contentType, cacheControl, cacheKey = '') {
     if (thumbnailCache.size >= THUMBNAIL_MAX_CACHE) {
         const firstKey = thumbnailCache.keys().next().value;
@@ -4390,6 +4465,7 @@ function getCachedThumbnail(cardId, expectedCacheKey = '') {
 function clearCardImageCaches(cardId) {
     thumbnailCache.delete(cardId);
     previewImageCache.delete(cardId);
+    clearCardDownloadCache(cardId);
     clearCardCacheFiles(THUMBNAIL_CACHE_DIR, cardId, 'thumbnail');
     clearCardCacheFiles(PREVIEW_IMAGE_CACHE_DIR, cardId, 'preview-image');
 }
@@ -4478,6 +4554,7 @@ function ensureImageCacheVersion(cacheDir, version, label) {
 function cleanupOutdatedImageCaches() {
     ensureImageCacheVersion(THUMBNAIL_CACHE_DIR, THUMBNAIL_CACHE_VERSION, 'thumbnail');
     ensureImageCacheVersion(PREVIEW_IMAGE_CACHE_DIR, PREVIEW_IMAGE_CACHE_VERSION, 'preview-image');
+    ensureImageCacheVersion(CARD_DOWNLOAD_CACHE_DIR, CARD_DOWNLOAD_CACHE_VERSION, 'card-download');
 }
 
 function warmPublicAssetCache() {
@@ -4896,6 +4973,9 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
             || isModeratorUser(req.user)
             || (req.user && card.uploader_user_id === req.user.id);
         if (!canView) return res.status(404).json({ error: '卡片不存在' });
+        card.already_downloaded = Boolean(req.user && db.prepare(
+            'SELECT 1 FROM card_downloads WHERE card_id = ? AND user_id = ? LIMIT 1'
+        ).get(req.params.id, req.user.id));
         if (!parseCardDetailPreview(card.detail_preview)) {
             const rawDataRow = db.prepare('SELECT data FROM character_cards WHERE id = ?').get(req.params.id);
             markPerf(req, 'card-detail-preview-miss-read-data', {
@@ -5046,6 +5126,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 ip: uploaderIp
             });
         }
+        warmCardDownloadCache(id);
 
         res.json([
             sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }),
@@ -5274,6 +5355,7 @@ app.put('/api/cards/:id', (req, res) => {
             }
         }
         clearCardImageCaches(req.params.id);
+        warmCardDownloadCache(req.params.id);
         clearCardListCache('card-edit');
 
         logOperation({
@@ -5502,9 +5584,15 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         const isFreeDownload = card.review_status === 'unreviewed';
         let newCredits = null;
         let downloadCounted = false;
+        let previouslyDownloaded = false;
         const recordDownload = db.transaction(() => {
+            if (req.user && !isOwner && !isModerator) {
+                previouslyDownloaded = Boolean(db.prepare(
+                    'SELECT 1 FROM card_downloads WHERE card_id = ? AND user_id = ? LIMIT 1'
+                ).get(id, req.user.id));
+            }
             if (!req.admin && !isModerator) {
-                if (!isOwner && !isFreeDownload) {
+                if (!isOwner && !isFreeDownload && !previouslyDownloaded) {
                     const result = db.prepare('UPDATE users SET download_credits = download_credits - 1 WHERE id = ? AND download_credits > 0').run(req.user.id);
                     if (result.changes === 0) {
                         const error = new Error('下载次数不足');
@@ -5516,7 +5604,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
             }
 
             // One regular account can add download heat to the same card only once.
-            if (!isOwner && !req.admin && !isModerator) {
+            if (!isOwner && !req.admin && !isModerator && !previouslyDownloaded) {
                 const inserted = db.prepare(
                     `INSERT OR IGNORE INTO card_downloads (card_id, user_id)
                      VALUES (?, ?)`
@@ -5542,6 +5630,7 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
             download_counted: downloadCounted,
             downloads_count: latestDownloads,
             free_download: isFreeDownload,
+            previously_downloaded: previouslyDownloaded,
             download_url: `/api/cards/${encodeURIComponent(id)}/download/file`
         });
     } catch (err) {
@@ -5573,10 +5662,10 @@ app.get('/api/cards/:id/download/file', optionalUserAuth, async (req, res) => {
             card.data = null;
         }
 
-        const fileBuffer = await buildCardDownloadFile(card);
+        const fileBuffer = await getCardDownloadFile(card);
         const fileName = sanitizeDownloadFilename(card.name);
         res.set('Content-Type', 'image/png');
-        res.set('Cache-Control', 'no-store');
+        res.set('Cache-Control', 'private, max-age=3600');
         res.set('Content-Disposition', createAttachmentDisposition(fileName));
         res.send(fileBuffer);
     } catch (err) {
@@ -5754,10 +5843,10 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             }
         }
 
-        // Check daily comment credit limit (max 2 comments per day earn credits)
+        // The first three eligible comments each day earn download credits.
         const todayStr = now.slice(0, 10); // YYYY-MM-DD
         const todayCommentCount = countTodayCreditComments(userId, todayStr);
-        const canEarnCredits = card.review_status === 'approved' && todayCommentCount < 2;
+        const canEarnCredits = card.review_status === 'approved' && todayCommentCount < DAILY_CREDIT_COMMENT_LIMIT;
         const hadHeatComment = Boolean(db.prepare(
             'SELECT 1 FROM character_comments WHERE card_id = ? AND user_id = ? LIMIT 1'
         ).get(req.params.cardId, userId));
@@ -5775,7 +5864,7 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             }
 
             if (canEarnCredits) {
-                db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+                db.prepare('UPDATE users SET download_credits = download_credits + ? WHERE id = ?').run(COMMENT_REWARD_CREDITS, userId);
             }
         });
         insertComment();
@@ -5939,7 +6028,7 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         }
 
         const todayStr = now.slice(0, 10);
-        const canEarnCredits = countTodayCreditComments(userId, todayStr) < 2;
+        const canEarnCredits = countTodayCreditComments(userId, todayStr) < DAILY_CREDIT_COMMENT_LIMIT;
         const hadHeatComment = Boolean(db.prepare(
             'SELECT 1 FROM ui_template_comments WHERE template_id = ? AND user_id = ? LIMIT 1'
         ).get(req.params.templateId, userId));
@@ -5956,7 +6045,7 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
             }
 
             if (canEarnCredits) {
-                db.prepare('UPDATE users SET download_credits = download_credits + 2 WHERE id = ?').run(userId);
+                db.prepare('UPDATE users SET download_credits = download_credits + ? WHERE id = ?').run(COMMENT_REWARD_CREDITS, userId);
             }
         });
         insertComment();
