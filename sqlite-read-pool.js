@@ -37,7 +37,7 @@ if (!isMainThread && workerData?.sqliteReadWorker) {
             const configured = Number.parseInt(process.env.SQLITE_READ_WORKERS || '', 10);
             this.size = Number.isFinite(configured)
                 ? Math.min(Math.max(configured, 1), 32)
-                : Math.min(Math.max(availableParallelism() - 1, 2), 16);
+                : Math.min(Math.max(availableParallelism() - 1, 2), 8);
             this.dbPath = dbPath;
             this.nextId = 1;
             this.tasks = new Map();
