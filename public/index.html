@@ -774,7 +774,7 @@
             </div>
 
             <!-- Pagination -->
-            <div v-if="!loading && totalPages > 0" class="mt-8 flex flex-col items-center gap-2">
+            <div v-if="!loading && totalPages > 0 && (contentSection === 'uitemplates' || cardCatalogComplete)" class="mt-8 flex flex-col items-center gap-2">
                 <!-- Page buttons -->
                 <div class="flex items-center gap-1.5">
                     <button @click="currentPage = 1" :disabled="currentPage === 1"
@@ -2172,6 +2172,7 @@
                 const cards = ref([]);
                 const uiTemplates = ref([]);
                 const cardSectionCounts = reactive({ reviewed: 0, unreviewed: 0 });
+                const cardCatalogComplete = ref(false);
                 const cardSort = ref('latest');
                 const showSortDropdown = ref(false);
                 const loading = ref(true);
@@ -3377,6 +3378,7 @@
                 };
 
                 const clearCardListCaches = () => {
+                    cardCatalogComplete.value = false;
                     cardCatalogCache.clear();
                     cardRankOrderCache.clear();
                     cardRankOrderRequests.clear();
@@ -3471,7 +3473,7 @@
                         fullCardCatalogTimer = null;
                         const activeZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
                         if (scope === getCardCacheScope() && zone === activeZone) fetchCards();
-                    }, 1000);
+                    }, 100);
                 };
 
                 const fetchCards = async ({ showLoading = false, preferCache = false, initialBatch = false } = {}) => {
@@ -3487,9 +3489,14 @@
                     if (showFullLoading) loading.value = true;
                     if (cachedCatalog) {
                         loading.value = false;
-                        await applyCardSort(cachedCatalog.items, requestedSort, requestedZone, requestedScope, requestId);
-                        if (cachedCatalog.complete) scheduleCardRankPrefetch(cachedCatalog, requestedZone, requestedScope);
-                        else scheduleFullCardCatalog(requestedZone, requestedScope);
+                        cardCatalogComplete.value = cachedCatalog.complete;
+                        if (cachedCatalog.complete) {
+                            await applyCardSort(cachedCatalog.items, requestedSort, requestedZone, requestedScope, requestId);
+                            scheduleCardRankPrefetch(cachedCatalog, requestedZone, requestedScope);
+                        } else {
+                            if (cachedCatalog.sort === requestedSort) cards.value = cachedCatalog.items;
+                            scheduleFullCardCatalog(requestedZone, requestedScope);
+                        }
                         if (preferCache) return;
                     }
                     if (!initialBatch) {
@@ -3499,21 +3506,35 @@
                     }
                     try {
                         const batchQuery = initialBatch ? '&limit=' + INITIAL_CARD_BATCH_SIZE : '';
-                        const resp = await fetch(API_BASE + '/api/cards?sort=latest&zone=' + requestedZone + batchQuery, { headers: getCardRequestHeaders() });
+                        const serverSort = initialBatch ? requestedSort : 'latest';
+                        const resp = await fetch(API_BASE + '/api/cards?sort=' + encodeURIComponent(serverSort) + '&zone=' + requestedZone + batchQuery, { headers: getCardRequestHeaders() });
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
                         const items = Array.isArray(data) ? data : (data.items || []);
-                        const catalog = {
+                        let catalog = {
                             items: prepareCardList(items),
                             complete: !initialBatch || items.length < INITIAL_CARD_BATCH_SIZE,
+                            sort: serverSort,
                             rankPrefetchStarted: false
                         };
-                        cardCatalogCache.set(catalogKey, catalog);
                         const activeScope = getCardCacheScope();
-                        if (activeScope !== requestedScope) cardCatalogCache.set(getCardCatalogKey(activeScope, requestedZone), catalog);
+                        const activeCatalogKey = getCardCatalogKey(activeScope, requestedZone);
+                        const existingCatalog = cardCatalogCache.get(activeCatalogKey) || cardCatalogCache.get(catalogKey);
+                        if (!catalog.complete && existingCatalog?.complete) {
+                            catalog = existingCatalog;
+                        } else {
+                            cardCatalogCache.set(catalogKey, catalog);
+                            if (activeScope !== requestedScope) cardCatalogCache.set(activeCatalogKey, catalog);
+                        }
                         for (const sort of PERIOD_CARD_SORTS) cardRankOrderCache.delete(getCardRankKey(activeScope, requestedZone, sort));
-                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value || requestedZone !== (contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed')) return;
-                        await applyCardSort(catalog.items, requestedSort, requestedZone, activeScope, requestId);
+                        const activeZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
+                        if (requestId !== cardsRequestId || requestedSort !== cardSort.value || requestedZone !== activeZone) {
+                            if (catalog.complete && requestedZone === activeZone && activeScope === getCardCacheScope()) switchCardSort();
+                            return;
+                        }
+                        cardCatalogComplete.value = catalog.complete;
+                        if (initialBatch && !catalog.complete) cards.value = catalog.items;
+                        else await applyCardSort(catalog.items, requestedSort, requestedZone, activeScope, requestId);
                         if (catalog.complete) scheduleCardRankPrefetch(catalog, requestedZone, activeScope);
                         else scheduleFullCardCatalog(requestedZone, activeScope);
                     } catch (err) {
@@ -3531,11 +3552,11 @@
                     const zone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
                     const scope = getCardCacheScope();
                     const catalog = cardCatalogCache.get(getCardCatalogKey(scope, zone));
-                    if (!catalog) return fetchCards({ showLoading: true });
+                    if (!catalog) return fetchCards({ showLoading: cards.value.length === 0, initialBatch: true });
+                    if (!catalog.complete) return fetchCards({ initialBatch: true });
                     loading.value = false;
                     try {
                         await applyCardSort(catalog.items, cardSort.value, zone, scope, requestId);
-                        if (!catalog.complete) fetchCards();
                     } catch (err) {
                         if (requestId === cardsRequestId) showToast(err.message || '排行加载失败', 'error');
                     }
@@ -6081,7 +6102,7 @@
                 });
 
                 return {
-                    cards, uiTemplates, cardSectionCounts, cardSort, showSortDropdown, loading, searchQuery, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    cards, uiTemplates, cardSectionCounts, cardCatalogComplete, cardSort, showSortDropdown, loading, searchQuery, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
