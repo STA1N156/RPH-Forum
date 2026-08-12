@@ -946,7 +946,7 @@
                 <section class="max-w-4xl mx-auto px-4 sm:px-6 mt-10 sm:mt-12 md:max-w-none md:px-0 lg:px-0">
                     <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
                         <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                        评论 ({{ comments.length }})
+                        评论 ({{ commentTotal }})
                         <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                     </h4>
                     <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
@@ -1021,6 +1021,9 @@
                                     {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
                                 </button>
                             </div>
+                        </div>
+                        <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
+                            <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
                         </div>
                     </div>
                 </section>
@@ -1385,7 +1388,7 @@
                             <section>
                                 <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    评论 ({{ comments.length }})
+                                    评论 ({{ commentTotal }})
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 
@@ -1470,6 +1473,9 @@
                                                 {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
                                             </button>
                                         </div>
+                                    </div>
+                                    <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
+                                        <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
                                     </div>
                                 </div>
                             </section>
@@ -1608,7 +1614,7 @@
                             <section>
                                 <h4 class="text-base font-black text-gray-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-4">
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    评论 ({{ comments.length }})
+                                    评论 ({{ commentTotal }})
                                     <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                                 </h4>
                                 
@@ -1693,6 +1699,9 @@
                                                 {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
                                             </button>
                                         </div>
+                                    </div>
+                                    <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
+                                        <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
                                     </div>
                                 </div>
                             </section>
@@ -2301,6 +2310,14 @@
                 // Comments Logic
                 const comments = ref([]);
                 const loadingComments = ref(false);
+                const loadingMoreComments = ref(false);
+                const commentTotal = ref(0);
+                const commentsHasMore = ref(false);
+                const commentTarget = reactive({ id: '', type: 'card', nextOffset: 0 });
+                const commentsLoadSentinel = ref(null);
+                const COMMENT_PAGE_SIZE = 20;
+                let commentsRequestId = 0;
+                let commentsLoadObserver = null;
                 const newComment = reactive({
                     content: '',
                     reply_to_id: null,
@@ -4951,7 +4968,7 @@
 
                 const buildExecutableHtmlDocument = (rawHtml, frameId) => {
                     const metaViewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">';
-                    const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;height:auto!important;min-height:auto!important;word-wrap:break-word!important;box-sizing:border-box!important;overflow:hidden!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;height:auto!important;}table{display:block!important;overflow-x:auto!important;max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}.container,.reality-panel,.app-container{max-width:100%!important;width:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;border:none!important;height:auto!important;min-height:0!important;}body>div:first-child{margin:0!important;max-width:100%!important;height:auto!important;min-height:0!important;}#app{height:auto!important;min-height:auto!important;}.bottom-safe{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;}</style>';
+                    const resetStyle = '<style>html,body{margin:0!important;padding:0!important;width:100%!important;word-wrap:break-word!important;box-sizing:border-box!important;}::-webkit-scrollbar{display:none;}*,*::before,*::after{box-sizing:inherit!important;}img,video,canvas,svg{max-width:100%!important;}table{max-width:100%!important;}pre{white-space:pre-wrap!important;word-wrap:break-word!important;max-width:100%!important;}</style>';
                     const jqueryScript = '<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js" defer><\/script>';
                     const resizeScript = `<script>
                         const rphFrameId = ${JSON.stringify(String(frameId || ''))};
@@ -4967,8 +4984,8 @@
                                 var body = document.body;
                                 var html = document.documentElement;
                                 if (!body || !html) { resizePending = false; return; }
-                                var height = Math.max(body.scrollHeight, html.scrollHeight) + 4;
-                                if (height !== lastHeight) {
+                                var height = Math.ceil(Math.max(body.scrollHeight, body.offsetHeight, html.scrollHeight, html.offsetHeight));
+                                if (Math.abs(height - lastHeight) > 1) {
                                     lastHeight = height;
                                     window.parent.postMessage({ type: 'rph_iframe_resize', frameId: rphFrameId, height: height }, '*');
                                 }
@@ -5018,7 +5035,7 @@
                     iframe.loading = 'lazy';
                     iframe.style.height = 'auto';
                     iframe.style.overflow = 'hidden';
-                    iframe.style.transition = 'height 0.2s ease-out';
+                    iframe.style.transition = 'none';
                     iframe.style.margin = '0';
                     iframe.style.padding = '0';
                     iframe.setAttribute('scrolling', 'no');
@@ -5027,24 +5044,63 @@
                     iframe.srcdoc = buildExecutableHtmlDocument(rawHtml, frameId);
                     return iframe;
                 };
-                const fetchComments = async (targetId, targetType = 'card') => {
-                    loadingComments.value = true;
-                    comments.value = [];
+                const fetchComments = async (targetId, targetType = 'card', { append = false } = {}) => {
+                    if (append && (commentTarget.id !== targetId || commentTarget.type !== targetType)) return;
+                    const requestId = ++commentsRequestId;
+                    const offset = append ? commentTarget.nextOffset : 0;
+                    loadingComments.value = !append;
+                    loadingMoreComments.value = append;
+                    if (!append) {
+                        comments.value = [];
+                        commentTotal.value = 0;
+                        commentsHasMore.value = false;
+                        commentTarget.id = targetId;
+                        commentTarget.type = targetType;
+                        commentTarget.nextOffset = 0;
+                    }
                     try {
                         const headers = isLoggedIn.value ? { 'Authorization': 'Bearer ' + userToken.value } : {};
-                        const url = targetType === 'template'
+                        const baseUrl = targetType === 'template'
                             ? API_BASE + '/api/ui-templates/' + targetId + '/comments'
                             : API_BASE + '/api/cards/' + targetId + '/comments';
-                        const resp = await fetch(url, { headers });
+                        const resp = await fetch(`${baseUrl}?limit=${COMMENT_PAGE_SIZE}&offset=${offset}`, { headers });
                         if (!resp.ok) throw new Error('获取评论失败');
                         const data = await resp.json();
-                        comments.value = data || [];
+                        if (requestId !== commentsRequestId) return;
+                        const pageComments = Array.isArray(data) ? data : (data.comments || []);
+                        if (append) {
+                            const loadedIds = new Set(comments.value.map(comment => comment.id));
+                            comments.value.push(...pageComments.filter(comment => !loadedIds.has(comment.id)));
+                        } else {
+                            comments.value = pageComments;
+                        }
+                        commentTotal.value = Number(data.total ?? comments.value.length);
+                        commentsHasMore.value = Boolean(data.has_more);
+                        commentTarget.nextOffset = Number(data.next_offset ?? (offset + COMMENT_PAGE_SIZE));
                     } catch (err) {
                         console.error('Error fetching comments:', err);
                     } finally {
-                        loadingComments.value = false;
+                        if (requestId === commentsRequestId) {
+                            loadingComments.value = false;
+                            loadingMoreComments.value = false;
+                        }
                     }
                 };
+
+                const loadMoreComments = () => {
+                    if (!commentsHasMore.value || loadingMoreComments.value) return;
+                    fetchComments(commentTarget.id, commentTarget.type, { append: true });
+                };
+
+                watch(commentsLoadSentinel, (element) => {
+                    if (commentsLoadObserver) commentsLoadObserver.disconnect();
+                    commentsLoadObserver = null;
+                    if (!element || !('IntersectionObserver' in window)) return;
+                    commentsLoadObserver = new IntersectionObserver((entries) => {
+                        if (entries.some(entry => entry.isIntersecting)) loadMoreComments();
+                    }, { rootMargin: '300px 0px' });
+                    commentsLoadObserver.observe(element);
+                }, { flush: 'post' });
 
                 const submitComment = async () => {
                     if (!isLoggedIn.value) {
@@ -5084,8 +5140,10 @@
                         }
                         const data = await resp.json();
 
-                        if (data && data.comment) {
-                            comments.value.push(data.comment);
+                        if (data && data.comment && !data.comment_hidden) {
+                            if (data.comment.reply_to_id) comments.value.push(data.comment);
+                            else comments.value.unshift(data.comment);
+                            commentTotal.value += 1;
                             // Auto-expand replies for the root comment this reply belongs to
                             if (data.comment.reply_to_id) {
                                 const byId = {};
@@ -5296,6 +5354,7 @@
                         
                         const removedCount = comments.value.filter(c => c.id === commentId).length;
                         comments.value = comments.value.filter(c => c.id !== commentId);
+                        commentTotal.value = Math.max(0, commentTotal.value - removedCount);
 
                         // Update local comment_count on the card to reflect heat change immediately
                         if (isTemplateComment && selectedTemplate.value) {
@@ -5815,7 +5874,14 @@
                     if (!sourceFrame) return;
                     if (data.type === 'rph_iframe_resize') {
                         const height = Number(data.height);
-                        if (Number.isFinite(height)) sourceFrame.style.height = Math.min(Math.max(height, 1), 50000) + 'px';
+                        if (!Number.isFinite(height)) return;
+                        const nextHeight = Math.min(Math.max(height, 1), 50000);
+                        const currentHeight = sourceFrame.getBoundingClientRect().height;
+                        if (Math.abs(nextHeight - currentHeight) <= 1) return;
+                        const isFeedbackGrowth = nextHeight > currentHeight && nextHeight - currentHeight <= 8;
+                        const feedbackCount = isFeedbackGrowth ? Number(sourceFrame.dataset.rphFeedbackCount || 0) + 1 : 0;
+                        sourceFrame.dataset.rphFeedbackCount = String(feedbackCount);
+                        if (feedbackCount < 2) sourceFrame.style.height = nextHeight + 'px';
                     } else if (data.type === 'slash_command') {
                         showToast(`触发指令：${data.content}`, 'success');
                     }
@@ -5841,6 +5907,7 @@
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
                     window.removeEventListener('message', handleWindowMessage);
+                    if (commentsLoadObserver) commentsLoadObserver.disconnect();
                     if (announcementPollTimer) {
                         clearInterval(announcementPollTimer);
                         announcementPollTimer = null;
@@ -5865,7 +5932,8 @@
                     handleMobileScroll, windowWidth,
                     isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderAnnouncementMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
-                    comments, loadingComments, newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
+                    comments, loadingComments, loadingMoreComments, commentTotal, commentsHasMore, commentsLoadSentinel,
+                    newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
                     commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
                     showHeatEditModal, editingHeatCard, editingHeatType, heatEditForm, openHeatEdit, submitHeatEdit,
