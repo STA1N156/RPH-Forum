@@ -957,7 +957,7 @@ function getTurnstileConfig() {
     };
 }
 
-async function verifyTurnstileToken(token, remoteIp) {
+async function verifyTurnstileToken(token, remoteIp, expectedAction = 'email_code') {
     const config = getTurnstileConfig();
     if (!config.siteKey || !config.secretKey) {
         const error = new Error('安全验证尚未配置，请联系管理员');
@@ -984,7 +984,7 @@ async function verifyTurnstileToken(token, remoteIp) {
             signal: controller.signal
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.success || (data.action && data.action !== 'email_code')) {
+        if (!response.ok || !data.success || (data.action && data.action !== expectedAction)) {
             const error = new Error('安全验证未通过或已过期，请重试');
             error.statusCode = 400;
             throw error;
@@ -1991,6 +1991,11 @@ app.post('/api/user/login', async (req, res) => {
     }
 
     const ip = getRequestIp(req);
+    try {
+        await verifyTurnstileToken(String(req.body.turnstileToken || '').trim(), ip, 'user_login');
+    } catch (err) {
+        return res.status(err.statusCode || 500).json({ error: err.message || '安全验证失败' });
+    }
     const loginRate = checkUserLoginRate(ip, username);
     if (loginRate.blocked) {
         res.set('Retry-After', String(loginRate.retryAfter));
