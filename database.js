@@ -338,6 +338,7 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_content_view_events_lookup ON content_view_events(content_type, content_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ip_bans_active ON ip_bans(is_active);
         CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_email_codes_ip_created ON email_verification_codes(ip_address, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
@@ -519,6 +520,7 @@ function initDatabase() {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_created_at ON ui_templates(created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_templates_latest_rank ON ui_templates(review_status, latest_rank_at DESC, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_verification_codes(email, purpose, user_id, used_at, expires_at)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_email_codes_ip_created ON email_verification_codes(ip_address, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC)'); } catch (e) { /* index exists */ }

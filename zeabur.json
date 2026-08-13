@@ -30,13 +30,13 @@
                     "expose": false,
                     "readonly": true
                 },
-                "ZEABUR_EMAIL_API_KEY": {
+                "RESEND_API_KEY": {
                     "default": "",
                     "expose": false,
                     "readonly": false
                 },
-                "ZEABUR_EMAIL_FROM": {
-                    "default": "",
+                "RESEND_FROM": {
+                    "default": "noreply@rphub.cn",
                     "expose": false,
                     "readonly": false
                 },

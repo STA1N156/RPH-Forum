@@ -36,9 +36,9 @@ const DERIVED_JWT_SECRET = process.env.ADMIN_PASSWORD
     ? crypto.createHash('sha256').update(`rp-forum:${process.env.ADMIN_PASSWORD}`).digest('hex')
     : '';
 const JWT_SECRET = EXPLICIT_JWT_SECRET || DERIVED_JWT_SECRET || (IS_PRODUCTION ? '' : crypto.randomBytes(32).toString('hex'));
-const ZEABUR_EMAIL_API_KEY = (process.env.ZEABUR_EMAIL_API_KEY || '').trim();
-const ZEABUR_EMAIL_FROM = (process.env.ZEABUR_EMAIL_FROM || process.env.EMAIL_FROM || '').trim();
-const ZEABUR_EMAIL_ENDPOINT = (process.env.ZEABUR_EMAIL_ENDPOINT || 'https://api.zeabur.com/api/v1/zsend/emails').trim();
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
+const RESEND_FROM = (process.env.RESEND_FROM || process.env.EMAIL_FROM || '').trim();
+const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails';
 const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || process.env.ADMIN_EMAILS || '').trim();
 const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
 const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
@@ -88,6 +88,8 @@ const AI_REVIEW_DEFAULT_COVER_PROMPT = [
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
+const EMAIL_CODE_IP_WINDOW_MS = 60 * 1000;
+const EMAIL_CODE_IP_MAX_PER_WINDOW = 3;
 const EMAIL_SEND_TIMEOUT_MS = Math.max(5000, parseInt(process.env.EMAIL_SEND_TIMEOUT_MS || '15000', 10) || 15000);
 const EMAIL_SEND_RETRIES = Math.max(0, parseInt(process.env.EMAIL_SEND_RETRIES || '1', 10) || 1);
 const HEAT_EMAIL_STEP = 500;
@@ -943,9 +945,8 @@ function setSettingValue(key, value) {
 
 function getEmailConfig() {
     return {
-        apiKey: getSettingValue('zeabur_email_api_key') || ZEABUR_EMAIL_API_KEY,
-        from: getSettingValue('zeabur_email_from') || ZEABUR_EMAIL_FROM,
-        endpoint: getSettingValue('zeabur_email_endpoint') || ZEABUR_EMAIL_ENDPOINT
+        apiKey: getSettingValue('resend_api_key') || RESEND_API_KEY,
+        from: getSettingValue('resend_from') || RESEND_FROM
     };
 }
 
@@ -1146,15 +1147,14 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function sendZeaburEmail({ to, subject, html, text }) {
+async function sendResendEmail({ to, subject, html, text }) {
     const normalizedTo = normalizeEmail(to);
     if (!normalizedTo) throw new Error('收件邮箱格式无效');
     if (!isQqEmail(normalizedTo)) throw new Error('目前仅支持 QQ 邮箱（@qq.com）');
     const config = getEmailConfig();
     if (!config.apiKey || !config.from) {
-        throw new Error('邮件服务未配置，请在后台或环境变量里设置 Zeabur API Key 和发件邮箱');
+        throw new Error('邮件服务未配置，请在后台或环境变量里设置 Resend API Key 和发件邮箱');
     }
-    const endpoint = config.endpoint || ZEABUR_EMAIL_ENDPOINT;
     const requestBody = JSON.stringify({
         from: config.from,
         to: [normalizedTo],
@@ -1169,7 +1169,7 @@ async function sendZeaburEmail({ to, subject, html, text }) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), EMAIL_SEND_TIMEOUT_MS);
         try {
-            response = await fetch(endpoint, {
+            response = await fetch(RESEND_EMAIL_ENDPOINT, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1189,7 +1189,7 @@ async function sendZeaburEmail({ to, subject, html, text }) {
     }
 
     if (!response) {
-        throw new Error(`邮件服务连接失败：${describeFetchFailure(lastError)}；endpoint=${endpoint}`);
+        throw new Error(`Resend 连接失败：${describeFetchFailure(lastError)}`);
     }
 
     const data = await response.json().catch(() => ({}));
@@ -1200,8 +1200,8 @@ async function sendZeaburEmail({ to, subject, html, text }) {
     return data;
 }
 
-function sendZeaburEmailQuietly(payload) {
-    sendZeaburEmail(payload).catch((err) => {
+function sendResendEmailQuietly(payload) {
+    sendResendEmail(payload).catch((err) => {
         const target = payload?.to ? maskEmail(normalizeEmail(payload.to)) : '-';
         console.error(`[Email] Notification send failed (${target}):`, err.message);
     });
@@ -1243,16 +1243,27 @@ function createEmailCode({ email, purpose, userId, ip }) {
 function getEmailCodeCooldown({ email, purpose, userId }) {
     const normalizedEmail = normalizeEmail(email);
     if (!normalizedEmail || !purpose) return 0;
-    const cutoff = new Date(Date.now() - EMAIL_CODE_COOLDOWN_SECONDS * 1000).toISOString();
     const recent = db.prepare(
-        `SELECT created_at FROM email_verification_codes
+        `SELECT CAST(strftime('%s', 'now') - strftime('%s', created_at) AS INTEGER) AS elapsed_seconds
+         FROM email_verification_codes
          WHERE email = ? AND purpose = ? AND COALESCE(user_id, 0) = COALESCE(?, 0)
-           AND created_at > ?
+           AND created_at > datetime('now', ?)
          ORDER BY created_at DESC LIMIT 1`
-    ).get(normalizedEmail, purpose, userId || null, cutoff);
+    ).get(normalizedEmail, purpose, userId || null, `-${EMAIL_CODE_COOLDOWN_SECONDS} seconds`);
     if (!recent) return 0;
-    const elapsed = Math.floor((Date.now() - new Date(recent.created_at).getTime()) / 1000);
-    return Math.max(1, EMAIL_CODE_COOLDOWN_SECONDS - elapsed);
+    return Math.max(1, EMAIL_CODE_COOLDOWN_SECONDS - Number(recent.elapsed_seconds || 0));
+}
+
+function getEmailCodeIpRetryAfter(ip) {
+    if (!ip) return 0;
+    const thirdNewest = db.prepare(
+        `SELECT CAST(strftime('%s', 'now') - strftime('%s', created_at) AS INTEGER) AS elapsed_seconds
+         FROM email_verification_codes
+         WHERE ip_address = ? AND created_at > datetime('now', '-1 minute')
+         ORDER BY created_at DESC LIMIT 1 OFFSET ?`
+    ).get(ip, EMAIL_CODE_IP_MAX_PER_WINDOW - 1);
+    if (!thirdNewest) return 0;
+    return Math.max(1, Math.ceil(EMAIL_CODE_IP_WINDOW_MS / 1000) - Number(thirdNewest.elapsed_seconds || 0));
 }
 
 function verifyEmailCode({ email, purpose, userId, code }) {
@@ -1326,7 +1337,7 @@ function sendVerificationCodeEmail({ email, code, purpose }) {
         bind: '绑定邮箱',
         reset_password: '重置密码'
     }[purpose] || '验证邮箱';
-    return sendZeaburEmail({
+    return sendResendEmail({
         to: email,
         subject: `你的邮箱验证码：${code}`,
         html: `<p>你正在进行「${escapeHtml(purposeLabel)}」。</p><p style="font-size:24px;font-weight:700;letter-spacing:4px;">${code}</p><p>验证码 ${EMAIL_CODE_TTL_MINUTES} 分钟内有效。如果不是你本人操作，可以忽略这封邮件。</p>`,
@@ -1338,7 +1349,7 @@ function sendReviewResultEmail({ to, username, itemType, title, status, reason }
     const approved = status === 'approved';
     const resultText = approved ? '已通过' : '未通过';
     const reasonText = reason ? `\n原因：${reason}` : '';
-    sendZeaburEmailQuietly({
+    sendResendEmailQuietly({
         to,
         subject: `你的${itemType}审核${resultText}`,
         html: `<p>${escapeHtml(username || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」审核${escapeHtml(resultText)}。</p>${reason ? `<p>原因：${escapeHtml(reason)}</p>` : ''}`,
@@ -1347,7 +1358,7 @@ function sendReviewResultEmail({ to, username, itemType, title, status, reason }
 }
 
 function sendFeaturedNotificationEmail({ to, username, itemType, title }) {
-    sendZeaburEmailQuietly({
+    sendResendEmailQuietly({
         to,
         subject: `恭喜，你的${itemType}被设为精选`,
         html: `<p>${escapeHtml(username || '你好')}，恭喜！你的${escapeHtml(itemType)}「${escapeHtml(title)}」已经被设为精选。</p><p>它会获得更多展示机会，感谢你的优质创作。</p>`,
@@ -1362,7 +1373,7 @@ function sendAdminReviewPendingEmail({ itemType, title, uploader, ip }) {
     const html = `<p>有新的${escapeHtml(itemType)}进入待审核。</p><p>名称：${escapeHtml(title)}</p><p>上传者：${escapeHtml(uploaderText)}</p>${ip ? `<p>上传 IP：${escapeHtml(ip)}</p>` : ''}`;
     const text = `有新的${itemType}进入待审核。\n名称：${title}\n上传者：${uploaderText}${ip ? `\n上传 IP：${ip}` : ''}`;
     recipients.forEach((to) => {
-        sendZeaburEmailQuietly({
+        sendResendEmailQuietly({
             to,
             subject: `新的${itemType}待审核：${title}`,
             html,
@@ -1376,7 +1387,7 @@ function sendCommentNotificationEmail({ to, ownerName, commenterName, itemType, 
     if (!commentText) return;
     if (isCommentEmailBlocked(commentText)) return;
     const htmlContent = escapeHtml(commentText).replace(/\n/g, '<br>');
-    sendZeaburEmailQuietly({
+    sendResendEmailQuietly({
         to,
         subject: `你的${itemType}「${title}」有新评论`,
         html: `<p>${escapeHtml(ownerName || '你好')}，你的${escapeHtml(itemType)}「${escapeHtml(title)}」收到了来自 ${escapeHtml(commenterName || '用户')} 的新评论。</p><p>评论内容：</p><blockquote style="margin:12px 0;padding:12px;border-left:4px solid #dbeafe;background:#f8fafc;">${htmlContent}</blockquote>`,
@@ -1389,7 +1400,7 @@ function sendCommentReplyNotificationEmail({ to, ownerName, commenterName, itemT
     if (!commentText) return;
     if (isCommentEmailBlocked(commentText)) return;
     const htmlContent = escapeHtml(commentText).replace(/\n/g, '<br>');
-    sendZeaburEmailQuietly({
+    sendResendEmailQuietly({
         to,
         subject: `你在${itemType}「${title}」下的评论收到了回复`,
         html: `<p>${escapeHtml(ownerName || '你好')}，你在${escapeHtml(itemType)}「${escapeHtml(title)}」下的评论收到了来自 ${escapeHtml(commenterName || '用户')} 的回复。</p><p>回复内容：</p><blockquote style="margin:12px 0;padding:12px;border-left:4px solid #dbeafe;background:#f8fafc;">${htmlContent}</blockquote>`,
@@ -1399,7 +1410,7 @@ function sendCommentReplyNotificationEmail({ to, ownerName, commenterName, itemT
 
 function sendNewApiRedemptionSuccessEmail({ to, username, cookies, newApiUserId }) {
     const cookiesText = floorToTwoDecimals(cookies).toFixed(2).replace(/\.?0+$/, '');
-    sendZeaburEmailQuietly({
+    sendResendEmailQuietly({
         to,
         subject: `提现成功：${cookiesText}🍪`,
         html: `<p>${escapeHtml(username || '你好')}，你的提现已经成功到账。</p><p>提现数量：${escapeHtml(cookiesText)}🍪</p><p>STA1N API ID：${escapeHtml(newApiUserId || '-')}</p>`,
@@ -1749,7 +1760,7 @@ function maybeSendCardHeatMilestoneEmail(cardId, req) {
         ).run(nextMilestone, cardId, nextMilestone);
         if (updated.changes === 0) return;
 
-        sendZeaburEmailQuietly({
+        sendResendEmailQuietly({
             to: row.email,
             subject: `你的角色卡热度达到 ${nextMilestone}`,
             html: `<p>${escapeHtml(row.username)}，你的角色卡「${escapeHtml(row.name)}」热度已经达到 ${nextMilestone}。</p><p>当前热度：${heat}</p>`,
@@ -1884,6 +1895,15 @@ app.post('/api/email/send-code', async (req, res) => {
             });
         }
 
+        const requestIp = getRequestIp(req);
+        const ipRetryAfter = getEmailCodeIpRetryAfter(requestIp);
+        if (ipRetryAfter > 0) {
+            return res.status(429).json({
+                error: `这个网络发送邮件太频繁，请 ${ipRetryAfter} 秒后再试`,
+                retry_after_seconds: ipRetryAfter
+            });
+        }
+
         if (!captchaToken) {
             return res.status(400).json({ error: '请先完成滑块验证' });
         }
@@ -1893,7 +1913,7 @@ app.post('/api/email/send-code', async (req, res) => {
         }
         captchaTokens.delete(captchaToken);
 
-        const { code } = createEmailCode({ email, purpose, userId, ip: getRequestIp(req) });
+        const { code } = createEmailCode({ email, purpose, userId, ip: requestIp });
         await sendVerificationCodeEmail({ email, code, purpose });
         res.json({
             success: true,
@@ -6874,15 +6894,14 @@ app.get('/api/admin/settings', authenticateAdmin, (req, res) => {
 
 app.get('/api/admin/email-settings', authenticateAdmin, (req, res) => {
     try {
-        const dbApiKey = getSettingValue('zeabur_email_api_key');
+        const dbApiKey = getSettingValue('resend_api_key');
         const config = getEmailConfig();
         res.json({
             configured: Boolean(config.apiKey && config.from),
             api_key_configured: Boolean(config.apiKey),
             api_key_masked: maskSecret(config.apiKey),
-            api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
+            api_key_source: dbApiKey ? 'admin' : (RESEND_API_KEY ? 'environment' : 'none'),
             from: config.from || '',
-            endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
             public_base_url: getSettingValue('public_base_url') || process.env.PUBLIC_BASE_URL || process.env.SITE_URL || '',
             admin_emails: getAdminNotificationEmails().join('\n'),
             admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none'),
@@ -6899,7 +6918,6 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         const apiKey = typeof req.body.api_key === 'string' ? req.body.api_key.trim() : '';
         const clearApiKey = req.body.clear_api_key === true || req.body.clear_api_key === 'true';
         const from = normalizeEmail(req.body.from);
-        const endpoint = String(req.body.endpoint || ZEABUR_EMAIL_ENDPOINT).trim();
         const publicBaseUrl = String(req.body.public_base_url || '').trim().replace(/\/+$/, '');
         const adminEmailsRaw = String(req.body.admin_emails || '').trim();
         const commentBlockWordsRaw = String(req.body.comment_block_words ?? '').trim();
@@ -6907,7 +6925,6 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         const nonQqAdminEmails = findNonQqEmails(adminEmailsRaw);
 
         if (!from) return res.status(400).json({ error: '请输入有效的发件邮箱' });
-        if (!/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: '邮件 API 地址必须以 http:// 或 https:// 开头' });
         if (publicBaseUrl && !/^https?:\/\//i.test(publicBaseUrl)) {
             return res.status(400).json({ error: '站点公网地址必须以 http:// 或 https:// 开头' });
         }
@@ -6923,13 +6940,13 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
         }
 
         if (clearApiKey) {
-            db.prepare('DELETE FROM settings WHERE key = ?').run('zeabur_email_api_key');
+            db.prepare('DELETE FROM settings WHERE key = ?').run('resend_api_key');
         } else if (apiKey) {
-            setSettingValue('zeabur_email_api_key', apiKey);
+            setSettingValue('resend_api_key', apiKey);
         }
         const adminEmails = parseEmailList(adminEmailsRaw);
-        setSettingValue('zeabur_email_from', from);
-        setSettingValue('zeabur_email_endpoint', endpoint);
+        setSettingValue('resend_from', from);
+        db.prepare("DELETE FROM settings WHERE key IN ('zeabur_email_api_key', 'zeabur_email_from', 'zeabur_email_endpoint')").run();
         setSettingValue('public_base_url', publicBaseUrl);
         setSettingValue('admin_notification_emails', adminEmails.join('\n'));
         setSettingValue('comment_email_block_words', parseCommentEmailBlockWords(commentBlockWordsRaw).join('\n'));
@@ -6951,16 +6968,15 @@ app.put('/api/admin/email-settings', authenticateAdmin, (req, res) => {
             }
         });
 
-        const dbApiKey = getSettingValue('zeabur_email_api_key');
+        const dbApiKey = getSettingValue('resend_api_key');
         const config = getEmailConfig();
         res.json({
             success: true,
             configured: Boolean(config.apiKey && config.from),
             api_key_configured: Boolean(config.apiKey),
             api_key_masked: maskSecret(config.apiKey),
-            api_key_source: dbApiKey ? 'admin' : (ZEABUR_EMAIL_API_KEY ? 'environment' : 'none'),
+            api_key_source: dbApiKey ? 'admin' : (RESEND_API_KEY ? 'environment' : 'none'),
             from: config.from || '',
-            endpoint: config.endpoint || ZEABUR_EMAIL_ENDPOINT,
             public_base_url: publicBaseUrl,
             admin_emails: getAdminNotificationEmails().join('\n'),
             admin_emails_source: getSettingValue('admin_notification_emails') ? 'admin' : (ADMIN_NOTIFICATION_EMAILS ? 'environment' : 'none'),
