@@ -316,11 +316,13 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_comments_card_id ON character_comments(card_id);
         CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_comments_card_time ON character_comments(card_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_comments_user_time ON character_comments(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_comment_likes_user ON comment_likes(user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_id ON ui_template_comments(template_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_time ON ui_template_comments(template_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ui_template_comments_user_time ON ui_template_comments(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comments_reply ON ui_template_comments(reply_to_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_comment ON ui_template_comment_likes(comment_id);
         CREATE INDEX IF NOT EXISTS idx_ui_template_comment_likes_user ON ui_template_comment_likes(user_id);
@@ -473,6 +475,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_comments ADD COLUMN likes_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_user ON character_comments(card_id, user_id)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_card_time ON character_comments(card_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_user_time ON character_comments(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN uploader_user_id INTEGER'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN data_hash TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN detail_preview TEXT'); } catch (e) { /* column exists */ }
@@ -490,6 +493,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE ui_template_comments ADD COLUMN reply_to_name TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_template_user ON ui_template_comments(template_id, user_id)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_time ON ui_template_comments(template_id, created_at DESC)'); } catch (e) { /* index exists */ }
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_user_time ON ui_template_comments(user_id, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_ui_template_comments_reply ON ui_template_comments(reply_to_id)'); } catch (e) { /* index exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN views_count INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN is_featured INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }

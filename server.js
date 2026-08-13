@@ -104,6 +104,8 @@ const DOWNLOAD_HEAT_WEIGHT = 2.5;
 const REGISTRATION_DOWNLOAD_CREDITS = 2;
 const COMMENT_REWARD_CREDITS = 2;
 const DAILY_CREDIT_COMMENT_LIMIT = 3;
+const COMMENT_RATE_WINDOW_MS = 60 * 1000;
+const COMMENT_RATE_MAX_PER_WINDOW = 3;
 const VIEW_HEAT_ACCOUNT_WINDOW_HOURS = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_WINDOW_HOURS || '24', 10) || 24);
 const VIEW_HEAT_ACCOUNT_MAX_PER_ITEM = Math.max(1, parseInt(process.env.VIEW_HEAT_ACCOUNT_MAX_PER_ITEM || '1', 10) || 1);
 const NEWAPI_USER_STATUS_ENABLED = 1;
@@ -5985,6 +5987,24 @@ function countTodayCreditComments(userId, todayStr) {
     return (cardCount || 0) + (templateCount || 0);
 }
 
+function getCommentRateRetryAfter(userId) {
+    const now = Date.now();
+    const recentTimes = [
+        ...db.prepare('SELECT created_at FROM character_comments WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
+            .all(userId, COMMENT_RATE_MAX_PER_WINDOW),
+        ...db.prepare('SELECT created_at FROM ui_template_comments WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
+            .all(userId, COMMENT_RATE_MAX_PER_WINDOW)
+    ]
+        .map((row) => {
+            const value = String(row.created_at || '');
+            return new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`).getTime();
+        })
+        .filter(time => Number.isFinite(time) && now - time < COMMENT_RATE_WINDOW_MS)
+        .sort((a, b) => a - b);
+    if (recentTimes.length < COMMENT_RATE_MAX_PER_WINDOW) return 0;
+    return Math.max(1, Math.ceil((recentTimes[0] + COMMENT_RATE_WINDOW_MS - now) / 1000));
+}
+
 // ============== Comment Routes ==============
 async function getVisibleComments(req, options) {
     const {
@@ -6152,6 +6172,14 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
+        const commentRetryAfter = getCommentRateRetryAfter(userId);
+        if (commentRetryAfter > 0) {
+            res.set('Retry-After', String(commentRetryAfter));
+            return res.status(429).json({
+                error: `评论太频繁，请 ${commentRetryAfter} 秒后再试`,
+                retry_after_seconds: commentRetryAfter
+            });
+        }
         const card = db.prepare(
             `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
                     u.username, u.email, u.email_verified, u.comment_email_notifications
@@ -6315,6 +6343,14 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
         const userId = req.user.id;
         const user = db.prepare('SELECT username, download_credits FROM users WHERE id = ?').get(userId);
         if (!user) return res.status(401).json({ error: '用户不存在' });
+        const commentRetryAfter = getCommentRateRetryAfter(userId);
+        if (commentRetryAfter > 0) {
+            res.set('Retry-After', String(commentRetryAfter));
+            return res.status(429).json({
+                error: `评论太频繁，请 ${commentRetryAfter} 秒后再试`,
+                retry_after_seconds: commentRetryAfter
+            });
+        }
         const template = db.prepare(
             `SELECT ut.id, ut.title, ut.uploader_user_id,
                     u.username, u.email, u.email_verified, u.comment_email_notifications
