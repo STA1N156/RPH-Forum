@@ -39,6 +39,9 @@ const JWT_SECRET = EXPLICIT_JWT_SECRET || DERIVED_JWT_SECRET || (IS_PRODUCTION ?
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
 const RESEND_FROM = (process.env.RESEND_FROM || process.env.EMAIL_FROM || '').trim();
 const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails';
+const TURNSTILE_SITE_KEY = (process.env.TURNSTILE_SITE_KEY || '').trim();
+const TURNSTILE_SECRET_KEY = (process.env.TURNSTILE_SECRET_KEY || '').trim();
+const TURNSTILE_VERIFY_ENDPOINT = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || process.env.ADMIN_EMAILS || '').trim();
 const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
 const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
@@ -130,9 +133,6 @@ const USER_LOGIN_RATE_WINDOW_MS = Math.max(10 * 1000, parseInt(process.env.USER_
 const USER_LOGIN_RATE_MAX_PER_IP = Math.max(3, parseInt(process.env.USER_LOGIN_RATE_MAX_PER_IP || '20', 10) || 20);
 const USER_LOGIN_RATE_MAX_PER_NAME = Math.max(3, parseInt(process.env.USER_LOGIN_RATE_MAX_PER_NAME || '6', 10) || 6);
 const userLoginRateMap = new Map();
-
-// ============== Captcha Store ==============
-const captchaTokens = new Map(); // token -> { createdAt, used }
 
 // ============== Admin Export Downloads ==============
 const adminExportDownloads = new Map(); // token -> prepared backup download
@@ -948,6 +948,56 @@ function getEmailConfig() {
         apiKey: getSettingValue('resend_api_key') || RESEND_API_KEY,
         from: getSettingValue('resend_from') || RESEND_FROM
     };
+}
+
+function getTurnstileConfig() {
+    return {
+        siteKey: getSettingValue('turnstile_site_key') || TURNSTILE_SITE_KEY,
+        secretKey: getSettingValue('turnstile_secret_key') || TURNSTILE_SECRET_KEY
+    };
+}
+
+async function verifyTurnstileToken(token, remoteIp) {
+    const config = getTurnstileConfig();
+    if (!config.siteKey || !config.secretKey) {
+        const error = new Error('安全验证尚未配置，请联系管理员');
+        error.statusCode = 503;
+        throw error;
+    }
+    if (!token || token.length > 2048) {
+        const error = new Error('请先完成安全验证');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(TURNSTILE_VERIFY_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                secret: config.secretKey,
+                response: token,
+                remoteip: remoteIp || ''
+            }),
+            signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success || (data.action && data.action !== 'email_code')) {
+            const error = new Error('安全验证未通过或已过期，请重试');
+            error.statusCode = 400;
+            throw error;
+        }
+        return true;
+    } catch (error) {
+        if (error.statusCode) throw error;
+        const wrapped = new Error(error.name === 'AbortError' ? '安全验证服务响应超时，请重试' : '安全验证服务暂时不可用，请重试');
+        wrapped.statusCode = 503;
+        throw wrapped;
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 function getAdminNotificationEmails() {
@@ -1816,37 +1866,6 @@ app.post('/api/auth/logout', (req, res) => {
     res.json({ success: true });
 });
 
-// ============== Captcha ==============
-app.get('/api/captcha/generate', (req, res) => {
-    const sliderX = 40 + Math.floor(Math.random() * 160); // target position 40-200
-    const token = crypto.randomUUID();
-    captchaTokens.set(token, { sliderX, createdAt: Date.now(), used: false });
-    // Cleanup old tokens (> 5min)
-    for (const [k, v] of captchaTokens) {
-        if (Date.now() - v.createdAt > 5 * 60 * 1000) captchaTokens.delete(k);
-    }
-    res.json({ token, sliderX });
-});
-
-app.post('/api/captcha/verify', (req, res) => {
-    const { token, x } = req.body;
-    const record = captchaTokens.get(token);
-    if (!record) return res.status(400).json({ error: '验证码已过期，请重试', valid: false });
-    if (record.used) return res.status(400).json({ error: '验证码已使用，请重试', valid: false });
-    if (Date.now() - record.createdAt > 60000) {
-        captchaTokens.delete(token);
-        return res.status(400).json({ error: '验证码已过期，请重试', valid: false });
-    }
-    const tolerance = 5;
-    if (Math.abs(Number(x) - record.sliderX) <= tolerance) {
-        record.used = true;
-        res.json({ valid: true });
-    } else {
-        captchaTokens.delete(token);
-        res.json({ valid: false, error: '验证失败，请重试' });
-    }
-});
-
 // ============== User Registration & Login ==============
 app.post('/api/email/send-code', async (req, res) => {
     try {
@@ -1854,7 +1873,7 @@ app.post('/api/email/send-code', async (req, res) => {
         const purpose = String(req.body.purpose || '').trim();
         const emailCheck = validateQqEmail(req.body.email);
         const email = emailCheck.email;
-        const captchaToken = String(req.body.captchaToken || '').trim();
+        const turnstileToken = String(req.body.turnstileToken || '').trim();
         if (!['register', 'bind', 'reset_password'].includes(purpose)) {
             return res.status(400).json({ error: '验证码用途无效' });
         }
@@ -1904,14 +1923,7 @@ app.post('/api/email/send-code', async (req, res) => {
             });
         }
 
-        if (!captchaToken) {
-            return res.status(400).json({ error: '请先完成滑块验证' });
-        }
-        const captchaRecord = captchaTokens.get(captchaToken);
-        if (!captchaRecord || !captchaRecord.used) {
-            return res.status(400).json({ error: '滑块验证未通过，请重试' });
-        }
-        captchaTokens.delete(captchaToken);
+        await verifyTurnstileToken(turnstileToken, requestIp);
 
         const { code } = createEmailCode({ email, purpose, userId, ip: requestIp });
         await sendVerificationCodeEmail({ email, code, purpose });
@@ -1922,7 +1934,7 @@ app.post('/api/email/send-code', async (req, res) => {
         });
     } catch (err) {
         console.error('Send email code error:', err);
-        res.status(500).json({ error: err.message || '发送验证码失败' });
+        res.status(err.statusCode || 500).json({ error: err.message || '发送验证码失败' });
     }
 });
 
@@ -6885,10 +6897,83 @@ app.get('/api/admin/settings', authenticateAdmin, (req, res) => {
     try {
         const settings = db.prepare('SELECT key, value FROM settings').all();
         const result = {};
-        settings.forEach(s => { result[s.key] = s.value; });
+        settings.forEach((setting) => {
+            if (setting.key !== 'turnstile_secret_key') result[setting.key] = setting.value;
+        });
         res.json(result);
     } catch (err) {
         res.status(500).json({ error: '获取设置失败' });
+    }
+});
+
+app.get('/api/admin/turnstile-settings', authenticateAdmin, (req, res) => {
+    try {
+        const dbSecretKey = getSettingValue('turnstile_secret_key');
+        const config = getTurnstileConfig();
+        res.json({
+            configured: Boolean(config.siteKey && config.secretKey),
+            site_key: config.siteKey || '',
+            secret_key_configured: Boolean(config.secretKey),
+            secret_key_masked: maskSecret(config.secretKey),
+            secret_key_source: dbSecretKey ? 'admin' : (TURNSTILE_SECRET_KEY ? 'environment' : 'none')
+        });
+    } catch (err) {
+        console.error('Turnstile settings load error:', err);
+        res.status(500).json({ error: '获取 Turnstile 设置失败' });
+    }
+});
+
+app.put('/api/admin/turnstile-settings', authenticateAdmin, (req, res) => {
+    try {
+        const siteKey = String(req.body.site_key || '').trim();
+        const secretKey = typeof req.body.secret_key === 'string' ? req.body.secret_key.trim() : '';
+        const clearSecretKey = req.body.clear_secret_key === true || req.body.clear_secret_key === 'true';
+        if (siteKey.length > 100 || (siteKey && siteKey.length < 8)) {
+            return res.status(400).json({ error: 'Turnstile 站点密钥格式不正确' });
+        }
+        if (secretKey.length > 100 || (secretKey && secretKey.length < 8)) {
+            return res.status(400).json({ error: 'Turnstile 私密密钥格式不正确' });
+        }
+        const effectiveSecretKey = clearSecretKey
+            ? TURNSTILE_SECRET_KEY
+            : (secretKey || getSettingValue('turnstile_secret_key') || TURNSTILE_SECRET_KEY);
+        if (siteKey && !effectiveSecretKey) {
+            return res.status(400).json({ error: '填写站点密钥时也需要填写私密密钥' });
+        }
+
+        if (clearSecretKey) db.prepare('DELETE FROM settings WHERE key = ?').run('turnstile_secret_key');
+        else if (secretKey) setSettingValue('turnstile_secret_key', secretKey);
+        setSettingValue('turnstile_site_key', siteKey);
+
+        const config = getTurnstileConfig();
+
+        logOperation({
+            userType: 'admin',
+            userId: req.admin.id,
+            username: req.admin.username,
+            action: 'admin_update_turnstile_settings',
+            targetType: 'settings',
+            targetId: 'turnstile',
+            ip: getRequestIp(req),
+            details: {
+                configured: Boolean(config.siteKey && config.secretKey),
+                secret_key_updated: Boolean(secretKey),
+                secret_key_cleared: clearSecretKey
+            }
+        });
+
+        const dbSecretKey = getSettingValue('turnstile_secret_key');
+        res.json({
+            success: true,
+            configured: Boolean(config.siteKey && config.secretKey),
+            site_key: config.siteKey || '',
+            secret_key_configured: Boolean(config.secretKey),
+            secret_key_masked: maskSecret(config.secretKey),
+            secret_key_source: dbSecretKey ? 'admin' : (TURNSTILE_SECRET_KEY ? 'environment' : 'none')
+        });
+    } catch (err) {
+        console.error('Turnstile settings save error:', err);
+        res.status(500).json({ error: '保存 Turnstile 设置失败' });
     }
 });
 
@@ -7329,7 +7414,8 @@ const PUBLIC_SETTINGS_KEYS = new Set([
     'announcement_title',
     'announcement_content',
     'announcement_enabled',
-    'announcement_version'
+    'announcement_version',
+    'turnstile_site_key'
 ]);
 
 app.get('/api/settings', (req, res) => {
@@ -7343,6 +7429,8 @@ app.get('/api/settings', (req, res) => {
                 result[setting.key] = setting.value;
             }
         });
+        const turnstile = getTurnstileConfig();
+        result.turnstile_site_key = turnstile.siteKey && turnstile.secretKey ? turnstile.siteKey : '';
         markPerf(req, 'settings-filter', { publicKeys: Object.keys(result).length });
         res.json(result);
         markPerf(req, 'settings-response-json');

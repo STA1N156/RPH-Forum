@@ -1167,6 +1167,44 @@
                                 </div>
                             </div>
 
+                            <!-- Turnstile Settings -->
+                            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                                <div class="flex items-start justify-between gap-4 mb-4">
+                                    <div>
+                                        <h3 class="text-lg font-bold text-gray-900">Cloudflare Turnstile</h3>
+                                        <p class="text-sm text-gray-500 mt-1">保护注册、绑定邮箱和忘记密码的验证码发送入口。</p>
+                                    </div>
+                                    <span class="text-xs px-2 py-1 rounded-full" :class="turnstileSettings.configured ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'">
+                                        {{ turnstileSettings.configured ? '已启用' : '未启用' }}
+                                    </span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">站点密钥（Site Key）</label>
+                                        <input v-model="turnstileSettings.site_key" type="text" autocomplete="off" placeholder="Cloudflare Turnstile 的站点密钥"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                    </div>
+                                    <div class="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                                        当前私密密钥：{{ turnstileSettings.secret_key_configured ? turnstileSettings.secret_key_masked : '未配置' }}
+                                        <span v-if="turnstileSettings.secret_key_source === 'environment'">（来自环境变量）</span>
+                                        <span v-if="turnstileSettings.secret_key_source === 'admin'">（来自后台配置）</span>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">私密密钥（Secret Key）</label>
+                                        <input v-model="turnstileSettings.secret_key" type="password" autocomplete="off" placeholder="留空则保留当前私密密钥"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                                        <p class="text-xs text-gray-400 mt-1">私密密钥只供服务器验证，不会发送给前台用户。</p>
+                                    </div>
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input v-model="turnstileSettings.clear_secret_key" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
+                                        清除后台保存的私密密钥，改用环境变量
+                                    </label>
+                                    <button @click="saveTurnstileSettings" :disabled="turnstileSettingsSaving" class="bg-blue-600 text-white px-6 py-2 rounded-xl hover:bg-blue-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
+                                        {{ turnstileSettingsSaving ? '保存中...' : '保存 Turnstile 配置' }}
+                                    </button>
+                                </div>
+                            </div>
+
                             <!-- Announcement Settings -->
                             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                                 <div class="flex items-start justify-between gap-4 mb-4">
@@ -1577,6 +1615,16 @@
                     comment_block_words: '已严肃\n严肃\n12345'
                 });
                 const emailSettingsSaving = ref(false);
+                const turnstileSettings = reactive({
+                    configured: false,
+                    site_key: '',
+                    secret_key: '',
+                    clear_secret_key: false,
+                    secret_key_configured: false,
+                    secret_key_masked: '',
+                    secret_key_source: 'none'
+                });
+                const turnstileSettingsSaving = ref(false);
                 const newApiSettings = reactive({
                     configured: false,
                     base_url: '',
@@ -2429,9 +2477,10 @@
 
                 async function loadSettings() {
                     try {
-                        const [settingsResp, emailResp, newApiResp, aiReviewResp] = await Promise.all([
+                        const [settingsResp, emailResp, turnstileResp, newApiResp, aiReviewResp] = await Promise.all([
                             fetch(API_BASE + '/api/admin/settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/email-settings', { headers: authHeaders() }),
+                            fetch(API_BASE + '/api/admin/turnstile-settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/newapi-settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/ai-review-settings', { headers: authHeaders() }),
                             loadTagPreviewCards()
@@ -2445,6 +2494,10 @@
                         if (emailResp.ok) {
                             const data = await emailResp.json();
                             Object.assign(emailSettings, data, { api_key: '', clear_api_key: false });
+                        }
+                        if (turnstileResp.ok) {
+                            const data = await turnstileResp.json();
+                            Object.assign(turnstileSettings, data, { secret_key: '', clear_secret_key: false });
                         }
                         if (newApiResp.ok) {
                             const data = await newApiResp.json();
@@ -2561,6 +2614,29 @@
                         showToast(err.message || '保存邮箱配置失败', 'error');
                     } finally {
                         emailSettingsSaving.value = false;
+                    }
+                }
+
+                async function saveTurnstileSettings() {
+                    turnstileSettingsSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/admin/turnstile-settings', {
+                            method: 'PUT',
+                            headers: authHeaders(),
+                            body: JSON.stringify({
+                                site_key: turnstileSettings.site_key,
+                                secret_key: turnstileSettings.secret_key,
+                                clear_secret_key: turnstileSettings.clear_secret_key
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存 Turnstile 配置失败');
+                        Object.assign(turnstileSettings, data, { secret_key: '', clear_secret_key: false });
+                        showToast('Turnstile 配置已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存 Turnstile 配置失败', 'error');
+                    } finally {
+                        turnstileSettingsSaving.value = false;
                     }
                 }
 
@@ -2800,14 +2876,14 @@
                     redemptionData, redemptionPage, redemptionSearch, redemptionStatusFilter, loadRedemptions, getRedemptionStatusLabel, getRedemptionStatusClass,
                     logData, logPage, logActionFilter, logSearch, loadLogs, getActionLabel, formatLogActor, formatLogTarget,
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
-                    siteSettings, announcementSaving, emailSettings, emailSettingsSaving, newApiSettings, newApiSettingsSaving,
+                    siteSettings, announcementSaving, emailSettings, emailSettingsSaving, turnstileSettings, turnstileSettingsSaving, newApiSettings, newApiSettingsSaving,
                     aiReviewSettings, aiReviewSettingsSaving, aiReviewModels, aiReviewModelsLoading,
                     tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
                     settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
                     addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,
                     handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
                     toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
-                    restoreSavedTagSnapshot, loadSettings, saveSettings, pushAnnouncement, disableAnnouncement, saveEmailSettings, saveNewApiSettings,
+                    restoreSavedTagSnapshot, loadSettings, saveSettings, pushAnnouncement, disableAnnouncement, saveEmailSettings, saveTurnstileSettings, saveNewApiSettings,
                     saveAiReviewSettings, loadAiReviewModels, resetAiReviewTextPrompt, resetAiReviewCoverPrompt,
                     dataExporting, dataImporting, importResult, exportProgress, exportData, importData
                 };

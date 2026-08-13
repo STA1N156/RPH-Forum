@@ -40,6 +40,16 @@
                     "expose": false,
                     "readonly": false
                 },
+                "TURNSTILE_SITE_KEY": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
+                "TURNSTILE_SECRET_KEY": {
+                    "default": "",
+                    "expose": false,
+                    "readonly": false
+                },
                 "PUBLIC_BASE_URL": {
                     "default": "",
                     "expose": false,

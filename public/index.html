@@ -1845,35 +1845,20 @@
                     <div v-if="userAuthMode !== 'login'" class="grid grid-cols-[1fr_auto] gap-2">
                         <input v-model="userAuthForm.emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码"
                             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
-                        <button type="button" @click="sendAuthEmailCode" :disabled="emailCodeSending || emailCodeCooldown > 0 || !captchaState.verified"
+                        <button type="button" @click="sendAuthEmailCode" :disabled="emailCodeSending || emailCodeCooldown > 0 || !turnstileState.verified"
                             class="px-3 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold shadow-sm shadow-primary-100 transition-colors disabled:bg-primary-300 disabled:hover:bg-primary-300 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap">
                             {{ emailCodeSending ? '发送中' : (emailCodeCooldown > 0 ? emailCodeCooldown + 's' : '发送验证码') }}
                         </button>
                     </div>
 
-                    <!-- Slider Captcha (email code sending only) -->
-                    <div v-if="userAuthMode !== 'login' && !captchaState.verified && emailCodeCooldown <= 0 && !emailCodeSending" class="space-y-2">
+                    <!-- Turnstile (email code sending only) -->
+                    <div v-if="userAuthMode !== 'login'" v-show="emailCodeCooldown <= 0" class="space-y-2">
                         <div class="text-xs text-gray-500 flex items-center gap-1">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                             发送验证码前先完成安全验证
                         </div>
-                        <div class="relative bg-gray-100 rounded-xl h-10 select-none overflow-hidden" ref="captchaTrackRef">
-                            <!-- Target slot -->
-                            <div v-if="captchaState.targetX > 0 && !captchaState.verified" class="absolute top-0 h-full w-10 border-2 border-dashed border-primary-300 rounded-lg bg-primary-50/50" :style="{ left: captchaState.targetX + 'px' }"></div>
-                            <!-- Success overlay -->
-                            <div v-if="captchaState.verified" class="absolute inset-0 bg-green-50 flex items-center justify-center gap-1.5 z-10 rounded-xl">
-                                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                <span class="text-xs font-medium text-green-600">验证通过</span>
-                            </div>
-                            <!-- Slider thumb -->
-                            <div v-if="!captchaState.verified" class="absolute top-0 left-0 h-full w-10 bg-white border-2 border-primary-400 rounded-xl shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors hover:border-primary-500 z-20"
-                                :style="{ transform: 'translateX(' + captchaState.currentX + 'px)' }"
-                                @mousedown="startCaptchaDrag" @touchstart.prevent="startCaptchaDrag">
-                                <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                            </div>
-                        </div>
-                        <div v-if="!captchaState.verified && captchaState.currentX < 5" class="text-xs text-gray-400 text-center">向右拖动滑块到指定位置</div>
-                        <div v-if="captchaState.error" class="text-red-500 text-xs">{{ captchaState.error }}</div>
+                        <div ref="authTurnstileRef" class="min-h-[65px] flex justify-center"></div>
+                        <div v-if="turnstileState.error" class="text-red-500 text-xs">{{ turnstileState.error }}</div>
                     </div>
 
                     <button type="submit" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -1909,32 +1894,20 @@
                     <div class="grid grid-cols-[1fr_auto] gap-2">
                         <input v-model="bindEmailForm.emailCode" inputmode="numeric" maxlength="6" placeholder="邮箱验证码"
                             class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
-                        <button type="button" @click="sendBindEmailCode" :disabled="bindEmailSending || bindEmailCooldown > 0 || !captchaState.verified"
+                        <button type="button" @click="sendBindEmailCode" :disabled="bindEmailSending || bindEmailCooldown > 0 || !turnstileState.verified"
                             class="px-3 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold shadow-sm shadow-primary-100 transition-colors disabled:bg-primary-300 disabled:hover:bg-primary-300 disabled:opacity-70 disabled:cursor-not-allowed whitespace-nowrap">
                             {{ bindEmailSending ? '发送中' : (bindEmailCooldown > 0 ? bindEmailCooldown + 's' : '发送验证码') }}
                         </button>
                     </div>
                     <div v-if="bindEmailError" class="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{{ bindEmailError }}</div>
                     <div v-if="bindEmailMessage" class="text-green-600 text-xs bg-green-50 p-2 rounded-lg">{{ bindEmailMessage }}</div>
-                    <div v-if="!captchaState.verified && bindEmailCooldown <= 0 && !bindEmailSending" class="space-y-2">
+                    <div v-show="bindEmailCooldown <= 0" class="space-y-2">
                         <div class="text-xs text-gray-500 flex items-center gap-1">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                             发送验证码前先完成安全验证
                         </div>
-                        <div class="relative bg-gray-100 rounded-xl h-10 select-none overflow-hidden" ref="captchaTrackRef">
-                            <div v-if="captchaState.targetX > 0 && !captchaState.verified" class="absolute top-0 h-full w-10 border-2 border-dashed border-primary-300 rounded-lg bg-primary-50/50" :style="{ left: captchaState.targetX + 'px' }"></div>
-                            <div v-if="captchaState.verified" class="absolute inset-0 bg-green-50 flex items-center justify-center gap-1.5 z-10 rounded-xl">
-                                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                                <span class="text-xs font-medium text-green-600">验证通过</span>
-                            </div>
-                            <div v-if="!captchaState.verified" class="absolute top-0 left-0 h-full w-10 bg-white border-2 border-primary-400 rounded-xl shadow-sm flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors hover:border-primary-500 z-20"
-                                :style="{ transform: 'translateX(' + captchaState.currentX + 'px)' }"
-                                @mousedown="startCaptchaDrag" @touchstart.prevent="startCaptchaDrag">
-                                <svg class="w-4 h-4 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-                            </div>
-                        </div>
-                        <div v-if="!captchaState.verified && captchaState.currentX < 5" class="text-xs text-gray-400 text-center">向右拖动滑块到指定位置</div>
-                        <div v-if="captchaState.error" class="text-red-500 text-xs">{{ captchaState.error }}</div>
+                        <div ref="bindTurnstileRef" class="min-h-[65px] flex justify-center"></div>
+                        <div v-if="turnstileState.error" class="text-red-500 text-xs">{{ turnstileState.error }}</div>
                     </div>
                     <button type="submit" class="w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors">完成绑定</button>
                     <button type="button" @click="handleUserLogout(); showEmailBindModal = false" class="w-full py-2 text-xs text-gray-400 hover:text-gray-600">退出登录</button>
@@ -2088,7 +2061,7 @@
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch, nextTick } = Vue;
 
         // API Configuration (local backend)
         const API_BASE = '';  // Same origin
@@ -2455,84 +2428,79 @@
                     return '登录后评论可获取下载次数';
                 });
 
-                // Captcha state
-                const captchaTrackRef = ref(null);
-                const captchaState = reactive({
+                // Cloudflare Turnstile state
+                const authTurnstileRef = ref(null);
+                const bindTurnstileRef = ref(null);
+                const turnstileSiteKey = ref('');
+                const turnstileState = reactive({
                     token: '',
-                    targetX: 0,
-                    currentX: 0,
-                    dragging: false,
                     verified: false,
                     error: ''
                 });
+                let turnstileWidgetId = null;
+                let turnstileScriptPromise = null;
+                let turnstileRenderVersion = 0;
 
-                const resetCaptcha = async () => {
-                    captchaState.token = '';
-                    captchaState.targetX = 0;
-                    captchaState.currentX = 0;
-                    captchaState.dragging = false;
-                    captchaState.verified = false;
-                    captchaState.error = '';
-                    try {
-                        const resp = await fetch(API_BASE + '/api/captcha/generate');
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            captchaState.token = data.token;
-                            // Scale sliderX to fit track width (track ~300px, slider 40px)
-                            const trackEl = captchaTrackRef.value;
-                            const trackWidth = trackEl ? trackEl.offsetWidth : 300;
-                            captchaState.targetX = Math.round(data.sliderX / 240 * (trackWidth - 40));
-                        }
-                    } catch {}
+                const loadTurnstileScript = () => {
+                    if (window.turnstile) return Promise.resolve(window.turnstile);
+                    if (turnstileScriptPromise) return turnstileScriptPromise;
+                    turnstileScriptPromise = new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+                        script.async = true;
+                        script.defer = true;
+                        script.onload = () => resolve(window.turnstile);
+                        script.onerror = () => {
+                            turnstileScriptPromise = null;
+                            reject(new Error('安全验证组件加载失败，请刷新重试'));
+                        };
+                        document.head.appendChild(script);
+                    });
+                    return turnstileScriptPromise;
                 };
 
-                const startCaptchaDrag = (e) => {
-                    if (captchaState.verified) return;
-                    captchaState.dragging = true;
-                    captchaState.error = '';
-                    const startClientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
-                    const startX = captchaState.currentX;
-                    const trackEl = captchaTrackRef.value;
-                    const maxX = trackEl ? trackEl.offsetWidth - 40 : 260;
-
-                    const onMove = (ev) => {
-                        const clientX = ev.type === 'touchmove' ? ev.touches[0].clientX : ev.clientX;
-                        const dx = clientX - startClientX;
-                        captchaState.currentX = Math.max(0, Math.min(maxX, startX + dx));
-                    };
-
-                    const onEnd = async () => {
-                        captchaState.dragging = false;
-                        document.removeEventListener('mousemove', onMove);
-                        document.removeEventListener('mouseup', onEnd);
-                        document.removeEventListener('touchmove', onMove);
-                        document.removeEventListener('touchend', onEnd);
-
-                        // Auto-verify with server
-                        try {
-                            const resp = await fetch(API_BASE + '/api/captcha/verify', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ token: captchaState.token, x: Math.round(captchaState.currentX / ((trackEl ? trackEl.offsetWidth : 300) - 40) * 240) })
-                            });
-                            const data = await resp.json();
-                            if (data.valid) {
-                                captchaState.verified = true;
-                                captchaState.error = '';
-                            } else {
-                                captchaState.error = data.error || '验证失败，请重试';
-                                await resetCaptcha();
+                const resetTurnstile = async () => {
+                    const renderVersion = ++turnstileRenderVersion;
+                    turnstileState.token = '';
+                    turnstileState.verified = false;
+                    turnstileState.error = '';
+                    if (turnstileWidgetId !== null && window.turnstile) {
+                        try { window.turnstile.remove(turnstileWidgetId); } catch {}
+                    }
+                    turnstileWidgetId = null;
+                    await nextTick();
+                    const container = showEmailBindModal.value ? bindTurnstileRef.value : authTurnstileRef.value;
+                    if (!container) return;
+                    if (!turnstileSiteKey.value) {
+                        turnstileState.error = '安全验证尚未配置，请联系管理员';
+                        return;
+                    }
+                    try {
+                        const turnstile = await loadTurnstileScript();
+                        if (!turnstile || renderVersion !== turnstileRenderVersion) return;
+                        turnstileWidgetId = turnstile.render(container, {
+                            sitekey: turnstileSiteKey.value,
+                            action: 'email_code',
+                            theme: 'auto',
+                            size: 'flexible',
+                            callback: (token) => {
+                                if (renderVersion !== turnstileRenderVersion) return;
+                                turnstileState.token = token;
+                                turnstileState.verified = true;
+                                turnstileState.error = '';
+                            },
+                            'expired-callback': () => resetTurnstile(),
+                            'error-callback': () => {
+                                turnstileState.token = '';
+                                turnstileState.verified = false;
+                                turnstileState.error = '安全验证失败，请刷新后重试';
                             }
-                        } catch {
-                            captchaState.error = '网络错误';
-                            await resetCaptcha();
+                        });
+                    } catch (error) {
+                        if (renderVersion === turnstileRenderVersion) {
+                            turnstileState.error = error.message || '安全验证组件加载失败，请刷新重试';
                         }
-                    };
-
-                    document.addEventListener('mousemove', onMove);
-                    document.addEventListener('mouseup', onEnd);
-                    document.addEventListener('touchmove', onMove, { passive: false });
-                    document.addEventListener('touchend', onEnd);
+                    }
                 };
 
                 // Check existing token on load
@@ -2607,7 +2575,6 @@
                             userTokenStorage.setItem('user_token', userToken.value, data.user);
                             if (data.user?.requires_email_binding) {
                                 showEmailBindModal.value = true;
-                                await resetCaptcha();
                                 return;
                             }
                         } else {
@@ -2644,31 +2611,34 @@
                 };
 
                 const sendEmailCode = async ({ purpose, email, username, authed = false }) => {
-                    if (!captchaState.verified) throw new Error('请先完成滑块验证');
+                    if (!turnstileState.verified || !turnstileState.token) throw new Error('请先完成安全验证');
                     const normalizedEmail = String(email || '').trim().toLowerCase();
                     if (!/^[^\s@]+@qq\.com$/.test(normalizedEmail)) {
                         throw new Error('目前仅支持 QQ 邮箱（@qq.com）');
                     }
                     const headers = { 'Content-Type': 'application/json' };
                     if (authed) headers.Authorization = 'Bearer ' + userToken.value;
-                    const resp = await fetch(API_BASE + '/api/email/send-code', {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({
-                            purpose,
-                            email,
-                            username: username || '',
-                            captchaToken: captchaState.token
-                        })
-                    });
-                    const data = await resp.json().catch(() => ({}));
-                    if (!resp.ok) {
-                        const err = new Error(data.error || '验证码发送失败');
-                        err.cooldown_seconds = data.cooldown_seconds || 0;
-                        throw err;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/email/send-code', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({
+                                purpose,
+                                email,
+                                username: username || '',
+                                turnstileToken: turnstileState.token
+                            })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) {
+                            const err = new Error(data.error || '验证码发送失败');
+                            err.cooldown_seconds = data.cooldown_seconds || data.retry_after_seconds || 0;
+                            throw err;
+                        }
+                        return data;
+                    } finally {
+                        await resetTurnstile();
                     }
-                    await resetCaptcha();
-                    return data;
                 };
 
                 const sendAuthEmailCode = async () => {
@@ -2753,13 +2723,12 @@
                         userAuthForm.emailCode = '';
                         if (data.user?.requires_email_binding) {
                             showEmailBindModal.value = true;
-                            await resetCaptcha();
                             showToast('请先绑定邮箱后再进入广场', 'warning');
                             return;
                         }
                         if (userAuthMode.value === 'register') {
                         showToast('注册成功！赠送 2 次下载机会', 'success');
-                            captchaState.verified = false;
+                            turnstileState.verified = false;
                         } else {
                             showToast('登录成功', 'success');
                         }
@@ -3056,6 +3025,12 @@
                     configuredTagLibrary.value = parseTagSetting(settings.tag_library);
                     hiddenPopularTags.value = parseTagSetting(settings.hidden_popular_tags);
                     hiddenTagLibrary.value = parseTagSetting(settings.hidden_tag_library);
+                    const nextTurnstileSiteKey = String(settings.turnstile_site_key || '').trim();
+                    const turnstileKeyChanged = nextTurnstileSiteKey !== turnstileSiteKey.value;
+                    turnstileSiteKey.value = nextTurnstileSiteKey;
+                    if (turnstileKeyChanged && (showEmailBindModal.value || (showUserAuthModal.value && userAuthMode.value !== 'login'))) {
+                        resetTurnstile();
+                    }
                     applyAnnouncementSettings(settings || {});
                 };
 
@@ -6006,15 +5981,17 @@
                     }
                 });
                 watch(() => showUserAuthModal.value, (val) => {
-                    if (val && userAuthMode.value !== 'login') resetCaptcha();
+                    if (val && userAuthMode.value !== 'login') resetTurnstile();
+                    else if (!showEmailBindModal.value) resetTurnstile();
                 });
                 watch(() => userAuthMode.value, (val) => {
-                    if (val !== 'login' && showUserAuthModal.value) resetCaptcha();
+                    if (showUserAuthModal.value) resetTurnstile();
                     userAuthError.value = '';
                     emailCodeMessage.value = '';
                 });
                 watch(() => showEmailBindModal.value, (val) => {
-                    if (val) resetCaptcha();
+                    if (val) resetTurnstile();
+                    else if (!showUserAuthModal.value || userAuthMode.value === 'login') resetTurnstile();
                 });
                 watch(selectedCard, (card) => {
                     if (!card) {
@@ -6079,6 +6056,10 @@
                 });
 
                 onUnmounted(() => {
+                    turnstileRenderVersion += 1;
+                    if (turnstileWidgetId !== null && window.turnstile) {
+                        try { window.turnstile.remove(turnstileWidgetId); } catch {}
+                    }
                     window.removeEventListener('resize', handleWindowResize);
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -6128,7 +6109,7 @@
                     showNewApiModal, newApiRewardLoading, newApiSaving, newApiUnbinding, newApiRedeeming, newApiReward, newApiForm,
                     openNewApiModal, bindNewApiUser, unbindNewApiUser, redeemNewApiQuota, formatCookieAmount,
                     showUserSettingsModal, userSettingsSaving, userSettingsForm, openUserSettingsModal, saveUserSettings,
-                    captchaTrackRef, captchaState, startCaptchaDrag, resetCaptcha,
+                    authTurnstileRef, bindTurnstileRef, turnstileState, resetTurnstile,
                     // R18
                     r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18, r18Countdown,
                     // Edit Card
