@@ -2500,6 +2500,8 @@
                             action: showEmailBindModal.value || userAuthMode.value !== 'login' ? 'email_code' : 'user_login',
                             theme: 'auto',
                             size: 'flexible',
+                            retry: 'auto',
+                            'retry-interval': 3000,
                             callback: (token) => {
                                 if (renderVersion !== turnstileRenderVersion) return;
                                 turnstileState.token = token;
@@ -2508,11 +2510,13 @@
                                 turnstileState.error = '';
                             },
                             'expired-callback': () => resetTurnstile(),
-                            'error-callback': () => {
+                            'error-callback': (errorCode) => {
                                 turnstileState.token = '';
                                 turnstileState.verified = false;
                                 turnstileState.loading = false;
-                                turnstileState.error = '安全验证失败，请刷新后重试';
+                                const code = String(errorCode || '').trim();
+                                turnstileState.error = `安全验证失败${code ? `（错误码 ${code}）` : ''}，请重新加载后重试`;
+                                console.warn('Turnstile error:', code || 'unknown');
                             }
                         });
                         turnstileState.loading = false;
