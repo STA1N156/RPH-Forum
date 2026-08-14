@@ -5739,7 +5739,7 @@
                         }
 
                         const fallbackName = `${card.name || 'character-card'}.png`;
-                        const needsAuthDownload = String(card.review_status || 'approved') !== 'approved';
+                        const needsAuthDownload = !['approved', 'unreviewed'].includes(String(card.review_status || 'approved'));
                         if (needsAuthDownload) {
                             await fetchAndSaveDownload(data.download_url, headers, fallbackName);
                         } else {
