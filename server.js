@@ -1535,7 +1535,7 @@ function computeTemplateHeatFromRow(row) {
 }
 
 const CARD_LIST_CACHE_TTL_MS = Math.max(1000, parseInt(process.env.CARD_LIST_CACHE_TTL_MS || '15000', 10) || 15000);
-const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_CACHE_MAX_ENTRIES || '30', 10) || 30);
+const CARD_LIST_CACHE_MAX_ENTRIES = Math.max(3, parseInt(process.env.CARD_LIST_CACHE_MAX_ENTRIES || '256', 10) || 256);
 const cardListCache = new Map();
 let cardListCacheRevision = 1;
 
@@ -3553,8 +3553,8 @@ app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
             reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending') AND (review_status = 'approved' OR uploader_user_id = ?)";
             params.push(req.user.id);
         }
-        const reviewedQuery = sqliteReadPool.get(`SELECT COUNT(*) AS count FROM character_cards WHERE ${reviewedWhere}`, params);
-        const unreviewedQuery = sqliteReadPool.get("SELECT COUNT(*) AS count FROM character_cards WHERE review_status = 'unreviewed'", []);
+        const reviewedQuery = sqliteReadPool.fastGet(`SELECT COUNT(*) AS count FROM character_card_catalog WHERE ${reviewedWhere}`, params);
+        const unreviewedQuery = sqliteReadPool.fastGet("SELECT COUNT(*) AS count FROM character_card_catalog WHERE review_status = 'unreviewed'", []);
         let templateWhere = "review_status = 'approved'";
         const templateParams = [];
         if (req.admin || isModeratorUser(req.user)) {
@@ -3566,7 +3566,7 @@ app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
         const [reviewedRow, unreviewedRow, uiTemplatesRow] = await Promise.all([
             reviewedQuery,
             unreviewedQuery,
-            sqliteReadPool.get(`SELECT COUNT(*) AS count FROM ui_templates WHERE ${templateWhere}`, templateParams)
+            sqliteReadPool.fastGet(`SELECT COUNT(*) AS count FROM ui_templates WHERE ${templateWhere}`, templateParams)
         ]);
         const reviewed = reviewedRow.count;
         const unreviewed = unreviewedRow.count;
@@ -3606,10 +3606,10 @@ app.get('/api/cards/tags', optionalUserAuth, async (req, res) => {
             whereParts.push(`cct.tag_key NOT IN (${hiddenTags.map(() => '?').join(', ')})`);
             params.push(...hiddenTags);
         }
-        const rows = await sqliteReadPool.all(
+        const rows = await sqliteReadPool.fastAll(
             `SELECT MIN(cct.tag) AS tag, COUNT(*) AS count, COUNT(*) OVER() AS __total_count
              FROM character_card_tags cct
-             JOIN character_cards cc ON cc.id = cct.card_id
+             JOIN character_card_catalog cc ON cc.id = cct.card_id
              WHERE ${whereParts.join(' AND ')}
              GROUP BY cct.tag_key
              ORDER BY count DESC, tag ASC
@@ -3688,8 +3688,8 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
 
         if (searchQuery) {
             const searchPattern = `%${searchQuery}%`;
-            whereParts.push("(LOWER(COALESCE(cc.name, '')) LIKE ? OR LOWER(COALESCE(cc.description, '')) LIKE ? OR LOWER(COALESCE(cc.creator_notes, '')) LIKE ?)");
-            params.push(searchPattern, searchPattern, searchPattern);
+            whereParts.push('cc.search_text LIKE ?');
+            params.push(searchPattern);
             if (sortMode === 'latest') {
                 orderByClause = "CASE WHEN LOWER(COALESCE(cc.name, '')) LIKE ? THEN 0 ELSE 1 END, cc.created_at DESC";
                 orderParams.push(searchPattern);
@@ -3715,11 +3715,15 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
+        const useFastLane = !idsOnly && !searchQuery && !tagFilter && !mineOnly
+            && (sortMode === 'latest' || sortMode === 'featured');
+        const readGet = useFastLane ? sqliteReadPool.fastGet.bind(sqliteReadPool) : sqliteReadPool.get.bind(sqliteReadPool);
+        const readAll = useFastLane ? sqliteReadPool.fastAll.bind(sqliteReadPool) : sqliteReadPool.all.bind(sqliteReadPool);
         const totalQuery = idsOnly
             ? Promise.resolve({ count: 0 })
-            : sqliteReadPool.get(
+            : readGet(
                 `SELECT COUNT(*) AS count
-                 FROM character_cards cc
+                 FROM character_card_catalog cc
                  ${joinClause}
                  ${whereClause}`,
                 [...joinParams, ...params]
@@ -3735,9 +3739,9 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
                     COALESCE(cc.ui_template_variable_count, 0) AS ui_template_variable_count,
                     ${commentCountSql} AS comment_count,
                     ${commentHeatCountSql} AS comment_heat_count`;
-        const cardsQuery = sqliteReadPool.all(
+        const cardsQuery = readAll(
             `SELECT ${selectColumns}
-             FROM character_cards cc
+             FROM character_card_catalog cc
              ${joinClause}
              ${whereClause}
              ORDER BY ${orderByClause}
@@ -3835,13 +3839,16 @@ app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
-        const totalQuery = sqliteReadPool.get(
+        const useFastLane = !searchQuery && !mineOnly && (sortMode === 'latest' || sortMode === 'featured');
+        const readGet = useFastLane ? sqliteReadPool.fastGet.bind(sqliteReadPool) : sqliteReadPool.get.bind(sqliteReadPool);
+        const readAll = useFastLane ? sqliteReadPool.fastAll.bind(sqliteReadPool) : sqliteReadPool.all.bind(sqliteReadPool);
+        const totalQuery = readGet(
             `SELECT COUNT(*) AS count
              FROM ui_templates
              ${whereClause}`,
             params
         );
-        const templatesQuery = sqliteReadPool.all(
+        const templatesQuery = readAll(
             `SELECT id, title, description, file_name, file_ext, mime_type,
                     substr(content, 1, 65536) AS content_preview_source, file_size,
                     downloads_count, views_count, is_featured, uploader_user_id, review_status, reviewed_at,
@@ -5882,7 +5889,6 @@ app.post('/api/cards/:id/download', requireUserOrAdmin, (req, res) => {
         recordDownload();
         const latestDownloads = db.prepare('SELECT downloads_count FROM character_cards WHERE id = ?').get(id)?.downloads_count ?? card.downloads_count ?? 0;
         if (downloadCounted) {
-            clearCardListCache('card-download');
             maybeSendCardHeatMilestoneEmail(id, req);
         }
         logOperation({ userType: req.user ? 'user' : 'admin', userId: req.user?.id || req.admin?.id, username: req.user?.username || req.admin?.username, action: 'download', targetType: 'card', targetId: id, ip: getRequestIp(req) });
@@ -6244,7 +6250,6 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             }
         });
         insertComment();
-        clearCardListCache('card-comment');
 
         const comment = db.prepare('SELECT * FROM character_comments WHERE id = ?').get(id);
         comment.author_name = user.username;
@@ -6523,7 +6528,6 @@ app.delete('/api/ui-template-comments/:id', requireUserOrAdmin, (req, res) => {
         if (result.changes === 0) {
             return res.status(404).json({ error: '评论不存在' });
         }
-        clearCardListCache('card-comment-delete');
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
@@ -6927,7 +6931,6 @@ app.delete('/api/admin/comments/:id', authenticateAdmin, (req, res) => {
         });
         const result = deleteComment();
         if (result.changes === 0) return res.status(404).json({ error: '评论不存在' });
-        clearCardListCache('admin-card-comment-delete');
         logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_comment', targetType: 'comment', targetId: req.params.id, ip: getRequestIp(req), details: { content: comment?.content?.substring(0, 50) } });
         res.json({ success: true });
     } catch (err) {
@@ -8284,7 +8287,7 @@ function logDatabaseHealth() {
 // ============== Initialize & Start ==============
 initDatabase();
 sqliteReadPool = new SqliteReadPool(DB_PATH);
-console.log(`[DB] SQLite read pool started with ${sqliteReadPool.size} workers`);
+console.log(`[DB] SQLite read pool started with ${sqliteReadPool.size} workers (${sqliteReadPool.fastSize} reserved for homepage)`);
 getAiReviewConfig();
 recoverAiReviewQueue();
 

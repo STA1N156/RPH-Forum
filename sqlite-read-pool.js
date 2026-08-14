@@ -42,6 +42,10 @@ if (!isMainThread && workerData?.sqliteReadWorker) {
             this.nextId = 1;
             this.tasks = new Map();
             this.workers = Array.from({ length: this.size }, () => this.createWorker());
+            this.fastSize = this.size > 1 ? Math.min(2, this.size - 1) : 1;
+            this.fastWorkers = this.workers.slice(0, this.fastSize);
+            this.bulkWorkers = this.workers.slice(this.fastSize);
+            if (this.bulkWorkers.length === 0) this.bulkWorkers = this.fastWorkers;
         }
 
         createWorker() {
@@ -73,8 +77,9 @@ if (!isMainThread && workerData?.sqliteReadWorker) {
             return state;
         }
 
-        run(method, sql, params = []) {
-            const state = this.workers.reduce((best, item) => item.pending < best.pending ? item : best);
+        run(method, sql, params = [], fast = false) {
+            const workers = fast ? this.fastWorkers : this.bulkWorkers;
+            const state = workers.reduce((best, item) => item.pending < best.pending ? item : best);
             const id = this.nextId++;
             state.pending += 1;
             return new Promise((resolve, reject) => {
@@ -89,6 +94,14 @@ if (!isMainThread && workerData?.sqliteReadWorker) {
 
         get(sql, params) {
             return this.run('get', sql, params);
+        }
+
+        fastAll(sql, params) {
+            return this.run('all', sql, params, true);
+        }
+
+        fastGet(sql, params) {
+            return this.run('get', sql, params, true);
         }
 
         close() {

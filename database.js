@@ -62,6 +62,8 @@ function initDatabase() {
             ui_template_variable_count INTEGER,
             creator_notes TEXT,
             downloads_count INTEGER DEFAULT 0,
+            views_count INTEGER DEFAULT 0,
+            is_featured INTEGER DEFAULT 0,
             comment_count_override INTEGER,
             uploader_user_id INTEGER,
             review_status TEXT DEFAULT 'pending',
@@ -698,6 +700,111 @@ function initDatabase() {
         }
     } catch (e) {
         console.warn('[DB] Failed to repair unreviewed approved UI templates:', e.message);
+    }
+
+    try {
+        db.exec(`
+            CREATE TABLE IF NOT EXISTS character_card_catalog (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                creator_notes TEXT,
+                search_text TEXT NOT NULL,
+                downloads_count INTEGER DEFAULT 0,
+                uploader_user_id INTEGER,
+                created_at DATETIME,
+                latest_rank_at DATETIME,
+                updated_at DATETIME,
+                views_count INTEGER DEFAULT 0,
+                is_featured INTEGER DEFAULT 0,
+                review_status TEXT,
+                reviewed_at DATETIME,
+                rejection_reason TEXT,
+                uploader_ip_address TEXT,
+                has_ui_templates INTEGER,
+                ui_template_count INTEGER,
+                ui_template_variable_count INTEGER,
+                FOREIGN KEY (id) REFERENCES character_cards(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_review_created
+                ON character_card_catalog(review_status, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_review_updated
+                ON character_card_catalog(review_status, updated_at DESC, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_review_featured
+                ON character_card_catalog(review_status, is_featured, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_latest_rank
+                ON character_card_catalog(review_status, latest_rank_at DESC, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_uploader_review
+                ON character_card_catalog(uploader_user_id, review_status);
+
+            CREATE TRIGGER IF NOT EXISTS trg_card_catalog_insert
+            AFTER INSERT ON character_cards BEGIN
+                INSERT OR REPLACE INTO character_card_catalog (
+                    id, name, description, creator_notes, search_text, downloads_count,
+                    uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
+                    is_featured, review_status, reviewed_at, rejection_reason,
+                    uploader_ip_address, has_ui_templates, ui_template_count,
+                    ui_template_variable_count
+                )
+                SELECT id, name, description, creator_notes,
+                       LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
+                       downloads_count, uploader_user_id, created_at, latest_rank_at,
+                       updated_at, views_count, is_featured, review_status, reviewed_at,
+                       rejection_reason, uploader_ip_address, has_ui_templates,
+                       ui_template_count, ui_template_variable_count
+                  FROM character_cards WHERE id = NEW.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS trg_card_catalog_update
+            AFTER UPDATE OF name, description, creator_notes, downloads_count,
+                uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
+                is_featured, review_status, reviewed_at, rejection_reason,
+                uploader_ip_address, has_ui_templates, ui_template_count,
+                ui_template_variable_count ON character_cards BEGIN
+                INSERT OR REPLACE INTO character_card_catalog (
+                    id, name, description, creator_notes, search_text, downloads_count,
+                    uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
+                    is_featured, review_status, reviewed_at, rejection_reason,
+                    uploader_ip_address, has_ui_templates, ui_template_count,
+                    ui_template_variable_count
+                )
+                SELECT id, name, description, creator_notes,
+                       LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
+                       downloads_count, uploader_user_id, created_at, latest_rank_at,
+                       updated_at, views_count, is_featured, review_status, reviewed_at,
+                       rejection_reason, uploader_ip_address, has_ui_templates,
+                       ui_template_count, ui_template_variable_count
+                  FROM character_cards WHERE id = NEW.id;
+            END;
+        `);
+
+        const backfilled = db.prepare("SELECT value FROM settings WHERE key = 'character_card_catalog_backfilled_v1'").get();
+        if (!backfilled) {
+            db.transaction(() => {
+                db.prepare('DELETE FROM character_card_catalog').run();
+                db.prepare(`
+                    INSERT INTO character_card_catalog (
+                        id, name, description, creator_notes, search_text, downloads_count,
+                        uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
+                        is_featured, review_status, reviewed_at, rejection_reason,
+                        uploader_ip_address, has_ui_templates, ui_template_count,
+                        ui_template_variable_count
+                    )
+                    SELECT id, name, description, creator_notes,
+                           LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
+                           downloads_count, uploader_user_id, created_at, latest_rank_at,
+                           updated_at, views_count, is_featured, review_status, reviewed_at,
+                           rejection_reason, uploader_ip_address, has_ui_templates,
+                           ui_template_count, ui_template_variable_count
+                      FROM character_cards
+                `).run();
+                db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+                    .run('character_card_catalog_backfilled_v1', '1', new Date().toISOString());
+            })();
+        }
+    } catch (e) {
+        console.warn('[DB] Failed to build card catalog:', e.message);
     }
 
     // Seed internal admin user. Login only checks ADMIN_PASSWORD.

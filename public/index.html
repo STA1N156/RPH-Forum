@@ -3263,7 +3263,6 @@
                 let cardCountsRequestId = 0;
                 let uiTemplatesRequestId = 0;
                 let cardTagsRequestId = 0;
-                let catalogAuthReady = null;
                 let cardRequestController = null;
                 let uiTemplatesRequestController = null;
                 let cardTagsRequestController = null;
@@ -3425,6 +3424,11 @@
                     }
                     const controller = new AbortController();
                     cardRequestController = controller;
+                    let timedOut = false;
+                    const timeout = setTimeout(() => {
+                        timedOut = true;
+                        controller.abort();
+                    }, 15000);
                     loading.value = true;
                     cardPageLoading.value = true;
                     pendingCardPage.value = requestedPage;
@@ -3435,11 +3439,6 @@
                         });
                         if (!resp.ok) throw new Error('加载失败');
                         const data = await resp.json();
-                        if (catalogAuthReady) await catalogAuthReady;
-                        if (requestedScope !== getCatalogScope()) {
-                            if (requestId === cardsRequestId) fetchCards({ force: true, page: requestedPage });
-                            return;
-                        }
                         const items = Array.isArray(data) ? data : (data.items || []);
                         const totalHeader = resp.headers.get('X-Total-Count');
                         const activeZone = contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed';
@@ -3452,12 +3451,18 @@
                         cardCatalogTotal.value = total;
                         currentPage.value = requestedPage;
                         pendingCardPage.value = null;
+                        if (databaseTags.value.length === 0 && !tagLibraryLoading.value) {
+                            setTimeout(() => {
+                                if (databaseTags.value.length === 0 && !tagLibraryLoading.value) fetchCardTags({ reset: true });
+                            }, 0);
+                        }
                     } catch (err) {
-                        if (requestId !== cardsRequestId || err.name === 'AbortError') return;
+                        if (requestId !== cardsRequestId || (err.name === 'AbortError' && !timedOut)) return;
                         console.error('Fetch error:', err);
                         pendingCardPage.value = null;
-                        showToast('这一页加载失败，请重试', 'error');
+                        showToast(timedOut ? '加载超时，请重试' : '这一页加载失败，请重试', 'error');
                     } finally {
+                        clearTimeout(timeout);
                         if (controller === cardRequestController) cardRequestController = null;
                         if (requestId === cardsRequestId) cardPageLoading.value = false;
                         if (requestId === cardsRequestId) loading.value = false;
@@ -3499,6 +3504,11 @@
                     }
                     const controller = new AbortController();
                     uiTemplatesRequestController = controller;
+                    let timedOut = false;
+                    const timeout = setTimeout(() => {
+                        timedOut = true;
+                        controller.abort();
+                    }, 15000);
                     loading.value = true;
                     cardPageLoading.value = true;
                     pendingCardPage.value = requestedPage;
@@ -3509,11 +3519,6 @@
                         });
                         if (!resp.ok) throw new Error('加载失败');
                         const items = await resp.json();
-                        if (catalogAuthReady) await catalogAuthReady;
-                        if (requestedScope !== getCatalogScope()) {
-                            if (requestId === uiTemplatesRequestId) fetchUiTemplates({ force: true, page: requestedPage });
-                            return;
-                        }
                         if (requestId !== uiTemplatesRequestId || requestedSort !== cardSort.value || contentSection.value !== 'uitemplates') return;
                         const total = Number(resp.headers.get('X-Total-Count'));
                         const responseTotal = Number.isFinite(total) ? total : items.length;
@@ -3523,11 +3528,12 @@
                         currentPage.value = requestedPage;
                         pendingCardPage.value = null;
                     } catch (err) {
-                        if (requestId !== uiTemplatesRequestId || err.name === 'AbortError') return;
+                        if (requestId !== uiTemplatesRequestId || (err.name === 'AbortError' && !timedOut)) return;
                         console.error('Fetch UI templates error:', err);
                         pendingCardPage.value = null;
-                        showToast('这一页模板加载失败，请重试', 'error');
+                        showToast(timedOut ? '加载超时，请重试' : '这一页模板加载失败，请重试', 'error');
                     } finally {
+                        clearTimeout(timeout);
                         if (controller === uiTemplatesRequestController) uiTemplatesRequestController = null;
                         if (requestId === uiTemplatesRequestId) cardPageLoading.value = false;
                         if (requestId === uiTemplatesRequestId) loading.value = false;
@@ -6058,9 +6064,9 @@
 
                 onMounted(() => {
                     loadPublicSettings();
-                    catalogAuthReady = Promise.all([checkAdminToken(), checkUserToken()]);
+                    checkAdminToken();
+                    checkUserToken();
                     fetchCards({ page: 1 });
-                    fetchCardTags({ reset: true });
                     trackVisit();
                     fetchVisits();
                     announcementPollTimer = setInterval(loadPublicSettings, 30000);
