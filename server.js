@@ -1860,6 +1860,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/auth/me', authenticateAdmin, (req, res) => {
+    res.set('Cache-Control', 'no-store');
     res.json({ user: req.admin });
 });
 
@@ -2028,6 +2029,7 @@ app.post('/api/user/login', async (req, res) => {
 });
 
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
+    res.set('Cache-Control', 'no-store');
     markPerf(req, 'user-me-start', { userId: req.user.id });
     const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
     markPerf(req, 'user-me-db-read', { found: Boolean(user) });

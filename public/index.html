@@ -2124,25 +2124,7 @@
         };
         try { localStorage.removeItem('admin_token'); } catch(e) {}
         try { sessionStorage.removeItem('admin_token'); } catch(e) {}
-        const userTokenStorage = {
-            getItem(key) {
-                let value = null;
-                try { value = localStorage.getItem(key); } catch(e) {}
-                try { localStorage.removeItem(key); } catch(e) {}
-                return value;
-            },
-            setItem(key, val, user) {
-                if (user?.is_moderator) {
-                    this.removeItem(key);
-                    return;
-                }
-                try { localStorage.setItem(key, val); } catch(e) {}
-            },
-            removeItem(key) {
-                try { localStorage.removeItem(key); } catch(e) {}
-                try { sessionStorage.removeItem(key); } catch(e) {}
-            }
-        };
+        const userTokenStorage = safeStorage;
 
         const app = createApp({
             components: { CommentComposer },
@@ -2531,7 +2513,7 @@
                 // Check existing token on load
                 const checkAdminToken = async () => {
                     try {
-                        const resp = await fetch(API_BASE + '/api/auth/me');
+                        const resp = await fetch(API_BASE + '/api/auth/me', { cache: 'no-store' });
                         if (resp.ok) {
                             isAdmin.value = true;
                         } else {
@@ -2592,6 +2574,7 @@
                     if (!userToken.value) return;
                     try {
                         const resp = await fetch(API_BASE + '/api/user/me', {
+                            cache: 'no-store',
                             headers: { 'Authorization': 'Bearer ' + userToken.value }
                         });
                         if (resp.ok) {
@@ -2602,15 +2585,13 @@
                                 showEmailBindModal.value = true;
                                 return;
                             }
-                        } else {
+                        } else if ([401, 403, 404].includes(resp.status)) {
                             userToken.value = '';
                             currentUser.value = null;
                             userTokenStorage.removeItem('user_token');
                         }
                     } catch (e) {
-                        userToken.value = '';
-                        currentUser.value = null;
-                        userTokenStorage.removeItem('user_token');
+                        console.warn('Restore login failed:', e);
                     }
                 };
 
