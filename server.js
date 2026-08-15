@@ -1037,9 +1037,7 @@ function getCommentEmailBlockWords() {
 }
 
 function isCommentEmailBlocked(content) {
-    const text = normalizeCommentEmailBlockText(content);
-    if (!text) return false;
-    return getCommentEmailBlockWords().some(word => text.includes(normalizeCommentEmailBlockText(word)));
+    return isCommentHiddenFromDisplay(content);
 }
 
 function isCommentHiddenFromDisplay(content, blockWords = getCommentEmailBlockWords()) {
