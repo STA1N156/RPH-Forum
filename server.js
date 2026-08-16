@@ -1992,11 +1992,6 @@ app.post('/api/user/login', async (req, res) => {
     }
 
     const ip = getRequestIp(req);
-    try {
-        await verifyTurnstileToken(String(req.body.turnstileToken || '').trim(), ip, 'user_login');
-    } catch (err) {
-        return res.status(err.statusCode || 500).json({ error: err.message || '安全验证失败' });
-    }
     const loginRate = checkUserLoginRate(ip, username);
     if (loginRate.blocked) {
         res.set('Retry-After', String(loginRate.retryAfter));
