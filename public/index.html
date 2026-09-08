@@ -277,7 +277,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20260908-import">
+    <link rel="stylesheet" href="/modern.css?v=20260908-transfer">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -1491,16 +1491,17 @@
 
             <!-- Fixed Footer Actions (Mobile) -->
                 <div v-if="!previewAsset.loading && windowWidth < 768" class="md:hidden fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-100 z-[60] flex gap-3 safe-area-pb card-transfer-actions">
-                <card-import-progress v-if="isImportingCard && cardImportProgress.cardId === selectedCard.id" :label="cardImportLabel" :percent="cardImportPercent"></card-import-progress>
+                <card-transfer-progress v-if="isDownloadingCard && cardTransferProgress.cardId === selectedCard.id" :label="cardTransferLabel" :percent="cardTransferPercent"></card-transfer-progress>
                  <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
                          class="flex-1 py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
                          :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white active:scale-[0.98]' : 'bg-gray-200 text-gray-500 cursor-not-allowed'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    {{ rphubImportOrigin !== null ? '下载' : downloadButtonLabel }}
+                    {{ isDownloadingCard && !isImportingCard ? '下载中…' : (rphubImportOrigin !== null ? '下载' : downloadButtonLabel) }}
                 </button>
                 <button v-if="rphubImportOrigin !== null" @click="downloadCard(selectedCard, true)" :disabled="!canDownloadSelectedCard"
-                        class="card-import-button" :title="downloadButtonLabel">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
+                        class="flex-1 py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
+                        :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white active:scale-[0.98]' : 'bg-gray-200 text-gray-500 cursor-not-allowed'" :title="downloadButtonLabel">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
                     {{ isImportingCard ? '导入中…' : '导入' }}
                 </button>
                     <button v-if="isAdmin && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
@@ -1719,16 +1720,17 @@
 
                     <!-- Footer Actions -->
                     <div class="pt-6 mt-4 border-t border-gray-100 md:pt-4 md:mt-0 flex gap-4 p-6 md:p-0 bg-white md:static sticky bottom-0 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] md:shadow-none pb-8 md:pb-0 safe-area-pb flex-shrink-0 card-transfer-actions">
-                        <card-import-progress v-if="isImportingCard && cardImportProgress.cardId === selectedCard.id" :label="cardImportLabel" :percent="cardImportPercent"></card-import-progress>
+                        <card-transfer-progress v-if="isDownloadingCard && cardTransferProgress.cardId === selectedCard.id" :label="cardTransferLabel" :percent="cardTransferPercent"></card-transfer-progress>
                         <button @click="downloadCard(selectedCard)" :disabled="!canDownloadSelectedCard"
                                 class="flex-1 py-4 md:py-5 rounded-2xl font-bold transition-all shadow-xl flex items-center justify-center gap-3 group"
                                 :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white shadow-gray-200 active:scale-[0.98]' : 'bg-gray-200 text-gray-500 shadow-transparent cursor-not-allowed'">
                             <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            {{ rphubImportOrigin !== null ? '下载' : downloadButtonLabel }}
+                            {{ isDownloadingCard && !isImportingCard ? '下载中…' : (rphubImportOrigin !== null ? '下载' : downloadButtonLabel) }}
                         </button>
                         <button v-if="rphubImportOrigin !== null" @click="downloadCard(selectedCard, true)" :disabled="!canDownloadSelectedCard"
-                                class="card-import-button" :title="downloadButtonLabel">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
+                                class="flex-1 py-4 md:py-5 rounded-2xl font-bold transition-all shadow-xl flex items-center justify-center gap-3 group"
+                                :class="canDownloadSelectedCard ? 'bg-gray-900 hover:bg-black text-white shadow-gray-200 active:scale-[0.98]' : 'bg-gray-200 text-gray-500 shadow-transparent cursor-not-allowed'" :title="downloadButtonLabel">
+                            <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
                             {{ isImportingCard ? '导入中…' : '导入' }}
                         </button>
                     <button v-if="isAdmin && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
@@ -2138,16 +2140,16 @@
         try { sessionStorage.removeItem('admin_token'); } catch(e) {}
         const userTokenStorage = safeStorage;
 
-        const CardImportProgress = {
+        const CardTransferProgress = {
             props: ['label', 'percent'],
-            template: `<div class="card-import-progress" role="status" aria-live="polite">
-                <div class="card-import-progress__label"><span>{{ label }}</span><span v-if="percent !== null">{{ percent }}%</span></div>
+            template: `<div class="card-transfer-progress" role="status" aria-live="polite">
+                <div class="card-transfer-progress__label"><span>{{ label }}</span><span v-if="percent !== null">{{ percent }}%</span></div>
                 <progress :value="percent" max="100" :aria-label="label"></progress>
             </div>`
         };
 
         const app = createApp({
-            components: { CommentComposer, CardImportProgress },
+            components: { CommentComposer, CardTransferProgress },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -2232,16 +2234,17 @@
                 });
                 const isDownloadingCard = ref(false);
                 const rphubImportOrigin = ref(null);
-                const cardImportProgress = reactive({ cardId: '', phase: '', loaded: 0, total: 0 });
-                const isImportingCard = computed(() => Boolean(cardImportProgress.phase));
-                const cardImportPercent = computed(() => cardImportProgress.phase === 'saving' ? 100
-                    : cardImportProgress.total > 0 ? Math.min(99, Math.floor(cardImportProgress.loaded / cardImportProgress.total * 100)) : null);
-                const cardImportLabel = computed(() => {
-                    if (cardImportProgress.phase === 'preparing') return '正在准备角色卡…';
-                    if (cardImportProgress.phase === 'saving') return '下载完成，正在导入角色库…';
-                    return `正在下载 · ${formatFileSize(cardImportProgress.loaded)}${cardImportProgress.total > 0 ? ' / ' + formatFileSize(cardImportProgress.total) : ''}`;
+                const cardTransferProgress = reactive({ cardId: '', phase: '', loaded: 0, total: 0, importOnly: false });
+                const isImportingCard = computed(() => Boolean(cardTransferProgress.phase) && cardTransferProgress.importOnly);
+                const cardTransferPercent = computed(() => cardTransferProgress.phase === 'saving' ? 100
+                    : cardTransferProgress.total > 0 ? Math.min(99, Math.floor(cardTransferProgress.loaded / cardTransferProgress.total * 100)) : null);
+                const cardTransferLabel = computed(() => {
+                    if (cardTransferProgress.phase === 'preparing') return '正在准备角色卡…';
+                    if (cardTransferProgress.phase === 'saving') return cardTransferProgress.importOnly
+                        ? '下载完成，正在导入并切换角色…' : '下载完成，正在交给浏览器保存…';
+                    return `正在下载 · ${formatFileSize(cardTransferProgress.loaded)}${cardTransferProgress.total > 0 ? ' / ' + formatFileSize(cardTransferProgress.total) : ''}`;
                 });
-                let cardImportController = null;
+                let cardTransferController = null;
                 let pendingCardImport = null;
                 const toasts = ref([]);
                 let toastIdSeed = 0;
@@ -4410,6 +4413,15 @@
                     a.remove();
                 };
 
+                const saveDownloadBlob = (blob, fileName) => {
+                    const objectUrl = URL.createObjectURL(blob);
+                    try {
+                        triggerDirectDownload(objectUrl, fileName);
+                    } finally {
+                        setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+                    }
+                };
+
                 const fetchAndSaveDownload = async (url, headers, fallbackName) => {
                     const resp = await fetch(API_BASE + url, { headers });
                     if (!resp.ok) {
@@ -4417,12 +4429,7 @@
                         throw new Error(data.error || '下载文件失败');
                     }
                     const blob = await resp.blob();
-                    const objectUrl = URL.createObjectURL(blob);
-                    try {
-                        triggerDirectDownload(objectUrl, getDownloadFileName(resp.headers.get('Content-Disposition'), fallbackName));
-                    } finally {
-                        setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
-                    }
+                    saveDownloadBlob(blob, getDownloadFileName(resp.headers.get('Content-Disposition'), fallbackName));
                 };
 
                 const downloadTemplate = async (template) => {
@@ -5094,7 +5101,7 @@
                         if (!isFreeDownload && !canModerate.value && !isOwner && downloadCredits.value <= 0) return '下载次数不足';
                         if (isFreeDownload) return '下载角色卡';
                     }
-                    if (isDownloadingCard.value) return '正在生成下载文件...';
+                    if (isDownloadingCard.value) return '下载中…';
                     if (previewAsset.loading) return '图片加载中...';
                     return '下载角色卡';
                 });
@@ -5706,21 +5713,20 @@
                     return plainText.length > 140 ? plainText.slice(0, 140) + '…' : plainText;
                 };
 
-                const fetchCardForImport = async (url, headers, signal) => {
+                const fetchCardFile = async (url, headers, signal, maxSize = Infinity) => {
                     const resp = await fetch(API_BASE + url, { headers, signal });
                     if (!resp.ok) {
                         const data = await resp.json().catch(() => ({}));
                         throw new Error(data.error || '下载角色卡失败');
                     }
-                    const maxSize = 100 * 1024 * 1024;
                     const encoding = resp.headers.get('Content-Encoding');
                     const total = !encoding || encoding === 'identity' ? Number(resp.headers.get('Content-Length')) || 0 : 0;
                     if (total > maxSize) {
                         await resp.body?.cancel();
                         throw new Error('角色卡文件超过 100 MB，请下载后手动导入');
                     }
-                    Object.assign(cardImportProgress, { phase: 'downloading', loaded: 0, total });
-                    let buffer;
+                    Object.assign(cardTransferProgress, { phase: 'downloading', loaded: 0, total });
+                    let blob;
                     if (resp.body?.getReader) {
                         const reader = resp.body.getReader();
                         const chunks = [];
@@ -5728,23 +5734,24 @@
                             while (true) {
                                 const { done, value } = await reader.read();
                                 if (done) break;
-                                cardImportProgress.loaded += value.byteLength;
-                                if (cardImportProgress.loaded > maxSize) {
+                                cardTransferProgress.loaded += value.byteLength;
+                                if (cardTransferProgress.loaded > maxSize) {
                                     await reader.cancel();
                                     throw new Error('角色卡文件超过 100 MB，请下载后手动导入');
                                 }
                                 chunks.push(value);
                             }
-                            buffer = await new Blob(chunks).arrayBuffer();
+                            blob = new Blob(chunks, { type: resp.headers.get('Content-Type') || 'image/png' });
                         } finally {
                             reader.releaseLock();
                         }
                     } else {
-                        buffer = await resp.arrayBuffer();
-                        cardImportProgress.loaded = buffer.byteLength;
+                        blob = await resp.blob();
+                        cardTransferProgress.loaded = blob.size;
                     }
-                    if (!buffer.byteLength || buffer.byteLength > maxSize) throw new Error('角色卡文件为空或超过 100 MB');
-                    return buffer;
+                    if (!blob.size) throw new Error('角色卡文件为空');
+                    if (blob.size > maxSize) throw new Error('角色卡文件超过 100 MB，请下载后手动导入');
+                    return { blob, fileName: getDownloadFileName(resp.headers.get('Content-Disposition'), '') };
                 };
 
                 const sendCardToRPHub = async (buffer) => {
@@ -5793,16 +5800,14 @@
                     }
 
                     isDownloadingCard.value = true;
-                    if (importOnly) {
-                        cardImportController = new AbortController();
-                        Object.assign(cardImportProgress, { cardId: card.id, phase: 'preparing', loaded: 0, total: 0 });
-                    }
+                    cardTransferController = new AbortController();
+                    Object.assign(cardTransferProgress, { cardId: card.id, phase: 'preparing', loaded: 0, total: 0, importOnly });
                     try {
                         const headers = isAdmin.value ? adminAuthHeaders() : (isLoggedIn.value ? userAuthHeaders() : { 'Content-Type': 'application/json' });
                         const resp = await fetch(API_BASE + '/api/cards/' + card.id + '/download', {
                             method: 'POST',
                             headers,
-                            signal: cardImportController?.signal
+                            signal: cardTransferController?.signal
                         });
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) {
@@ -5828,30 +5833,28 @@
                             throw new Error('下载链接生成失败');
                         }
 
+                        const { blob, fileName } = await fetchCardFile(data.download_url, headers, cardTransferController.signal,
+                            importOnly ? 100 * 1024 * 1024 : Infinity);
+                        cardTransferController.signal.throwIfAborted();
+                        cardTransferProgress.phase = 'saving';
                         if (importOnly) {
-                            const buffer = await fetchCardForImport(data.download_url, headers, cardImportController.signal);
-                            cardImportController.signal.throwIfAborted();
-                            cardImportProgress.phase = 'saving';
+                            const buffer = await blob.arrayBuffer();
+                            cardTransferController.signal.throwIfAborted();
                             const name = await sendCardToRPHub(buffer);
                             showToast(`已将“${name || card.name}”导入角色库`, 'success');
                             return;
                         }
 
-                        const fallbackName = `${card.name || 'character-card'}.png`;
-                        const needsAuthDownload = !['approved', 'unreviewed'].includes(String(card.review_status || 'approved'));
-                        if (needsAuthDownload) {
-                            await fetchAndSaveDownload(data.download_url, headers, fallbackName);
-                        } else {
-                            triggerDirectDownload(data.download_url, fallbackName);
-                        }
-                        showToast(data.previously_downloaded ? '下载已开始，本次不消耗下载次数' : '下载已开始', 'success');
+                        saveDownloadBlob(blob, fileName || `${card.name || 'character-card'}.png`);
+                        showToast(data.previously_downloaded ? '文件已交给浏览器保存，本次不消耗下载次数' : '文件已交给浏览器保存', 'success');
                     } catch (err) {
+                        if (err.name === 'AbortError') return;
                         console.error('Download error:', err);
                         showToast(err.message || (importOnly ? '导入失败' : '下载失败'), 'error', 4000);
                     } finally {
                         isDownloadingCard.value = false;
-                        cardImportController = null;
-                        cardImportProgress.phase = '';
+                        cardTransferController = null;
+                        cardTransferProgress.phase = '';
                     }
                 };
 
@@ -6191,7 +6194,7 @@
                 });
 
                 onUnmounted(() => {
-                    cardImportController?.abort();
+                    cardTransferController?.abort();
                     pendingCardImport?.reject(new Error('导入已取消'));
                     turnstileRenderVersion += 1;
                     if (turnstileWidgetId !== null && window.turnstile) {
@@ -6224,7 +6227,7 @@
                     handleFileSelect, handleTemplateFileSelect, confirmUpload, confirmTemplateUpload, handleUploadClick,
                     downloadTemplate, reviewTemplate, deleteTemplate, toggleTemplateFeatured, formatFileSize, isTemplateOwnedByCurrentUser, canViewTemplateDownloads, computeTemplateHeat,
                     selectedCard, personalityExpanded, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
-                    rphubImportOrigin, isImportingCard, cardImportProgress, cardImportPercent, cardImportLabel,
+                    rphubImportOrigin, isDownloadingCard, isImportingCard, cardTransferProgress, cardTransferPercent, cardTransferLabel,
                     previewOpening, stopPreviewOpening, closeSelectedCard,
                     toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
                     isUiTemplateCard, uiTemplateCardsCount, emptyStateTitle, emptyStateDescription, emptyStateActionLabel, showEmptyStateAction, uploadButtonLabel,
