@@ -5835,11 +5835,11 @@
 
                         const { blob, fileName } = await fetchCardFile(data.download_url, headers, cardTransferController.signal,
                             importOnly ? 100 * 1024 * 1024 : Infinity);
-                        cardTransferController.signal.throwIfAborted();
+                        if (cardTransferController.signal.aborted) return;
                         cardTransferProgress.phase = 'saving';
                         if (importOnly) {
                             const buffer = await blob.arrayBuffer();
-                            cardTransferController.signal.throwIfAborted();
+                            if (cardTransferController.signal.aborted) return;
                             const name = await sendCardToRPHub(buffer);
                             showToast(`已将“${name || card.name}”导入角色库`, 'success');
                             return;
