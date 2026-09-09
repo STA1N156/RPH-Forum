@@ -5833,20 +5833,27 @@
                             throw new Error('下载链接生成失败');
                         }
 
-                        const { blob, fileName } = await fetchCardFile(data.download_url, headers, cardTransferController.signal,
-                            importOnly ? 100 * 1024 * 1024 : Infinity);
                         if (cardTransferController.signal.aborted) return;
-                        cardTransferProgress.phase = 'saving';
-                        if (importOnly) {
-                            const buffer = await blob.arrayBuffer();
+                        const fallbackName = `${card.name || 'character-card'}.png`;
+                        // 公开文件交给浏览器直接下载，避免部分手机浏览器无法保存 Blob 链接。
+                        if (!importOnly && ['approved', 'unreviewed'].includes(String(card.review_status || 'approved'))) {
+                            triggerDirectDownload(data.download_url, fallbackName);
+                        } else {
+                            const { blob, fileName } = await fetchCardFile(data.download_url, headers, cardTransferController.signal,
+                                importOnly ? 100 * 1024 * 1024 : Infinity);
                             if (cardTransferController.signal.aborted) return;
-                            const name = await sendCardToRPHub(buffer);
-                            showToast(`已将“${name || card.name}”导入角色库`, 'success');
-                            return;
+                            cardTransferProgress.phase = 'saving';
+                            if (importOnly) {
+                                const buffer = await blob.arrayBuffer();
+                                if (cardTransferController.signal.aborted) return;
+                                const name = await sendCardToRPHub(buffer);
+                                showToast(`已将“${name || card.name}”导入角色库`, 'success');
+                                return;
+                            }
+                            saveDownloadBlob(blob, fileName || fallbackName);
                         }
 
-                        saveDownloadBlob(blob, fileName || `${card.name || 'character-card'}.png`);
-                        showToast(data.previously_downloaded ? '文件已交给浏览器保存，本次不消耗下载次数' : '文件已交给浏览器保存', 'success');
+                        showToast(data.previously_downloaded ? '已发起下载，请查看浏览器下载列表；本次不消耗下载次数' : '已发起下载，请查看浏览器下载列表', 'success');
                     } catch (err) {
                         if (err.name === 'AbortError') return;
                         console.error('Download error:', err);
