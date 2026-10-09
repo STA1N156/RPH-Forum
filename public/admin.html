@@ -5,14 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 万相广场</title>
     <meta name="description" content="万相广场内容与社区管理后台。">
-    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app.css?v=20261009-ui3">
     <script src="/vue.global.js"></script>
     <style>
         [v-cloak] { display: none !important; }
-        body { font-family: 'PingFang SC', system-ui, -apple-system, sans-serif; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
         .toast-stack { position: relative; }
         .toast-item { will-change: transform, opacity; transform-origin: top center; }
         .list-enter-active,
@@ -29,7 +25,7 @@
             transform: translateY(-10px) scale(0.98);
         }
     </style>
-    <link rel="stylesheet" href="/admin-modern.css?v=20260710-4">
+    <link rel="stylesheet" href="/admin-modern.css?v=20261009-ui3">
 </head>
 <body class="admin-body bg-gray-50 min-h-screen">
     <div id="admin-app" v-cloak>
@@ -113,10 +109,6 @@
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m8-6a8 8 0 11-16 0 8 8 0 0116 0z"/></svg>
                         提现记录
                     </button>
-                    <button v-if="false" @click="currentPage = 'tags'; showMobileMenu = false; loadSettings()" :class="currentPage === 'tags' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
-                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
-                        标签管理
-                    </button>
                     <button @click="currentPage = 'logs'; showMobileMenu = false; loadLogs()" :class="currentPage === 'logs' ? 'bg-gray-800 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'" class="w-full flex items-center px-4 py-3 rounded-xl transition text-left">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         操作日志
@@ -148,7 +140,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
                         </button>
                         <h2 class="text-lg md:text-xl font-bold text-gray-900 truncate">
-                            {{ {dashboard:'仪表盘',cards:'卡片管理',aiReviews:'AI审核',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',tags:'标签管理',logs:'操作日志',settings:'系统设置'}[currentPage] }}
+                            {{ {dashboard:'仪表盘',cards:'卡片管理',aiReviews:'AI审核',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
                     <a href="/" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
@@ -633,16 +625,20 @@
                                             <div class="text-xs text-gray-400 mt-1">已提现 {{ Number(user.newapi_redeemed_cookies || 0).toFixed(2) }}🍪</div>
                                         </td>
                                         <td class="px-6 py-4 text-sm">
-                                            <div class="space-y-2 w-44">
-                                                <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">{{ user.is_banned ? '已封禁' : '正常' }}</span>
-                                                <span v-if="user.is_moderator" class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">前台审核员</span>
-                                                <p v-if="user.is_banned && user.ban_reason" class="text-xs text-red-600 break-words">{{ user.ban_reason }}</p>
-                                                <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_banned ? 'bg-green-600 text-white' : 'bg-red-600 text-white'">
-                                                    {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解封' : '封禁') }}
-                                                </button>
-                                                <button @click="toggleUserModerator(user)" :disabled="userDraft(user).moderating" class="px-3 py-2 rounded-xl text-sm font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_moderator ? 'bg-gray-100 text-gray-700' : 'bg-blue-600 text-white'">
-                                                    {{ userDraft(user).moderating ? '处理中...' : (user.is_moderator ? '取消审核员' : '设为审核员') }}
-                                                </button>
+                                            <div class="flex flex-col items-start gap-2">
+                                                <div class="flex items-center gap-1.5">
+                                                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium" :class="user.is_banned ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">{{ user.is_banned ? '已封禁' : '正常' }}</span>
+                                                    <span v-if="user.is_moderator" class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">前台审核员</span>
+                                                </div>
+                                                <p v-if="user.is_banned && user.ban_reason" class="max-w-[14rem] whitespace-normal text-xs text-red-600 break-words">{{ user.ban_reason }}</p>
+                                                <div class="flex items-center gap-1.5">
+                                                    <button @click="toggleUserBan(user)" :disabled="userDraft(user).banning" class="px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_banned ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-red-50 text-red-600 hover:bg-red-100'">
+                                                        {{ userDraft(user).banning ? '处理中...' : (user.is_banned ? '解封' : '封禁') }}
+                                                    </button>
+                                                    <button @click="toggleUserModerator(user)" :disabled="userDraft(user).moderating" class="px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-50 whitespace-nowrap" :class="user.is_moderator ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'">
+                                                        {{ userDraft(user).moderating ? '处理中...' : (user.is_moderator ? '取消审核员' : '设为审核员') }}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-900">
@@ -886,7 +882,8 @@
                                                 'bg-cyan-100 text-cyan-700': log.action === 'download',
                                                 'bg-yellow-100 text-yellow-700': log.action === 'edit',
                                                 'bg-red-100 text-red-700': log.action?.includes('delete'),
-                                                'bg-indigo-100 text-indigo-700': log.action === 'admin_login'
+                                                'bg-indigo-100 text-indigo-700': log.action === 'admin_login',
+                                                'bg-gray-100 text-gray-600': !['login', 'register', 'upload', 'download', 'edit', 'admin_login'].includes(log.action) && !log.action?.includes('delete')
                                             }">{{ getActionLabel(log.action) }}</span>
                                         </td>
                                         <td class="px-4 py-3 text-xs text-gray-500">
@@ -904,233 +901,6 @@
                             <button @click="logPage--; loadLogs()" :disabled="logPage <= 1" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">上一页</button>
                             <span class="text-sm text-gray-500">{{ logPage }} / {{ logData.totalPages }}</span>
                             <button @click="logPage++; loadLogs()" :disabled="logPage >= logData.totalPages" class="px-4 py-2 rounded-lg border text-sm disabled:opacity-50 hover:bg-gray-100">下一页</button>
-                        </div>
-                    </div>
-
-                    <!-- Tags -->
-                    <div v-if="false">
-                        <div class="max-w-4xl space-y-4 md:space-y-5">
-                            <div class="bg-gradient-to-r from-amber-50 via-orange-50 to-white rounded-2xl border border-amber-200 p-4 md:p-5">
-                                <div class="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
-                                    <div>
-                                        <h3 class="text-lg font-bold text-gray-900">标签管理</h3>
-                                        <p class="mt-1 text-sm text-gray-600">这里直接控制前台的热门标签和标签库展示内容。当前操作先写入草稿，点击保存后才会同步到前台。</p>
-                                    </div>
-                                    <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                                        <span :class="tagSettingsDirty ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'" class="inline-flex items-center justify-center px-3 py-2 rounded-xl text-sm font-medium">
-                                            {{ tagSettingsDirty ? '有未保存草稿' : '草稿已保存' }}
-                                        </span>
-                                        <button @click="saveSettings" :disabled="settingsSaving" class="bg-orange-600 text-white px-5 py-2 rounded-xl hover:bg-orange-700 transition text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed">
-                                            {{ settingsSaving ? '保存中...' : '保存标签配置' }}
-                                        </button>
-                                        <button @click="restoreSavedTagSnapshot" :disabled="!tagSettingsDirty || settingsSaving" class="px-5 py-2 rounded-xl border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                                            撤销本次修改
-                                        </button>
-                                    </div>
-                                </div>
-                                <div v-if="tagSettingsDirty" class="mt-3 rounded-2xl border border-amber-200 bg-white/70 px-4 py-3 text-sm text-amber-700">
-                                    当前修改仍在后台草稿中。点击“保存标签配置”后，前台热门标签和标签库才会应用这次变更。
-                                </div>
-                            </div>
-
-                            <div class="grid gap-4 xl:grid-cols-2">
-                                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                                    <div class="flex items-center justify-between gap-3 mb-3">
-                                        <h3 class="text-lg font-bold text-gray-900">热门标签</h3>
-                                        <span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">首页优先展示</span>
-                                    </div>
-                                    <div class="flex flex-col gap-2.5 sm:flex-row">
-                                        <input
-                                            v-model="tagInput.popular"
-                                            @keydown.enter.prevent="addTags('popular')"
-                                            type="text"
-                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
-                                            class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                                        >
-                                        <button @click="addTags('popular')" class="px-5 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">
-                                            添加标签
-                                        </button>
-                                        <button @click="toggleBatchPanel('popular')" class="px-4 py-2.5 rounded-xl border border-orange-200 text-sm font-medium text-orange-700 hover:bg-orange-50 transition">
-                                            {{ batchDraft.popular.open ? '收起批量' : '批量操作' }}
-                                        </button>
-                                    </div>
-                                    <p class="mt-2 text-xs text-gray-500">单个标签可直接编辑或删除；打开批量模式后，点击下方标签会自动加入批量队列。</p>
-
-                                    <div v-if="isTagEditorOpen('popular')" class="mt-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div class="text-sm font-semibold text-orange-800">正在编辑单个热门标签</div>
-                                            <button @click="closeTagEditor('popular')" class="text-xs font-medium text-gray-500 hover:text-gray-700">返回列表</button>
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row">
-                                            <input
-                                                v-model="tagEditing.popular.value"
-                                                @keydown.enter.prevent="confirmTagEdit('popular')"
-                                                @keydown.esc.prevent="closeTagEditor('popular')"
-                                                type="text"
-                                                class="flex-1 px-4 py-2.5 text-sm border border-orange-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-400"
-                                            >
-                                            <button @click="confirmTagEdit('popular')" class="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">保存标签</button>
-                                            <button @click="deleteEditingTag('popular')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">删除标签</button>
-                                        </div>
-                                    </div>
-
-                                    <div v-if="batchDraft.popular.open" class="mt-3 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 space-y-3">
-                                        <div class="flex flex-wrap gap-2">
-                                            <button v-for="action in batchActionOptions" :key="'popular-batch-' + action.value" @click="batchDraft.popular.action = action.value" :class="batchDraft.popular.action === action.value ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-orange-700 border-orange-200 hover:bg-orange-50'" class="px-3 py-1.5 rounded-xl border text-sm font-medium transition">
-                                                {{ action.label }}
-                                            </button>
-                                        </div>
-                                        <textarea v-model="batchDraft.popular.text" rows="4" class="w-full px-4 py-3 border border-orange-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-orange-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                            <button @click="applyBatchTags('popular')" class="px-4 py-2.5 rounded-xl bg-orange-600 text-white text-sm font-medium hover:bg-orange-700 transition">执行批量操作</button>
-                                            <button @click="clearBatchDraft('popular')" class="px-4 py-2.5 rounded-xl border border-orange-200 text-sm font-medium text-orange-700 hover:bg-orange-50 transition">清空批量内容</button>
-                                            <button @click="clearConfiguredTags('popular')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">清空当前配置</button>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-4 space-y-3">
-                                        <div>
-                                            <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">当前配置</div>
-                                                <span class="text-xs text-gray-400">{{ tagEditor.popular.length }} 个</span>
-                                            </div>
-                                            <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
-                                                <template v-for="(tag, index) in tagEditor.popular" :key="'popular-editor-' + tag + '-' + index">
-                                                    <div class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 max-w-full">
-                                                        <button @click="handleConfiguredTagClick('popular', index)" class="text-sm font-medium text-orange-700 break-all text-left hover:text-orange-900 transition" title="点击编辑标签或加入批量队列">
-                                                            {{ tag }}
-                                                        </button>
-                                                        <button @click="removeTag('popular', index)" class="p-1 rounded-full text-orange-500 hover:bg-orange-100 hover:text-red-600 transition" title="删除标签">
-                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                                        </button>
-                                                    </div>
-                                                </template>
-                                                <span v-if="!tagEditor.popular.length" class="text-sm text-gray-400">当前未手动配置热门标签。</span>
-                                            </div>
-                                        </div>
-
-                                        <div v-if="hiddenTagState.popular.length > 0">
-                                            <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
-                                                <button @click="clearHiddenTags('popular')" class="text-xs font-medium text-orange-700 hover:text-orange-900">清空隐藏</button>
-                                            </div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button v-for="tag in hiddenTagState.popular" :key="'popular-hidden-' + tag" @click="handleHiddenTagClick('popular', tag)" class="px-3 py-1 rounded-full text-sm border border-dashed border-orange-200 bg-white text-orange-600 hover:bg-orange-50 transition">
-                                                    恢复 {{ tag }}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div class="text-xs font-medium text-gray-500 mb-2">前台热门标签预览</div>
-                                            <div class="flex flex-wrap gap-2 min-h-[2rem]">
-                                                <button v-for="tag in popularTagPreview" :key="'popular-' + tag" @click="handlePreviewTagClick('popular', tag)" class="px-3 py-1 rounded-full text-sm bg-orange-100 text-orange-700 hover:bg-orange-200 transition">{{ tag }}</button>
-                                                <span v-if="!popularTagPreview.length" class="text-sm text-gray-400">暂无热门标签预览。</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                                    <div class="flex items-center justify-between gap-3 mb-3">
-                                        <h3 class="text-lg font-bold text-gray-900">标签库</h3>
-                                        <span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700">搜索与筛选基础库</span>
-                                    </div>
-                                    <div class="flex flex-col gap-2.5 sm:flex-row">
-                                        <input
-                                            v-model="tagInput.library"
-                                            @keydown.enter.prevent="addTags('library')"
-                                            type="text"
-                                            placeholder="输入标签后回车或点添加，可一次粘贴多个标签"
-                                            class="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                                        >
-                                        <button @click="addTags('library')" class="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">
-                                            添加标签
-                                        </button>
-                                        <button @click="toggleBatchPanel('library')" class="px-4 py-2.5 rounded-xl border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition">
-                                            {{ batchDraft.library.open ? '收起批量' : '批量操作' }}
-                                        </button>
-                                    </div>
-                                    <p class="mt-2 text-xs text-gray-500">标签库用于控制前台左上角标签库的展示顺序和基础集合；打开批量模式后，点击下方标签会自动加入批量队列。</p>
-
-                                    <div v-if="isTagEditorOpen('library')" class="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 space-y-3">
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div class="text-sm font-semibold text-blue-800">正在编辑单个标签库标签</div>
-                                            <button @click="closeTagEditor('library')" class="text-xs font-medium text-gray-500 hover:text-gray-700">返回列表</button>
-                                        </div>
-                                        <div class="flex flex-col gap-2 sm:flex-row">
-                                            <input
-                                                v-model="tagEditing.library.value"
-                                                @keydown.enter.prevent="confirmTagEdit('library')"
-                                                @keydown.esc.prevent="closeTagEditor('library')"
-                                                type="text"
-                                                class="flex-1 px-4 py-2.5 text-sm border border-blue-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-400"
-                                            >
-                                            <button @click="confirmTagEdit('library')" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">保存标签</button>
-                                            <button @click="deleteEditingTag('library')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">删除标签</button>
-                                        </div>
-                                    </div>
-
-                                    <div v-if="batchDraft.library.open" class="mt-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 space-y-3">
-                                        <div class="flex flex-wrap gap-2">
-                                            <button v-for="action in batchActionOptions" :key="'library-batch-' + action.value" @click="batchDraft.library.action = action.value" :class="batchDraft.library.action === action.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'" class="px-3 py-1.5 rounded-xl border text-sm font-medium transition">
-                                                {{ action.label }}
-                                            </button>
-                                        </div>
-                                        <textarea v-model="batchDraft.library.text" rows="4" class="w-full px-4 py-3 border border-blue-200 rounded-2xl outline-none resize-y focus:ring-2 focus:ring-blue-400" placeholder="每行一个，或用逗号分隔。批量操作只会在点击执行后生效。"></textarea>
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                            <button @click="applyBatchTags('library')" class="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition">执行批量操作</button>
-                                            <button @click="clearBatchDraft('library')" class="px-4 py-2.5 rounded-xl border border-blue-200 text-sm font-medium text-blue-700 hover:bg-blue-50 transition">清空批量内容</button>
-                                            <button @click="clearConfiguredTags('library')" class="px-4 py-2.5 rounded-xl border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 transition">清空当前配置</button>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-4 space-y-3">
-                                        <div>
-                                            <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">当前配置</div>
-                                                <span class="text-xs text-gray-400">{{ tagEditor.library.length }} 个</span>
-                                            </div>
-                                            <div class="flex flex-wrap gap-2 min-h-[2.75rem]">
-                                                <template v-for="(tag, index) in tagEditor.library" :key="'library-editor-' + tag + '-' + index">
-                                                    <div class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 max-w-full">
-                                                        <button @click="handleConfiguredTagClick('library', index)" class="text-sm font-medium text-blue-700 break-all text-left hover:text-blue-900 transition" title="点击编辑标签或加入批量队列">
-                                                            {{ tag }}
-                                                        </button>
-                                                        <button @click="removeTag('library', index)" class="p-1 rounded-full text-blue-500 hover:bg-blue-100 hover:text-red-600 transition" title="删除标签">
-                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                                        </button>
-                                                    </div>
-                                                </template>
-                                                <span v-if="!tagEditor.library.length" class="text-sm text-gray-400">当前未手动配置标签库。</span>
-                                            </div>
-                                        </div>
-
-                                        <div v-if="hiddenTagState.library.length > 0">
-                                            <div class="flex items-center justify-between gap-3 mb-2">
-                                                <div class="text-sm font-semibold text-gray-800">已隐藏标签</div>
-                                                <button @click="clearHiddenTags('library')" class="text-xs font-medium text-blue-700 hover:text-blue-900">清空隐藏</button>
-                                            </div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button v-for="tag in hiddenTagState.library" :key="'library-hidden-' + tag" @click="handleHiddenTagClick('library', tag)" class="px-3 py-1 rounded-full text-sm border border-dashed border-blue-200 bg-white text-blue-600 hover:bg-blue-50 transition">
-                                                    恢复 {{ tag }}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <div class="text-xs font-medium text-gray-500 mb-2">前台标签库预览</div>
-                                            <div class="flex flex-wrap gap-2 min-h-[2rem] max-h-40 overflow-y-auto pr-1">
-                                                <button v-for="item in tagLibraryPreview" :key="'library-' + item.tag" @click="handlePreviewTagClick('library', item.tag)" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 transition">
-                                                    <span>{{ item.tag }}</span>
-                                                    <span class="text-[11px] font-bold opacity-70">{{ item.count }}</span>
-                                                </button>
-                                                <span v-if="!tagLibraryPreview.length" class="text-sm text-gray-400">暂无标签库预览。</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
@@ -1671,84 +1441,8 @@
                 const aiReviewSettingsSaving = ref(false);
                 const aiReviewModels = ref([]);
                 const aiReviewModelsLoading = ref(false);
-                const tagPreviewCards = ref([]);
-                const tagEditor = reactive({
-                    popular: [],
-                    library: []
-                });
-                const hiddenTagState = reactive({
-                    popular: [],
-                    library: []
-                });
-                const savedTagSnapshot = reactive({
-                    popular: '',
-                    library: '',
-                    hiddenPopular: '',
-                    hiddenLibrary: ''
-                });
-                const tagInput = reactive({
-                    popular: '',
-                    library: ''
-                });
-                const tagEditing = reactive({
-                    popular: { index: -1, value: '' },
-                    library: { index: -1, value: '' }
-                });
-                const batchDraft = reactive({
-                    popular: { open: false, action: 'append', text: '' },
-                    library: { open: false, action: 'append', text: '' }
-                });
-                const batchActionOptions = [
-                    { value: 'append', label: '批量追加' },
-                    { value: 'replace', label: '整组替换' },
-                    { value: 'hide', label: '批量隐藏' },
-                    { value: 'restore', label: '批量恢复' }
-                ];
                 const settingsSaving = ref(false);
                 const announcementSaving = ref(false);
-                const tagPreviewCounts = computed(() => {
-                    const counts = {};
-                    for (const card of tagPreviewCards.value) {
-                        for (const tag of extractCardTags(card)) {
-                            counts[tag] = (counts[tag] || 0) + 1;
-                        }
-                    }
-                    return counts;
-                });
-                const popularTagPreview = computed(() => {
-                    const hiddenSet = new Set(hiddenTagState.popular);
-                    const configured = tagEditor.popular.filter(tag => !hiddenSet.has(tag));
-                    if (configured.length > 0) {
-                        return configured;
-                    }
-                    return Object.entries(tagPreviewCounts.value)
-                        .filter(([tag]) => !hiddenSet.has(tag))
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, 20)
-                        .map(([tag]) => tag);
-                });
-                const tagLibraryPreview = computed(() => {
-                    const hiddenSet = new Set(hiddenTagState.library);
-                    const configured = tagEditor.library.filter(tag => !hiddenSet.has(tag));
-                    const ranked = Object.entries(tagPreviewCounts.value)
-                        .filter(([tag]) => !hiddenSet.has(tag))
-                        .sort((a, b) => b[1] - a[1]);
-                    if (configured.length === 0) {
-                        return ranked.map(([tag, count]) => ({ tag, count }));
-                    }
-                    const configuredSet = new Set(configured);
-                    return [
-                        ...configured.map(tag => ({ tag, count: tagPreviewCounts.value[tag] || 0 })),
-                        ...ranked.filter(([tag]) => !configuredSet.has(tag)).map(([tag, count]) => ({ tag, count }))
-                    ];
-                });
-                const tagSettingsDirty = computed(() => {
-                    return savedTagSnapshot.popular !== tagEditor.popular.join('\n')
-                        || savedTagSnapshot.library !== tagEditor.library.join('\n')
-                        || savedTagSnapshot.hiddenPopular !== hiddenTagState.popular.join('\n')
-                        || savedTagSnapshot.hiddenLibrary !== hiddenTagState.library.join('\n');
-                });
-
                 function authHeaders() {
                     return { 'Content-Type': 'application/json' };
                 }
@@ -1768,280 +1462,6 @@
                     const num = Number(value || 0);
                     if (!Number.isFinite(num)) return '0';
                     return num.toFixed(2).replace(/\.?0+$/, '');
-                }
-
-                function parseTagSettingInput(value) {
-                    return String(value || '')
-                        .split(/[\n,，]/)
-                        .map(item => item.trim())
-                        .filter(Boolean)
-                        .filter((item, index, array) => array.indexOf(item) === index);
-                }
-
-                function syncTagEditorFromSettings() {
-                    tagEditor.popular = parseTagSettingInput(siteSettings.popular_tags);
-                    tagEditor.library = parseTagSettingInput(siteSettings.tag_library);
-                    hiddenTagState.popular = parseTagSettingInput(siteSettings.hidden_popular_tags);
-                    hiddenTagState.library = parseTagSettingInput(siteSettings.hidden_tag_library);
-                    resetTagInteractionState();
-                }
-
-                function captureSavedTagSnapshot() {
-                    savedTagSnapshot.popular = tagEditor.popular.join('\n');
-                    savedTagSnapshot.library = tagEditor.library.join('\n');
-                    savedTagSnapshot.hiddenPopular = hiddenTagState.popular.join('\n');
-                    savedTagSnapshot.hiddenLibrary = hiddenTagState.library.join('\n');
-                }
-
-                function restoreSavedTagSnapshot() {
-                    tagEditor.popular = parseTagSettingInput(savedTagSnapshot.popular);
-                    tagEditor.library = parseTagSettingInput(savedTagSnapshot.library);
-                    hiddenTagState.popular = parseTagSettingInput(savedTagSnapshot.hiddenPopular);
-                    hiddenTagState.library = parseTagSettingInput(savedTagSnapshot.hiddenLibrary);
-                    resetTagInteractionState();
-                    syncSettingsFromTagEditor();
-                }
-
-                function resetTagInteractionState() {
-                    tagInput.popular = '';
-                    tagInput.library = '';
-                    cancelTagEdit('popular');
-                    cancelTagEdit('library');
-                    clearBatchDraft('popular');
-                    clearBatchDraft('library');
-                }
-
-                function syncSettingsFromTagEditor() {
-                    siteSettings.popular_tags = tagEditor.popular.join('\n');
-                    siteSettings.tag_library = tagEditor.library.join('\n');
-                    siteSettings.hidden_popular_tags = hiddenTagState.popular.join('\n');
-                    siteSettings.hidden_tag_library = hiddenTagState.library.join('\n');
-                }
-
-                function removeHiddenTag(type, tag) {
-                    hiddenTagState[type] = hiddenTagState[type].filter(item => item !== tag);
-                }
-
-                function addHiddenTag(type, tag) {
-                    if (!tag) return;
-                    if (hiddenTagState[type].includes(tag)) return;
-                    hiddenTagState[type] = [...hiddenTagState[type], tag];
-                }
-
-                function normalizeTagBatch(value) {
-                    return parseTagSettingInput(value);
-                }
-
-                function addTags(type) {
-                    const incoming = normalizeTagBatch(tagInput[type]);
-                    if (!incoming.length) return;
-                    incoming.forEach(tag => removeHiddenTag(type, tag));
-                    const merged = [...tagEditor[type], ...incoming];
-                    tagEditor[type] = merged.filter((item, index, array) => item && array.indexOf(item) === index);
-                    tagInput[type] = '';
-                    syncSettingsFromTagEditor();
-                }
-
-                function appendTagToBatchDraft(type, tag) {
-                    const incoming = normalizeTagBatch(tag);
-                    if (!incoming.length) return;
-                    const merged = [...normalizeTagBatch(batchDraft[type].text), ...incoming]
-                        .filter((item, index, array) => item && array.indexOf(item) === index);
-                    batchDraft[type].text = merged.join('\n');
-                }
-
-                function isTagEditorOpen(type) {
-                    return tagEditing[type].index >= 0;
-                }
-
-                function closeTagEditor(type) {
-                    cancelTagEdit(type);
-                }
-
-                function adoptPreviewTag(type, tag) {
-                    const normalized = normalizeTagBatch(tag);
-                    if (!normalized.length) return;
-                    const nextTag = normalized[0];
-                    removeHiddenTag(type, nextTag);
-                    if (tagEditor[type].includes(nextTag)) {
-                        startTagEdit(type, tagEditor[type].indexOf(nextTag));
-                        syncSettingsFromTagEditor();
-                        return;
-                    }
-                    tagEditor[type] = [...tagEditor[type], nextTag];
-                    syncSettingsFromTagEditor();
-                }
-
-                function removeTag(type, index) {
-                    const removedTag = tagEditor[type][index];
-                    tagEditor[type] = tagEditor[type].filter((_, itemIndex) => itemIndex !== index);
-                    addHiddenTag(type, removedTag);
-                    if (tagEditing[type].index === index) {
-                        cancelTagEdit(type);
-                    }
-                    syncSettingsFromTagEditor();
-                }
-
-                function startTagEdit(type, index) {
-                    batchDraft[type].open = false;
-                    tagEditing[type].index = index;
-                    tagEditing[type].value = tagEditor[type][index] || '';
-                }
-
-                function cancelTagEdit(type) {
-                    tagEditing[type].index = -1;
-                    tagEditing[type].value = '';
-                }
-
-                function isEditingTag(type, index) {
-                    return tagEditing[type].index === index;
-                }
-
-                function confirmTagEdit(type) {
-                    const index = tagEditing[type].index;
-                    if (index < 0) return;
-                    const nextValue = String(tagEditing[type].value || '').trim();
-                    const previousValue = tagEditor[type][index] || '';
-                    if (!nextValue) {
-                        removeTag(type, index);
-                        return;
-                    }
-                    if (tagEditor[type].some((item, itemIndex) => item === nextValue && itemIndex !== index)) {
-                        showToast('标签已存在，无需重复添加', 'warning');
-                        return;
-                    }
-                    if (previousValue && previousValue !== nextValue) {
-                        addHiddenTag(type, previousValue);
-                    }
-                    removeHiddenTag(type, nextValue);
-                    tagEditor[type] = tagEditor[type].map((item, itemIndex) => itemIndex === index ? nextValue : item);
-                    cancelTagEdit(type);
-                    syncSettingsFromTagEditor();
-                }
-
-                function deleteEditingTag(type) {
-                    const index = tagEditing[type].index;
-                    if (index < 0) return;
-                    removeTag(type, index);
-                }
-
-                function toggleBatchPanel(type) {
-                    batchDraft[type].open = !batchDraft[type].open;
-                    if (batchDraft[type].open) {
-                        cancelTagEdit(type);
-                    }
-                }
-
-                function handleConfiguredTagClick(type, index) {
-                    const tag = tagEditor[type][index];
-                    if (!tag) return;
-                    if (batchDraft[type].open) {
-                        appendTagToBatchDraft(type, tag);
-                        return;
-                    }
-                    startTagEdit(type, index);
-                }
-
-                function handleHiddenTagClick(type, tag) {
-                    if (batchDraft[type].open) {
-                        appendTagToBatchDraft(type, tag);
-                        return;
-                    }
-                    restoreHiddenTag(type, tag);
-                }
-
-                function handlePreviewTagClick(type, tag) {
-                    if (batchDraft[type].open) {
-                        appendTagToBatchDraft(type, tag);
-                        return;
-                    }
-                    adoptPreviewTag(type, tag);
-                }
-
-                function clearBatchDraft(type) {
-                    batchDraft[type].open = false;
-                    batchDraft[type].action = 'append';
-                    batchDraft[type].text = '';
-                }
-
-                function clearConfiguredTags(type) {
-                    tagEditor[type] = [];
-                    cancelTagEdit(type);
-                    syncSettingsFromTagEditor();
-                    showToast(type === 'popular' ? '热门标签配置已清空' : '标签库配置已清空', 'info');
-                }
-
-                function restoreHiddenTag(type, tag) {
-                    removeHiddenTag(type, tag);
-                    syncSettingsFromTagEditor();
-                }
-
-                function clearHiddenTags(type) {
-                    hiddenTagState[type] = [];
-                    syncSettingsFromTagEditor();
-                    showToast(type === 'popular' ? '热门标签隐藏列表已清空' : '标签库隐藏列表已清空', 'info');
-                }
-
-                function applyBatchTags(type) {
-                    const action = batchDraft[type].action;
-                    const incoming = normalizeTagBatch(batchDraft[type].text);
-                    if (!incoming.length) {
-                        showToast('请先输入要批量处理的标签', 'warning');
-                        return;
-                    }
-
-                    if (action === 'append') {
-                        incoming.forEach(tag => removeHiddenTag(type, tag));
-                        tagEditor[type] = [...tagEditor[type], ...incoming].filter((item, index, array) => item && array.indexOf(item) === index);
-                    }
-
-                    if (action === 'replace') {
-                        incoming.forEach(tag => removeHiddenTag(type, tag));
-                        tagEditor[type] = incoming;
-                        cancelTagEdit(type);
-                    }
-
-                    if (action === 'hide') {
-                        incoming.forEach(tag => {
-                            tagEditor[type] = tagEditor[type].filter(item => item !== tag);
-                            addHiddenTag(type, tag);
-                        });
-                        cancelTagEdit(type);
-                    }
-
-                    if (action === 'restore') {
-                        incoming.forEach(tag => removeHiddenTag(type, tag));
-                    }
-
-                    syncSettingsFromTagEditor();
-                    batchDraft[type].text = '';
-                    showToast('批量操作已应用到当前草稿', 'success');
-                }
-
-                function extractCardTags(card) {
-                    if (!card) return [];
-                    if (Array.isArray(card.tags)) {
-                        return card.tags.map(item => String(item || '').trim()).filter(Boolean);
-                    }
-                    const text = String(card.creator_notes || '');
-                    const tags = [];
-                    const regex = /#([^#\s]+)/g;
-                    let match;
-                    while ((match = regex.exec(text)) !== null) {
-                        if (match[1]) tags.push(match[1].trim());
-                    }
-                    return tags.filter((item, index, array) => item && array.indexOf(item) === index);
-                }
-
-                async function loadTagPreviewCards() {
-                    try {
-                        const resp = await fetch(API_BASE + '/api/cards');
-                        if (!resp.ok) return;
-                        const data = await resp.json();
-                        tagPreviewCards.value = Array.isArray(data) ? data : [];
-                    } catch (err) {
-                        console.error('Tag preview cards error:', err);
-                    }
                 }
 
                 function userDraft(user) {
@@ -2451,7 +1871,27 @@
                         unbind_newapi_user: '解绑 STA1N API 用户',
                         newapi_redeem: '提现',
                         admin_adjust_heat: '调整角色卡热度',
-                        admin_adjust_ui_template_heat: '调整模板热度'
+                        admin_adjust_ui_template_heat: '调整模板热度',
+                        admin_delete_ui_template: '管理员删模板',
+                        admin_delete_ui_template_comment: '管理员删模板评论',
+                        admin_update_turnstile_settings: '更新 Turnstile 配置',
+                        moderator_delete_ui_template: '前台审核员删模板',
+                        upload_unreviewed: '上传到无收益专区',
+                        upload_ui_template: '上传模板',
+                        upload_ui_template_pending: '上传模板待审核',
+                        download_ui_template: '下载模板',
+                        edit_ui_template: '编辑模板',
+                        delete_ui_template: '删除模板',
+                        delete_own_comment: '删除自己的评论',
+                        delete_own_ui_template_comment: '删除自己的模板评论',
+                        feature: '设为精选',
+                        unfeature: '取消精选',
+                        feature_ui_template: '模板设为精选',
+                        unfeature_ui_template: '模板取消精选',
+                        add_quota: '增加下载次数',
+                        bind_email: '绑定邮箱',
+                        reset_password_by_email: '邮箱重置密码',
+                        update_user_preferences: '更新个人设置'
                     };
                     return labels[action] || action;
                 }
@@ -2482,14 +1922,11 @@
                             fetch(API_BASE + '/api/admin/email-settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/turnstile-settings', { headers: authHeaders() }),
                             fetch(API_BASE + '/api/admin/newapi-settings', { headers: authHeaders() }),
-                            fetch(API_BASE + '/api/admin/ai-review-settings', { headers: authHeaders() }),
-                            loadTagPreviewCards()
+                            fetch(API_BASE + '/api/admin/ai-review-settings', { headers: authHeaders() })
                         ]);
                         if (settingsResp.ok) {
                             const data = await settingsResp.json();
                             Object.assign(siteSettings, data);
-                            syncTagEditorFromSettings();
-                            captureSavedTagSnapshot();
                         }
                         if (emailResp.ok) {
                             const data = await emailResp.json();
@@ -2515,7 +1952,6 @@
                 async function saveSettings() {
                     settingsSaving.value = true;
                     try {
-                        syncSettingsFromTagEditor();
                         const settingsPayload = {
                             site_name: siteSettings.site_name,
                             site_description: siteSettings.site_description,
@@ -2534,8 +1970,6 @@
                         if (!resp.ok) {
                             throw new Error(data.error || '保存失败');
                         }
-                        captureSavedTagSnapshot();
-                        resetTagInteractionState();
                         showToast('设置已保存', 'success');
                     } catch (err) {
                         showToast(err.message || '保存失败', 'error');
@@ -2878,12 +2312,7 @@
                     ipBanData, ipBanForm, ipBanSaving, loadIpBans, createIpBan, removeIpBan,
                     siteSettings, announcementSaving, emailSettings, emailSettingsSaving, turnstileSettings, turnstileSettingsSaving, newApiSettings, newApiSettingsSaving,
                     aiReviewSettings, aiReviewSettingsSaving, aiReviewModels, aiReviewModelsLoading,
-                    tagEditor, hiddenTagState, tagInput, tagEditing, batchDraft, batchActionOptions,
-                    settingsSaving, popularTagPreview, tagLibraryPreview, tagSettingsDirty,
-                    addTags, adoptPreviewTag, removeTag, startTagEdit, closeTagEditor, isTagEditorOpen, confirmTagEdit, deleteEditingTag,
-                    handleConfiguredTagClick, handleHiddenTagClick, handlePreviewTagClick,
-                    toggleBatchPanel, clearBatchDraft, applyBatchTags, clearConfiguredTags, restoreHiddenTag, clearHiddenTags,
-                    restoreSavedTagSnapshot, loadSettings, saveSettings, pushAnnouncement, disableAnnouncement, saveEmailSettings, saveTurnstileSettings, saveNewApiSettings,
+                    settingsSaving, loadSettings, saveSettings, pushAnnouncement, disableAnnouncement, saveEmailSettings, saveTurnstileSettings, saveNewApiSettings,
                     saveAiReviewSettings, loadAiReviewModels, resetAiReviewTextPrompt, resetAiReviewCoverPrompt,
                     dataExporting, dataImporting, importResult, exportProgress, exportData, importData
                 };

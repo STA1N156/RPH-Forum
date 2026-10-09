@@ -1,3 +1,120 @@
+/* Design tokens shared by the plaza and the admin panel, compiled into app.css.
+   Palette steps are "R G B" triplets so Tailwind utilities can apply opacity (see tailwind.config.js).
+   The palette matches RP-Hub so cards look the same family on both sites. */
+:root {
+    color-scheme: light;
+
+    /* System faces only: CJK web fonts are megabytes and slow to load in mainland China.
+       Latin and digits use the platform UI face, Chinese falls through to PingFang / HarmonyOS / MiSans / YaHei. */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* Porcelain neutrals with a faint iris undertone. */
+    --gray-50: 247 247 249;
+    --gray-100: 240 240 244;
+    --gray-200: 228 228 234;
+    --gray-300: 206 206 215;
+    --gray-400: 157 157 171;
+    --gray-500: 115 115 132;
+    --gray-600: 86 86 103;
+    --gray-700: 64 64 79;
+    --gray-800: 43 43 54;
+    --gray-900: 27 27 35;
+
+    /* Iris accent, between blue and indigo. */
+    --primary-50: 241 244 255;
+    --primary-100: 227 233 255;
+    --primary-200: 203 213 254;
+    --primary-300: 165 181 252;
+    --primary-400: 123 143 248;
+    --primary-500: 90 111 240;
+    --primary-600: 70 89 226;
+    --primary-700: 58 73 199;
+    --primary-800: 50 61 160;
+    --primary-900: 45 55 126;
+
+    --red-50: 254 242 242;
+    --red-100: 254 228 228;
+    --red-200: 253 205 207;
+    --red-300: 249 167 171;
+    --red-400: 240 110 117;
+    --red-500: 229 72 77;
+    --red-600: 214 51 58;
+    --red-700: 185 34 42;
+    --red-800: 150 30 37;
+    --red-900: 120 27 32;
+
+    --green-50: 239 250 244;
+    --green-100: 220 245 231;
+    --green-200: 187 234 207;
+    --green-300: 134 214 170;
+    --green-400: 74 186 126;
+    --green-500: 47 158 97;
+    --green-600: 35 133 80;
+    --green-700: 29 107 66;
+    --green-800: 26 86 55;
+    --green-900: 22 70 46;
+
+    --amber-50: 255 251 235;
+    --amber-100: 254 243 199;
+    --amber-200: 253 230 138;
+    --amber-300: 252 211 77;
+    --amber-400: 251 191 36;
+    --amber-500: 245 158 11;
+    --amber-600: 217 119 6;
+    --amber-700: 180 83 9;
+    --amber-800: 146 64 14;
+    --amber-900: 120 53 15;
+
+    /* Heat and featured marks. */
+    --orange-50: 255 246 239;
+    --orange-100: 255 234 218;
+    --orange-200: 254 210 179;
+    --orange-300: 252 177 128;
+    --orange-400: 248 140 79;
+    --orange-500: 240 110 44;
+    --orange-600: 220 88 28;
+    --orange-700: 182 67 22;
+    --orange-800: 146 55 22;
+    --orange-900: 118 46 20;
+
+    /* Semantic colors used by component CSS. */
+    --c-canvas: rgb(var(--gray-50));
+    --c-surface: #fff;
+    --c-raised: rgb(var(--gray-100));
+    --c-border: rgb(var(--gray-200));
+    --c-border-soft: rgb(var(--gray-100));
+    --c-border-strong: rgb(var(--gray-300));
+    --c-text: rgb(var(--gray-900));
+    --c-text-2: rgb(var(--gray-600));
+    --c-text-3: rgb(var(--gray-500));
+    --c-text-4: rgb(var(--gray-400));
+    --c-accent: rgb(var(--primary-600));
+    --c-accent-hover: rgb(var(--primary-700));
+    --c-accent-soft: rgb(var(--primary-50));
+    --c-accent-edge: rgb(var(--primary-200));
+    --overlay: rgba(17, 17, 28, 0.42);
+
+    --shadow-1: 0 1px 2px rgba(22, 22, 44, 0.04), 0 2px 8px -2px rgba(22, 22, 44, 0.06);
+    --shadow-2: 0 2px 4px -1px rgba(22, 22, 44, 0.05), 0 12px 28px -10px rgba(22, 22, 44, 0.16);
+    --shadow-3: 0 4px 10px -2px rgba(22, 22, 44, 0.06), 0 28px 64px -18px rgba(22, 22, 44, 0.32);
+    --shadow-accent: 0 8px 20px -8px rgb(var(--primary-600) / 0.55);
+    --ring: 0 0 0 3px rgb(var(--primary-500) / 0.18);
+
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 20px;
+    --r-2xl: 28px;
+
+    /* One motion vocabulary; large surfaces only animate transform and opacity. */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+    --dur-1: 140ms;
+    --dur-2: 220ms;
+    --dur-3: 360ms;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
