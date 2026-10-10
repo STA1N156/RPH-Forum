@@ -326,31 +326,29 @@ body.forum-shell {
 }
 
 /* ---------- Audience gate: the first screen ---------- */
-.site-main.audience-gate { position: relative; isolation: isolate; max-width: 880px !important; margin: 0 auto; padding-top: 10vh !important; text-align: center; }
-/* One soft glow per audience behind the tiles. */
-.site-main.audience-gate::before {
+.site-main.audience-gate { max-width: 880px !important; margin: 0 auto; padding-top: 6vh !important; padding-bottom: 32px !important; text-align: center; }
+.audience-gate h1 { color: var(--c-text); font-size: 28px; font-weight: 700; }
+.audience-gate-list { position: relative; isolation: isolate; display: grid; gap: 16px; margin-top: 28px; }
+/* One soft glow per audience behind its row, fading out before the edges of this box. */
+.audience-gate-list::before {
     position: absolute;
-    inset: 0;
+    inset: -24px 0;
     z-index: -1;
     content: "";
     pointer-events: none;
     background:
-        radial-gradient(30% 38% at 18% 44%, rgb(59 130 246 / 0.08), transparent 70%),
-        radial-gradient(30% 38% at 50% 36%, rgb(236 72 153 / 0.08), transparent 70%),
-        radial-gradient(30% 38% at 82% 44%, rgb(var(--primary-500) / 0.1), transparent 70%);
+        radial-gradient(32% 28% at 22% 20%, rgb(59 130 246 / 0.1), transparent 70%),
+        radial-gradient(32% 28% at 78% 50%, rgb(236 72 153 / 0.1), transparent 70%),
+        radial-gradient(32% 28% at 22% 80%, rgb(var(--primary-500) / 0.12), transparent 70%);
 }
-.audience-gate h1 { color: var(--c-text); font-size: 28px; font-weight: 700; }
-.audience-gate-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 32px; }
-/* Each audience has a tone: the site accent for everyone, blue and pink for the other two. */
+/* One audience per row: label on the left, its covers fanned on the right. Each audience has a tone. */
 .audience-gate-item {
     --tone: var(--primary-500);
     position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: flex-end;
-    height: 280px;
-    padding: 0 16px 26px;
+    height: 168px;
+    padding: 0 40px;
     overflow: hidden;
     border: 1px solid var(--c-border);
     border-radius: var(--r-xl);
@@ -368,47 +366,47 @@ body.forum-shell {
     position: absolute;
     inset: 0;
     content: "";
-    background: radial-gradient(120% 80% at 50% 0%, rgb(var(--tone) / 0.16), transparent 72%);
+    background: radial-gradient(60% 150% at 0% 50%, rgb(var(--tone) / 0.15), transparent 72%);
     opacity: 0.75;
     transition: opacity var(--dur-2) ease;
 }
-.audience-gate-item:hover { border-color: rgb(var(--tone) / 0.4); box-shadow: var(--shadow-2); transform: translateY(-3px); }
+.audience-gate-item:hover { border-color: rgb(var(--tone) / 0.4); box-shadow: var(--shadow-2); transform: translateY(-2px); }
 .audience-gate-item:hover::before { opacity: 1; }
-.audience-gate-item:active { transform: translateY(-1px) scale(0.99); }
+.audience-gate-item:active { transform: translateY(0) scale(0.995); }
 
-/* A fan of the audience's hottest covers; --k is each cover's offset from the middle (-1, 0, 1). */
-.audience-gate-covers { position: absolute; top: 36px; right: 0; left: 0; height: 150px; }
+/* A fan of covers; --k is each cover's offset from the middle (-1, 0, 1) and --k2 its square for the dip. */
+.audience-gate-covers { position: absolute; top: 0; right: 36px; bottom: 0; width: 260px; }
 .audience-gate-covers img {
     position: absolute;
-    top: 0;
+    top: 50%;
     left: 50%;
     z-index: calc(3 - var(--k2) * 2);
-    width: 96px;
-    margin-left: -48px;
+    width: 92px;
+    margin: -61px 0 0 -46px;
     aspect-ratio: 3 / 4;
     border: 3px solid var(--c-surface);
-    border-radius: 14px;
+    border-radius: 13px;
     background: var(--c-raised);
     box-shadow: 0 12px 24px -10px rgb(0 0 0 / 0.4);
     object-fit: cover;
-    transform: translateX(calc(var(--k) * 60px)) translateY(calc(var(--k2) * 12px)) rotate(calc(var(--k) * 10deg));
+    transform: translateX(calc(var(--k) * 64px)) translateY(calc(var(--k2) * 8px)) rotate(calc(var(--k) * 9deg));
     transition: transform var(--dur-3) var(--ease-out);
 }
-.audience-gate-item:hover .audience-gate-covers img { transform: translateX(calc(var(--k) * 70px)) translateY(calc(var(--k2) * 8px - 6px)) rotate(calc(var(--k) * 13deg)); }
+.audience-gate-item:hover .audience-gate-covers img { transform: translateX(calc(var(--k) * 76px)) translateY(calc(var(--k2) * 6px - 4px)) rotate(calc(var(--k) * 12deg)); }
 .audience-gate-placeholder { position: absolute; top: 50%; left: 50%; width: 88px; height: 88px; margin: -44px 0 0 -44px; color: rgb(var(--tone) / 0.35); }
 
-.audience-gate-label { position: relative; display: flex; align-items: center; gap: 10px; }
+.audience-gate-label { position: relative; display: flex; align-items: center; gap: 20px; }
 .audience-gate-icon {
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 11px;
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
     background: rgb(var(--tone) / 0.12);
     color: rgb(var(--tone));
 }
-.audience-gate-icon svg { width: 20px; height: 20px; }
-.audience-gate-label strong { color: var(--c-text); font-size: 19px; font-weight: 700; }
+.audience-gate-icon svg { width: 32px; height: 32px; }
+.audience-gate-label strong { color: var(--c-text); font-size: 24px; font-weight: 700; }
 
 /* Segmented audience picker in the upload and edit forms. */
 .audience-switch { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--c-raised); }
@@ -891,31 +889,6 @@ body.forum-shell {
     .forum-card-list { grid-template-columns: 1fr; }
 }
 
-/* Below 800px three columns are too narrow for a fan of covers. */
-@media (max-width: 800px) {
-    /* One audience per row, the label on the left and its covers fanned on the right. */
-    .site-main.audience-gate { max-width: 560px !important; padding-top: 6vh !important; }
-    .audience-gate h1 { font-size: 24px; }
-    .audience-gate-list { grid-template-columns: 1fr; gap: 12px; margin-top: 22px; }
-    .audience-gate-item { flex-direction: row; justify-content: flex-start; height: 104px; padding: 0 20px; border-radius: var(--r-lg); }
-    .audience-gate-item::before { background: radial-gradient(70% 140% at 0% 50%, rgb(var(--tone) / 0.14), transparent 72%); }
-    .audience-gate-covers { top: 0; right: 18px; bottom: 0; left: auto; width: 132px; height: auto; }
-    .audience-gate-covers img,
-    .audience-gate-item:hover .audience-gate-covers img {
-        top: 50%;
-        width: 52px;
-        margin: -35px 0 0 -26px;
-        border-width: 2px;
-        border-radius: 9px;
-        transform: translateX(calc(var(--k) * 36px)) translateY(calc(var(--k2) * 5px)) rotate(calc(var(--k) * 9deg));
-    }
-    .audience-gate-placeholder { width: 56px; height: 56px; margin: -28px 0 0 -28px; }
-    .audience-gate-label { gap: 14px; }
-    .audience-gate-icon { width: 44px; height: 44px; border-radius: 14px; }
-    .audience-gate-icon svg { width: 24px; height: 24px; }
-    .audience-gate-label strong { font-size: 18px; }
-}
-
 @media (max-width: 640px) {
     body.forum-shell { font-size: 14px; }
     .site-nav { height: 58px !important; }
@@ -925,6 +898,24 @@ body.forum-shell {
     .site-main { padding-top: 14px !important; }
     .catalog-tabs > div { gap: 20px !important; }
     .catalog-tabs .audience-back::after { right: -10px; }
+    .site-main.audience-gate { padding-top: 6vh !important; }
+    .audience-gate h1 { font-size: 24px; }
+    .audience-gate-list { gap: 12px; margin-top: 22px; }
+    .audience-gate-item { height: 128px; padding: 0 20px; border-radius: var(--r-lg); }
+    .audience-gate-covers { right: 14px; width: 150px; }
+    .audience-gate-covers img,
+    .audience-gate-item:hover .audience-gate-covers img {
+        width: 62px;
+        margin: -42px 0 0 -31px;
+        border-width: 2px;
+        border-radius: 10px;
+        transform: translateX(calc(var(--k) * 40px)) translateY(calc(var(--k2) * 5px)) rotate(calc(var(--k) * 9deg));
+    }
+    .audience-gate-placeholder { width: 56px; height: 56px; margin: -28px 0 0 -28px; }
+    .audience-gate-label { gap: 14px; }
+    .audience-gate-icon { width: 48px; height: 48px; border-radius: 15px; }
+    .audience-gate-icon svg { width: 26px; height: 26px; }
+    .audience-gate-label strong { font-size: 19px; }
     /* The row must fit with four-digit counts: the back button keeps only its arrow, the tabs drop their icons. */
     .catalog-tabs .audience-back-label,
     .catalog-tabs button:not(.audience-back) svg { display: none; }
