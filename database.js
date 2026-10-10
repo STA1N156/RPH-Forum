@@ -508,6 +508,7 @@ function initDatabase() {
     try { db.exec('ALTER TABLE character_cards ADD COLUMN updated_at DATETIME'); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN latest_rank_at DATETIME'); } catch (e) { /* column exists */ }
+    try { db.exec("ALTER TABLE character_cards ADD COLUMN audience TEXT NOT NULL DEFAULT 'general'"); } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET latest_rank_at = COALESCE(latest_rank_at, created_at, updated_at, CURRENT_TIMESTAMP) WHERE latest_rank_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
@@ -724,15 +725,25 @@ function initDatabase() {
                 has_ui_templates INTEGER,
                 ui_template_count INTEGER,
                 ui_template_variable_count INTEGER,
+                audience TEXT NOT NULL DEFAULT 'general',
                 FOREIGN KEY (id) REFERENCES character_cards(id) ON DELETE CASCADE
             ) WITHOUT ROWID;
+        `);
+        try { db.exec("ALTER TABLE character_card_catalog ADD COLUMN audience TEXT NOT NULL DEFAULT 'general'"); } catch (e) { /* column exists */ }
+        db.exec(`
+            DROP INDEX IF EXISTS idx_card_catalog_review_updated;
+            DROP INDEX IF EXISTS idx_card_catalog_review_featured;
+            DROP TRIGGER IF EXISTS trg_card_catalog_insert;
+            DROP TRIGGER IF EXISTS trg_card_catalog_update;
 
             CREATE INDEX IF NOT EXISTS idx_card_catalog_review_created
                 ON character_card_catalog(review_status, created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_card_catalog_review_updated
-                ON character_card_catalog(review_status, updated_at DESC, created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_card_catalog_review_featured
-                ON character_card_catalog(review_status, is_featured, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_audience_created
+                ON character_card_catalog(audience, review_status, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_audience_updated
+                ON character_card_catalog(audience, review_status, updated_at DESC, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_card_catalog_audience_featured
+                ON character_card_catalog(audience, review_status, is_featured, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_card_catalog_latest_rank
                 ON character_card_catalog(review_status, latest_rank_at DESC, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_card_catalog_uploader_review
@@ -745,14 +756,14 @@ function initDatabase() {
                     uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
                     is_featured, review_status, reviewed_at, rejection_reason,
                     uploader_ip_address, has_ui_templates, ui_template_count,
-                    ui_template_variable_count
+                    ui_template_variable_count, audience
                 )
                 SELECT id, name, description, creator_notes,
                        LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
                        downloads_count, uploader_user_id, created_at, latest_rank_at,
                        updated_at, views_count, is_featured, review_status, reviewed_at,
                        rejection_reason, uploader_ip_address, has_ui_templates,
-                       ui_template_count, ui_template_variable_count
+                       ui_template_count, ui_template_variable_count, audience
                   FROM character_cards WHERE id = NEW.id;
             END;
 
@@ -761,20 +772,20 @@ function initDatabase() {
                 uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
                 is_featured, review_status, reviewed_at, rejection_reason,
                 uploader_ip_address, has_ui_templates, ui_template_count,
-                ui_template_variable_count ON character_cards BEGIN
+                ui_template_variable_count, audience ON character_cards BEGIN
                 INSERT OR REPLACE INTO character_card_catalog (
                     id, name, description, creator_notes, search_text, downloads_count,
                     uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
                     is_featured, review_status, reviewed_at, rejection_reason,
                     uploader_ip_address, has_ui_templates, ui_template_count,
-                    ui_template_variable_count
+                    ui_template_variable_count, audience
                 )
                 SELECT id, name, description, creator_notes,
                        LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
                        downloads_count, uploader_user_id, created_at, latest_rank_at,
                        updated_at, views_count, is_featured, review_status, reviewed_at,
                        rejection_reason, uploader_ip_address, has_ui_templates,
-                       ui_template_count, ui_template_variable_count
+                       ui_template_count, ui_template_variable_count, audience
                   FROM character_cards WHERE id = NEW.id;
             END;
         `);
@@ -789,14 +800,14 @@ function initDatabase() {
                         uploader_user_id, created_at, latest_rank_at, updated_at, views_count,
                         is_featured, review_status, reviewed_at, rejection_reason,
                         uploader_ip_address, has_ui_templates, ui_template_count,
-                        ui_template_variable_count
+                        ui_template_variable_count, audience
                     )
                     SELECT id, name, description, creator_notes,
                            LOWER(COALESCE(name, '') || CHAR(10) || COALESCE(description, '') || CHAR(10) || COALESCE(creator_notes, '')),
                            downloads_count, uploader_user_id, created_at, latest_rank_at,
                            updated_at, views_count, is_featured, review_status, reviewed_at,
                            rejection_reason, uploader_ip_address, has_ui_templates,
-                           ui_template_count, ui_template_variable_count
+                           ui_template_count, ui_template_variable_count, audience
                       FROM character_cards
                 `).run();
                 db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')

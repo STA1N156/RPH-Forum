@@ -270,7 +270,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20261011-dark">
+    <link rel="stylesheet" href="/modern.css?v=20261011-audience">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -377,8 +377,27 @@
             </div>
         </header>
 
+        <!-- Audience gate: the first screen until an audience is chosen -->
+        <main v-if="showAudienceGate" class="site-main audience-gate flex-1 w-full px-4">
+            <h1>选择分区</h1>
+            <div class="audience-gate-list">
+                <button v-for="(option, index) in cardAudiences" :key="option.value" type="button" class="audience-gate-item" :data-audience="option.value" :style="{ '--i': index }" @click="pickAudience(option.value)">
+                    <span class="audience-gate-covers" aria-hidden="true">
+                        <img v-for="(card, cardIndex) in audiencePreviews[option.value]" :key="card.id" :src="card.thumbnail_url" alt="" decoding="async"
+                             :style="audienceCoverStyle(audiencePreviews[option.value].length, cardIndex)">
+                        <svg v-if="!audiencePreviews[option.value].length" class="audience-gate-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path :d="option.icon"/></svg>
+                    </span>
+                    <span class="audience-gate-label">
+                        <span class="audience-gate-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="option.icon"/></svg>
+                        </span>
+                        <strong>{{ option.label }}</strong>
+                    </span>
+                </button>
+            </div>
+        </main>
         <!-- Main Content -->
-        <main class="site-main flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
+        <main v-else class="site-main flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 w-full">
             <!-- Credits Banner (Only in Mine Tab) -->
             <div v-if="currentTab === 'mine'" class="credits-banner mb-6 p-4 sm:p-5 animate-fade-in relative overflow-hidden">
                 <div class="absolute right-0 top-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10 blur-2xl opacity-60 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -419,6 +438,10 @@
             <!-- Plaza Sections -->
             <div class="catalog-tabs mb-4 animate-fade-in">
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                    <button v-if="currentTab !== 'mine'" @click="leaveAudience" class="audience-back flex items-center flex-shrink-0" title="返回分区选择">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                        <span class="audience-back-label">{{ currentAudienceLabel }}</span>
+                    </button>
                     <button @click="contentSection = 'all'"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
                             :class="contentSection === 'all'
@@ -1071,6 +1094,10 @@
 
                         <!-- Actions -->
                         <div class="flex flex-col gap-2 mt-auto">
+                            <div class="audience-field">
+                                <span>发布到</span>
+                                <audience-picker v-model="uploadingCard.audience"></audience-picker>
+                            </div>
                             <button @click="confirmUpload" :disabled="isUploading" class="btn-primary w-full bg-primary-600 hover:bg-primary-700 text-white py-3.5 rounded-2xl font-bold transition-all shadow-lg shadow-primary-100 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]">
                                 <span v-if="isUploading" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
                                 {{ isUploading ? '正在发布...' : (contentSection === 'unreviewed' ? '确认发布到无收益专区' : '确认发布到广场') }}
@@ -1148,6 +1175,11 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">创作者备注（使用 #标签名 添加标签，如 #纯爱 #剧情）</label>
                         <textarea v-model="editingCard.creator_notes" rows="5" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"></textarea>
+                    </div>
+                    <!-- Audience -->
+                    <div class="audience-field">
+                        <span>分区</span>
+                        <audience-picker v-model="editingCard.audience"></audience-picker>
                     </div>
                     <!-- Re-upload file -->
                     <div>
@@ -1699,6 +1731,21 @@
             </div>`
         };
 
+        const CARD_AUDIENCES = [
+            { value: 'male', label: '男性向', icon: 'M15.5 14a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0zM13.9 10.1L20 4M15 4h5v5' },
+            { value: 'female', label: '女性向', icon: 'M17.5 9a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0zM12 14.5V21M9 18h6' },
+            { value: 'general', label: '全性向', icon: 'M15 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM13.7 8.8L18.5 4M14.5 4h4v4M10.5 16.5v5M8 19.5h5' }
+        ];
+
+        // Segmented audience switch shared by the catalog toolbar and the upload and edit forms.
+        const AudiencePicker = {
+            props: { modelValue: { type: String, default: 'general' } },
+            emits: ['update:modelValue'],
+            setup: () => ({ options: CARD_AUDIENCES }),
+            template: `<div class="audience-switch" role="group" aria-label="性向分区">
+                <button v-for="option in options" :key="option.value" type="button" :class="{ 'is-active': modelValue === option.value }" :aria-pressed="modelValue === option.value" @click="$emit('update:modelValue', option.value)">{{ option.label }}</button>
+            </div>`
+        };
         // One comment section shared by the card detail (mobile and desktop) and the UI template detail.
         // State and actions come from the app through provide('commentSection').
         const CommentSection = {
@@ -1797,7 +1844,8 @@
                 <div>
                     <div class="mb-8">
                         <h2 class="detail-title">{{ selectedCard.name }}</h2>
-                        <div v-if="(selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)) || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
+                        <div v-if="cardAudienceLabel || (selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)) || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
+                            <span v-if="cardAudienceLabel" class="detail-tag is-audience">{{ cardAudienceLabel }}</span>
                             <span v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="detail-featured">
                                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                                 精选角色卡
@@ -1880,7 +1928,7 @@
         };
 
         const app = createApp({
-            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody },
+            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody, AudiencePicker },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -1895,6 +1943,21 @@
                 const loading = ref(true);
                 const currentTab = ref('all');
                 const contentSection = ref('all');
+                // Every visit starts in the general audience; the choice is deliberately not remembered.
+                const cardAudience = ref('general');
+                // The plaza opens on the audience gate; "my cards" and the review queue skip it.
+                const audiencePicked = ref(false);
+                const showAudienceGate = computed(() => !audiencePicked.value && currentTab.value !== 'mine');
+                const currentAudienceLabel = computed(() => CARD_AUDIENCES.find(option => option.value === cardAudience.value).label);
+                const pickAudience = (value) => {
+                    cardAudience.value = value;
+                    contentSection.value = 'all';
+                    audiencePicked.value = true;
+                };
+                const leaveAudience = () => {
+                    audiencePicked.value = false;
+                    window.scrollTo(0, 0);
+                };
                 const sectionSearchQueries = reactive({ all: '', unreviewed: '', uitemplates: '' });
                 const searchQuery = computed({
                     get: () => sectionSearchQueries[contentSection.value] || '',
@@ -2920,7 +2983,6 @@
                 const uiTemplateCardsCount = computed(() => {
                     return cardSectionCounts.uiTemplates;
                 });
-
                 const emptyStateTitle = computed(() => {
                     if (contentSection.value === 'uitemplates') {
                         if (currentTab.value === 'mine' && canModerate.value) return '没有待审核的 UI 模板';
@@ -3079,6 +3141,7 @@
                     try {
                         const params = new URLSearchParams({
                             zone: requestedZone,
+                            audience: cardAudience.value,
                             limit: String(TAG_LIBRARY_PAGE_SIZE),
                             offset: String(reset ? 0 : databaseTags.value.length)
                         });
@@ -3121,14 +3184,31 @@
                     card.avatar_url = API_BASE + '/api/cards/' + card.id + '/avatar';
                     return card;
                 });
+                // The gate previews each audience with the covers of its weekly top three (public cards only, never R18).
+                const audiencePreviews = reactive({ general: [], male: [], female: [] });
+                let audiencePreviewsLoaded = false;
+                const loadAudiencePreviews = () => {
+                    if (audiencePreviewsLoaded) return;
+                    audiencePreviewsLoaded = true;
+                    for (const { value } of CARD_AUDIENCES) {
+                        const params = new URLSearchParams({ sort: 'weekly', zone: 'reviewed', audience: value, limit: '6' });
+                        fetch(API_BASE + '/api/cards?' + params.toString())
+                            .then(resp => (resp.ok ? resp.json() : []))
+                            .then(items => { audiencePreviews[value] = prepareCardList(items).filter(card => !isR18Card(card)).slice(0, 3); })
+                            .catch(() => {});
+                    }
+                };
+                // Covers fan out from the middle one: --k is the offset (-1, 0, 1), --k2 its square for the dip.
+                const audienceCoverStyle = (count, index) => {
+                    const k = index - (count - 1) / 2;
+                    return { '--k': k, '--k2': k * k };
+                };
 
                 const fetchCardSectionCounts = async () => {
                     const requestId = ++cardCountsRequestId;
                     try {
-                        const headers = {};
-                        if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
-                        else if (isLoggedIn.value) Object.assign(headers, userAuthHeaders());
-                        const resp = await fetch(API_BASE + '/api/cards/counts', { headers });
+                        const audienceQuery = currentTab.value === 'mine' ? '' : '?audience=' + cardAudience.value;
+                        const resp = await fetch(API_BASE + '/api/cards/counts' + audienceQuery, { headers: getCardRequestHeaders() });
                         if (!resp.ok) return;
                         const data = await resp.json();
                         if (requestId !== cardCountsRequestId) return;
@@ -3137,7 +3217,6 @@
                         cardSectionCounts.uiTemplates = Number(data.ui_templates || 0);
                     } catch {}
                 };
-
                 const fetchCards = async (options = {}) => {
                     const { page = 1 } = options;
                     const force = options.force ?? Object.keys(options).length === 0;
@@ -3168,7 +3247,9 @@
                     if (requestedQuery) params.set('q', requestedQuery);
                     if (requestedTag) params.set('tag', requestedTag);
                     if (requestedMine) params.set('mine', '1');
-                    const queryKey = JSON.stringify(['cards', requestedScope, requestedSort, requestedZone, requestedQuery, requestedTag, requestedMine]);
+                    const requestedAudience = requestedMine ? '' : cardAudience.value;
+                    if (requestedAudience) params.set('audience', requestedAudience);
+                    const queryKey = JSON.stringify(['cards', requestedScope, requestedSort, requestedZone, requestedAudience, requestedQuery, requestedTag, requestedMine]);
                     const cached = !force ? getFreshCatalogPage(cardPageCache, queryKey, requestedPage) : null;
                     if (cached) {
                         cards.value = cached.items;
@@ -3669,7 +3750,8 @@
                                 description: data.description || data.char_persona || '',
                                 avatar: avatar,
                                 full_data: charData,
-                                creator_notes: data.creator_notes || ''
+                                creator_notes: data.creator_notes || '',
+                                audience: '' // no default: the uploader has to pick one
                             };
                         } catch (err) {
                             showToast('解析失败: ' + err.message, 'error');
@@ -4265,6 +4347,10 @@
 
                 const confirmUpload = async () => {
                     if (!uploadingCard.value || isUploading.value) return;
+                    if (!uploadingCard.value.audience) {
+                        showToast('请先选择要发布到的分区', 'warning');
+                        return;
+                    }
                     isUploading.value = true;
                     try {
                         const headers = isLoggedIn.value ? userAuthHeaders() : (isAdmin.value ? adminAuthHeaders() : { 'Content-Type': 'application/json' });
@@ -4277,6 +4363,7 @@
                                 avatar_url: uploadingCard.value.avatar,
                                 data: uploadingCard.value.full_data,
                                 creator_notes: uploadingCard.value.creator_notes,
+                                audience: uploadingCard.value.audience,
                                 publish_mode: contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed'
                             })
                         });
@@ -5622,6 +5709,7 @@
                         creator_notes: card.creator_notes || '',
                         data: card.data,
                         full_data: card.data,
+                        audience: card.audience || 'general',
                         reupload_replace: false
                     };
                     showEditModal.value = true;
@@ -5698,6 +5786,7 @@
                             name: editingCard.value.name,
                             description: editingCard.value.description,
                             creator_notes: editingCard.value.creator_notes,
+                            audience: editingCard.value.audience,
                             reupload_replace: editingCard.value.reupload_replace === true
                         };
                         if (editingCard.value.full_data !== undefined && editingCard.value.full_data !== null) {
@@ -5808,6 +5897,7 @@
 
                 let filterFetchTimer = null;
                 watch([searchQuery, selectedTag], () => {
+                    if (searchQuery.value || selectedTag.value) audiencePicked.value = true;
                     clearTimeout(filterFetchTimer);
                     if (contentSection.value === 'uitemplates') {
                         uiTemplatesRequestController?.abort();
@@ -5832,7 +5922,8 @@
                     if (contentSection.value === 'uitemplates') fetchUiTemplates({ page: 1 });
                     else fetchCards({ page: 1 });
                 });
-                watch(contentSection, (section) => {
+                watch(showAudienceGate, (shown) => { if (shown) loadAudiencePreviews(); }, { immediate: true });
+                watch([contentSection, cardAudience], ([section]) => {
                     clearTimeout(filterFetchTimer);
                     if (section === 'unreviewed' && cardSort.value === 'featured') {
                         cardSort.value = 'latest';
@@ -5957,9 +6048,13 @@
                     cooldownTimers.clear();
                 });
 
+                // Only "my cards" and the review queue mix audiences, so only there does the detail name it.
+                const cardAudienceLabel = computed(() => currentTab.value === 'mine'
+                    ? CARD_AUDIENCES.find(option => option.value === (selectedCard.value?.audience || 'general'))?.label || ''
+                    : '');
                 provide('cardDetail', {
                     selectedCard, previewAsset, personalityExpanded, selectedCardDetailLoading, selectedCardDetailError,
-                    renderMarkdown, renderUiTemplatePreview
+                    renderMarkdown, renderUiTemplatePreview, cardAudienceLabel
                 });
                 provide('commentSection', {
                     comments, loadingComments, loadingMoreComments, commentTotal, commentsHasMore, commentTree, expandedComments,
@@ -5980,7 +6075,7 @@
 
                 return {
                     isDark, themeFollowsParent, toggleTheme,
-                    cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, cardAudience, cardAudiences: CARD_AUDIENCES, audiencePreviews, audienceCoverStyle, showAudienceGate, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,

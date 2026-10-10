@@ -1484,6 +1484,13 @@ function templateCommentHeatCountExpr(templateAlias = 'ui_templates') {
     return templateCommentCountExpr(templateAlias);
 }
 
+const CARD_AUDIENCES = ['general', 'male', 'female'];
+
+// Lists treat a missing or unknown audience as "every audience".
+function parseCardAudience(value) {
+    return CARD_AUDIENCES.includes(value) ? value : '';
+}
+
 function getRankingPeriodModifier(sortMode) {
     return { daily: '-1 day', weekly: '-7 days', monthly: '-30 days' }[sortMode] || '';
 }
@@ -3546,8 +3553,11 @@ app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
             reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending') AND (review_status = 'approved' OR uploader_user_id = ?)";
             params.push(req.user.id);
         }
-        const reviewedQuery = sqliteReadPool.fastGet(`SELECT COUNT(*) AS count FROM character_card_catalog WHERE ${reviewedWhere}`, params);
-        const unreviewedQuery = sqliteReadPool.fastGet("SELECT COUNT(*) AS count FROM character_card_catalog WHERE review_status = 'unreviewed'", []);
+        const audience = parseCardAudience(req.query.audience);
+        const audienceWhere = audience ? ' AND audience = ?' : '';
+        const audienceParams = audience ? [audience] : [];
+        const reviewedQuery = sqliteReadPool.fastGet(`SELECT COUNT(*) AS count FROM character_card_catalog WHERE ${reviewedWhere}${audienceWhere}`, [...params, ...audienceParams]);
+        const unreviewedQuery = sqliteReadPool.fastGet(`SELECT COUNT(*) AS count FROM character_card_catalog WHERE review_status = 'unreviewed'${audienceWhere}`, audienceParams);
         let templateWhere = "review_status = 'approved'";
         const templateParams = [];
         if (req.admin || isModeratorUser(req.user)) {
@@ -3574,9 +3584,10 @@ app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
 app.get('/api/cards/tags', optionalUserAuth, async (req, res) => {
     try {
         const zone = req.query.zone === 'unreviewed' ? 'unreviewed' : 'reviewed';
+        const audience = parseCardAudience(req.query.audience);
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 200);
         const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
-        const cacheKey = getCardListCacheKey(req, 'tags', zone, `page-${limit}-${offset}`);
+        const cacheKey = getCardListCacheKey(req, 'tags', zone, `page-${limit}-${offset}-${audience}`);
         const cached = getFreshCardListCache(cacheKey);
         if (cached) return sendCardListCache(req, res, cached);
 
@@ -3592,6 +3603,10 @@ app.get('/api/cards/tags', optionalUserAuth, async (req, res) => {
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
+        }
+        if (audience) {
+            whereParts.push('cc.audience = ?');
+            params.push(audience);
         }
 
         const hiddenTags = parseTagSettingValue(getSettingValue('hidden_tag_library')).map(tag => tag.toLowerCase());
@@ -3626,6 +3641,7 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         const searchQuery = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
         const tagFilter = String(req.query.tag || '').trim().toLowerCase().slice(0, 100);
         const mineOnly = req.query.mine === '1';
+        const audience = parseCardAudience(req.query.audience);
         const requestedLimit = parseInt(req.query.limit, 10);
         const limit = !idsOnly
             ? (Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 10)
@@ -3635,7 +3651,7 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
             ? Math.min(requestedOffset, 1000000)
             : 0;
         markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit, offset, hasSearch: Boolean(searchQuery), hasTag: Boolean(tagFilter), mineOnly });
-        const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly])).digest('hex').slice(0, 12);
+        const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly, audience])).digest('hex').slice(0, 12);
         const representation = `${idsOnly ? 'ids' : (limit ? `full-${limit}-${offset}` : 'full')}-${filterHash}`;
         const cacheKey = getCardListCacheKey(req, sortMode, zone, representation);
         const cached = getFreshCardListCache(cacheKey);
@@ -3677,6 +3693,11 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
             } else {
                 whereParts.push('1 = 0');
             }
+        }
+
+        if (audience) {
+            whereParts.push('cc.audience = ?');
+            params.push(audience);
         }
 
         if (searchQuery) {
@@ -3725,7 +3746,7 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
             ? 'cc.id'
             : `cc.id, cc.name, cc.description, cc.creator_notes,
                     cc.downloads_count, cc.uploader_user_id, cc.created_at, cc.latest_rank_at, cc.updated_at,
-                    cc.views_count, cc.is_featured, cc.review_status,
+                    cc.views_count, cc.is_featured, cc.review_status, cc.audience,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     COALESCE(cc.has_ui_templates, 0) AS has_ui_templates,
                     COALESCE(cc.ui_template_count, 0) AS ui_template_count,
@@ -5219,7 +5240,7 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
                     cc.uploader_user_id, cc.review_status, cc.reviewed_by_admin_id,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     cc.heat_email_milestone, cc.created_at, cc.latest_rank_at, cc.updated_at,
-                    cc.views_count, cc.is_featured
+                    cc.views_count, cc.is_featured, cc.audience
              FROM character_cards cc
              WHERE cc.id = ?`
         ).get(req.params.id);
@@ -5268,6 +5289,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
     try {
         const { name, description, avatar_url, data, creator_notes } = req.body;
         const publishMode = req.body.publish_mode === 'unreviewed' ? 'unreviewed' : 'reviewed';
+        const audience = parseCardAudience(req.body.audience) || 'general';
         if (!name) {
             return res.status(400).json({ error: '卡片名称不能为空' });
         }
@@ -5324,12 +5346,12 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             db.prepare(
                 `INSERT INTO character_cards
                  (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
-                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                  creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at, audience)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
                 id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                 uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now
+                creator_notes || '', uploaderUserId, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now, audience
             );
         } catch (insertErr) {
             if (insertErr.message && insertErr.message.includes('UNIQUE constraint failed')) {
@@ -5341,12 +5363,12 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 db.prepare(
                     `INSERT INTO character_cards
                       (id, name, description, avatar_url, data, detail_preview, has_ui_templates, ui_template_count, ui_template_variable_count,
-                       creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                       creator_notes, uploader_user_id, data_hash, review_status, reviewed_by_admin_id, reviewed_at, uploader_ip_address, created_at, latest_rank_at, updated_at, audience)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
                 ).run(
                     id, name, description || '', safeAvatarUrl, dataStr, detailPreview,
                     uiSummary.has_ui_templates, uiSummary.ui_template_count, uiSummary.ui_template_variable_count,
-                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now
+                    creator_notes || '', null, dataHash, reviewStatus, reviewedBy, reviewedAt, uploaderIp, now, now, now, audience
                 );
             } else {
                 throw insertErr;
@@ -5516,7 +5538,7 @@ app.put('/api/cards/:id', (req, res) => {
             return res.status(409).json({ error: 'AI 审核处理中，请稍后再编辑' });
         }
 
-        const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace } = req.body;
+        const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace, audience } = req.body;
         const fields = [];
         const values = [];
         const hasDataUpdate = data !== undefined && data !== null;
@@ -5556,6 +5578,10 @@ app.put('/api/cards/:id', (req, res) => {
             pushCardUiTemplateSummaryUpdate(fields, values, serializedData);
         }
         if (creator_notes !== undefined) { fields.push('creator_notes = ?'); values.push(creator_notes); }
+        if (audience !== undefined) {
+            if (!parseCardAudience(audience)) return res.status(400).json({ error: '分区无效' });
+            fields.push('audience = ?'); values.push(audience);
+        }
         if (created_at !== undefined && decoded.role === 'admin') {
             if (isNaN(Date.parse(created_at))) return res.status(400).json({ error: '无效的时间格式' });
             fields.push('created_at = ?'); values.push(created_at);
@@ -5686,6 +5712,27 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
         res.json({ id, is_featured: newFeatured });
     } catch (err) {
         console.error('Feature card error:', err);
+        res.status(500).json({ error: '操作失败' });
+    }
+});
+
+app.put('/api/admin/cards/:id/audience', authenticateAdmin, (req, res) => {
+    try {
+        const audience = parseCardAudience(req.body.audience);
+        if (!audience) return res.status(400).json({ error: '分区无效' });
+        const card = db.prepare('SELECT name FROM character_cards WHERE id = ?').get(req.params.id);
+        if (!card) return res.status(404).json({ error: '卡片不存在' });
+        db.prepare('UPDATE character_cards SET audience = ? WHERE id = ?').run(audience, req.params.id);
+        clearCardListCache('card-audience');
+        logOperation({
+            userType: 'admin', userId: req.admin.id, username: req.admin.username,
+            action: 'admin_set_card_audience',
+            targetType: 'card', targetId: req.params.id, ip: getRequestIp(req),
+            details: { name: card.name, audience }
+        });
+        res.json({ id: req.params.id, audience });
+    } catch (err) {
+        console.error('Set card audience error:', err);
         res.status(500).json({ error: '操作失败' });
     }
 });
@@ -6722,7 +6769,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         let query = `SELECT cc.id, cc.name, cc.description, cc.creator_notes, cc.downloads_count,
                             cc.uploader_user_id, u.username AS uploader_username,
                             cc.review_status, cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
-                            cc.created_at, cc.latest_rank_at, cc.updated_at
+                            cc.created_at, cc.latest_rank_at, cc.updated_at, cc.audience
                      FROM character_cards cc
                      LEFT JOIN users u ON cc.uploader_user_id = u.id`;
         let countQuery = 'SELECT COUNT(*) as count FROM character_cards cc LEFT JOIN users u ON cc.uploader_user_id = u.id';
