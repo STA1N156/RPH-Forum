@@ -2,10 +2,11 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <script src="/theme.js?v=20261011-dark"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 万相广场</title>
     <meta name="description" content="万相广场内容与社区管理后台。">
-    <link rel="stylesheet" href="/app.css?v=20261009-ui3">
+    <link rel="stylesheet" href="/app.css?v=20261011-tags">
     <script src="/vue.global.js"></script>
     <style>
         [v-cloak] { display: none !important; }
@@ -25,7 +26,7 @@
             transform: translateY(-10px) scale(0.98);
         }
     </style>
-    <link rel="stylesheet" href="/admin-modern.css?v=20261009-ui3">
+    <link rel="stylesheet" href="/admin-modern.css?v=20261011-dark">
 </head>
 <body class="admin-body bg-gray-50 min-h-screen">
     <div id="admin-app" v-cloak>
@@ -143,7 +144,14 @@
                             {{ {dashboard:'仪表盘',cards:'卡片管理',aiReviews:'AI审核',ipbans:'IP封禁',comments:'评论管理',users:'用户管理',redemptions:'提现记录',logs:'操作日志',settings:'系统设置'}[currentPage] }}
                         </h2>
                     </div>
-                    <a href="/" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
+                    <div class="flex items-center gap-2">
+                        <button type="button" class="appearance-switch" role="switch" :aria-checked="isDark"
+                                aria-label="夜间模式" :title="isDark ? '切换到日间模式' : '切换到夜间模式'" @click="toggleTheme">
+                            <svg v-if="!isDark" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M20.5 13.1A8.5 8.5 0 0110.9 3.5 8.5 8.5 0 1020.5 13.1Z" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"></path></svg>
+                        </button>
+                        <a href="/" class="text-sm text-blue-600 hover:text-blue-800 transition whitespace-nowrap">查看前台 →</a>
+                    </div>
                 </header>
 
                 <div class="admin-content p-4 md:p-8">
@@ -2297,7 +2305,15 @@
                     checkAuth();
                 });
 
+                // Appearance: theme.js owns the choice; the app only mirrors it for the switch.
+                const isDark = ref(document.documentElement.dataset.appTheme === 'dark');
+                window.addEventListener('forum-theme-change', event => {
+                    isDark.value = event.detail === 'dark';
+                });
+                const toggleTheme = () => window.ForumTheme.toggle();
+
                 return {
+                    isDark, toggleTheme,
                     isAuthenticated, adminUser, currentPage, showMobileMenu, toasts,
                     loginForm, loginError, loginLoading, handleLogin, handleLogout,
                     stats, formatDate, formatCookieAmount, chartData, chartMax,

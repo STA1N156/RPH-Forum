@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <script src="/theme.js?v=20261011-dark"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <!-- Disable HTML caching so clients always receive the latest UI logic. -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -9,7 +10,7 @@
     <meta http-equiv="Expires" content="0">
     <title>万相广场</title>
     <meta name="description" content="发现、分享与收藏角色卡和 UI 模板。">
-    <link rel="stylesheet" href="/app.css?v=20261009-ui3">
+    <link rel="stylesheet" href="/app.css?v=20261011-tags">
     <script src="/vue.global.js"></script>
     <!-- Local API backend replaces Supabase -->
     <script src="/marked.min.js"></script>
@@ -90,7 +91,7 @@
 
         /* Typography Improvements for Markdown */
         .prose {
-            color: #374151;
+            color: var(--c-text-2);
             max-width: none;
         }
         
@@ -136,21 +137,21 @@
             margin-top: 0;
         }
         .prose strong {
-            color: #111827;
+            color: var(--c-text);
             font-weight: 700;
         }
         .prose em {
-            color: #4b5563;
+            color: var(--c-text-2);
         }
         .prose blockquote {
             font-style: italic;
             border-left-width: 0.25rem;
-            border-left-color: #e5e7eb;
+            border-left-color: var(--c-border);
             margin-top: 1.6em;
             margin-bottom: 1.6em;
             padding-left: 1em;
-            color: #6b7280;
-            background: #f9fafb;
+            color: var(--c-text-3);
+            background: var(--c-canvas);
             padding-top: 0.5em;
             padding-bottom: 0.5em;
             border-radius: 0 0.5rem 0.5rem 0;
@@ -166,15 +167,15 @@
             margin-bottom: 0.5em;
         }
         .prose code {
-            color: #111827;
+            color: var(--c-text);
             font-weight: 600;
             font-size: 0.875em;
-            background-color: #f3f4f6;
+            background-color: var(--c-raised);
             padding: 0.2em 0.4em;
             border-radius: 0.25rem;
         }
         .prose h1, .prose h2, .prose h3, .prose h4 {
-            color: #111827;
+            color: var(--c-text);
             font-weight: 700;
             margin-top: 1.5em;
             margin-bottom: 0.5em;
@@ -185,7 +186,7 @@
         .prose h3 { font-size: 1.125em; }
 
         .announcement-markdown {
-            color: #374151;
+            color: var(--c-text-2);
         }
         .announcement-markdown > *:first-child {
             margin-top: 0;
@@ -197,7 +198,7 @@
             margin: 0.85em 0;
         }
         .announcement-markdown strong {
-            color: #111827;
+            color: var(--c-text);
             font-weight: 800;
         }
         .announcement-markdown ul,
@@ -218,14 +219,14 @@
             margin: 1em 0;
             border-left: 4px solid rgb(var(--primary-200));
             background: rgb(var(--primary-50));
-            color: #1f2937;
+            color: var(--c-text);
             padding: 0.7em 1em;
             border-radius: 0 0.8rem 0.8rem 0;
         }
         .announcement-markdown code {
-            background: #f3f4f6;
+            background: var(--c-raised);
             border-radius: 0.45rem;
-            color: #111827;
+            color: var(--c-text);
             font-size: 0.92em;
             padding: 0.12em 0.35em;
         }
@@ -269,7 +270,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20261009-ui3">
+    <link rel="stylesheet" href="/modern.css?v=20261011-dark">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -330,7 +331,7 @@
                     <!-- User Menu (Logged In) -->
                     <div v-if="isLoggedIn" class="relative flex items-center gap-1">
                         <div class="credit-chip hidden sm:inline-flex" title="剩余下载次数">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                             <span>{{ downloadCredits }}</span>
                         </div>
                         <button @click.stop="showUserMenu = !showUserMenu" class="user-chip" :title="currentUser.username">
@@ -351,6 +352,11 @@
                             <button @click="openUserSettingsModal" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                                 个人设置
+                            </button>
+                            <button v-if="!themeFollowsParent" type="button" @click="toggleTheme(); showUserMenu = false" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg v-if="isDark" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path stroke-linecap="round" d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                                <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.5 13.1A8.5 8.5 0 0110.9 3.5 8.5 8.5 0 1020.5 13.1Z"/></svg>
+                                {{ isDark ? '日间模式' : '夜间模式' }}
                             </button>
                             <button @click="currentTab = 'all'; showUserMenu = false" v-if="currentTab === 'mine'" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
@@ -380,7 +386,7 @@
                 <!-- Row 1: icon + credits number -->
                 <div class="flex items-center gap-4 mb-3 relative z-10">
                     <div class="w-10 h-10 rounded-2xl bg-blue-50 text-primary-600 flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     </div>
                     <div>
                         <div class="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-0.5">下载额度</div>
@@ -939,88 +945,7 @@
                 </section>
 
                 <section class="max-w-4xl mx-auto px-4 sm:px-6 mt-10 sm:mt-12 md:max-w-none md:px-0 lg:px-0">
-                    <h4 class="detail-heading">
-                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                        评论 ({{ commentTotal }})
-                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                    </h4>
-                    <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
-                    <div v-if="loadingComments" class="flex justify-center py-4">
-                        <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
-                    </div>
-                    <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">暂无评论，快来抢沙发吧~</div>
-                    <div v-else class="space-y-4">
-                        <div v-for="root in commentTree" :key="'ut-full-' + root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
-                            <div class="flex justify-between items-start mb-1">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="comment-author">{{ root.author_name || root.nickname }}</span>
-                                    <span v-if="root.user_id && selectedTemplate && root.user_id === selectedTemplate.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                    <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
-                                    <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">热门</span>
-                                </div>
-                                <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="comment-delete text-xs">删除</button>
-                            </div>
-                            <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
-                            <div class="flex items-center gap-3 mt-2">
-                                <button @click="likeComment(root)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="root.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                    <svg class="w-4 h-4" :fill="root.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                    {{ root.likes_count || 0 }}
-                                </button>
-                                <button @click="replyToComment(root)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                    回复
-                                </button>
-                            </div>
-                            <comment-composer
-                                v-if="newComment.reply_to_id === root.id"
-                                v-model="newComment.content"
-                                :is-logged-in="isLoggedIn"
-                                :reply-name="newComment.reply_to_name"
-                                inline
-                                @submit="submitComment"
-                                @cancel="cancelReply">
-                            </comment-composer>
-                            <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
-                                <div class="comment-thread space-y-2 pl-3 border-l-2">
-                                    <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="'ut-full-r-' + reply.id" class="comment-reply">
-                                        <div class="flex justify-between items-start mb-1">
-                                            <div class="flex items-center gap-1.5 flex-wrap">
-                                                <span class="comment-author">{{ reply.author_name || reply.nickname }}</span>
-                                                <span v-if="reply.user_id && selectedTemplate && reply.user_id === selectedTemplate.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                                <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
-                                                <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
-                                            </div>
-                                            <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="comment-delete text-xs">删除</button>
-                                        </div>
-                                        <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
-                                        <div class="flex items-center gap-3 mt-1.5">
-                                            <button @click="likeComment(reply)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="reply.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                                <svg class="w-3.5 h-3.5" :fill="reply.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                                {{ reply.likes_count || 0 }}
-                                            </button>
-                                            <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">回复</button>
-                                        </div>
-                                        <comment-composer
-                                            v-if="newComment.reply_to_id === reply.id"
-                                            v-model="newComment.content"
-                                            :is-logged-in="isLoggedIn"
-                                            :reply-name="newComment.reply_to_name"
-                                            inline
-                                            @submit="submitComment"
-                                            @cancel="cancelReply">
-                                        </comment-composer>
-                                    </div>
-                                </div>
-                                <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
-                                    <svg class="w-3 h-3 transition-transform" :class="expandedComments.has(root.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                    {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
-                                </button>
-                            </div>
-                        </div>
-                        <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
-                            <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
-                        </div>
-                    </div>
+                    <comment-section :author-id="selectedTemplate.uploader_user_id"></comment-section>
                 </section>
             </main>
 
@@ -1292,189 +1217,7 @@
                             </div>
                         </div>
 
-                        <!-- Title & Meta -->
-                        <div class="mb-8">
-                            <h2 class="detail-title">{{ selectedCard.name }}</h2>
-                            <div v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="mt-3 flex items-center">
-                                <span class="detail-featured inline-flex items-center text-xs">
-                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                    精选角色卡
-                                </span>
-                            </div>
-                            <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
-                                {{ previewAsset.error }}
-                            </div>
-                            <div v-if="selectedCard.creator_notes" class="detail-notes mt-4 p-4 text-sm leading-relaxed">
-                                <div class="flex flex-col gap-2">
-                                    <div v-if="selectedCard.clean_notes">{{ selectedCard.clean_notes }}</div>
-                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="flex flex-wrap gap-2">
-                                        <span v-for="tag in selectedCard.tags" :key="tag"
-                                              class="max-w-full break-all px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
-                                            {{ tag }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Content Sections -->
-                        <div class="space-y-10 flex-1">
-                            <section>
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    简要描述
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
-                            </section>
-
-                            <section v-if="selectedCardDetailLoading" class="rounded-3xl border border-primary-100 bg-primary-50/70 p-5">
-                                <div class="flex items-center gap-3 text-primary-700">
-                                    <div class="h-5 w-5 rounded-full border-2 border-primary-500 border-t-transparent animate-spin flex-shrink-0"></div>
-                                    <div>
-                                        <div class="text-sm font-black">正在加载完整角色卡</div>
-                                        <div class="text-xs text-primary-500 mt-1">设定、开场白和模板内容马上出来</div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section v-else-if="selectedCardDetailError" class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-700">
-                                {{ selectedCardDetailError }}
-                            </section>
-
-                            <section v-if="selectedCard._display.personality">
-                                <div class="detail-heading-row flex items-center">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    <h4 class="text-base font-black uppercase tracking-[0.2em] text-gray-400">设定</h4>
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    <button type="button" @click="personalityExpanded = !personalityExpanded" :aria-expanded="personalityExpanded" :aria-label="personalityExpanded ? '收起设定' : '展开设定'" class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 active:scale-95">
-                                        <svg class="w-5 h-5 transition-transform duration-200" :class="personalityExpanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M19 9l-7 7-7-7"/></svg>
-                                    </button>
-                                </div>
-                                <transition name="fade">
-                                    <div v-show="personalityExpanded" class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
-                                </transition>
-                            </section>
-
-                            <section v-if="selectedCard._display.first_mes">
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    开场白
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div :key="selectedCard.id + '-first-message'" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
-                            </section>
-
-                            <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    原始模板UI
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="space-y-6">
-                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.id + '-ui-template-' + template.id" class="ui-preview p-3 overflow-hidden">
-                                        <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
-                                        <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Comments Section -->
-                            <section>
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    评论 ({{ commentTotal }})
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                
-                                <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" :earns-credits="selectedCard.review_status !== 'unreviewed'" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
-
-                                <!-- Hot Comment -->
-                                <div v-if="loadingComments" class="flex justify-center py-4">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
-                                </div>
-                                <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">
-                                    暂无评论，快来抢沙发吧~
-                                </div>
-                                <div v-else class="space-y-4">
-                                    <div v-for="root in commentTree" :key="root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
-                                        <div class="flex justify-between items-start mb-1">
-                                            <div class="flex items-center gap-2 flex-wrap">
-                                                <span class="comment-author">{{ root.author_name || root.nickname }}</span>
-                                                <span v-if="root.user_id && selectedCard && root.user_id === selectedCard.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                                <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
-                                                <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
-                                            </div>
-                                            <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="comment-delete text-xs">删除</button>
-                                        </div>
-                                        <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
-                                        <div class="flex items-center gap-3 mt-2">
-                                            <button @click="likeComment(root)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="root.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                                <svg class="w-4 h-4" :fill="root.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                                {{ root.likes_count || 0 }}
-                                            </button>
-                                            <button @click="replyToComment(root)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                                回复
-                                            </button>
-                                        </div>
-                                        <comment-composer
-                                            v-if="newComment.reply_to_id === root.id"
-                                            v-model="newComment.content"
-                                            :is-logged-in="isLoggedIn"
-                                            :reply-name="newComment.reply_to_name"
-                                            inline
-                                            @submit="submitComment"
-                                            @cancel="cancelReply">
-                                        </comment-composer>
-                                        <!-- Nested replies -->
-                                        <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
-                                            <div class="comment-thread space-y-2 pl-3 border-l-2">
-                                                <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="reply.id" class="comment-reply">
-                                                    <div class="flex justify-between items-start mb-1">
-                                                        <div class="flex items-center gap-1.5 flex-wrap">
-                                                            <span class="comment-author">{{ reply.author_name || reply.nickname }}</span>
-                                                            <span v-if="reply.user_id && selectedCard && reply.user_id === selectedCard.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                                            <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
-                                                            <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
-                                                            <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
-                                                        </div>
-                                                        <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="comment-delete text-xs">删除</button>
-                                                    </div>
-                                                    <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
-                                                    <div class="flex items-center gap-3 mt-1.5">
-                                                        <button @click="likeComment(reply)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="reply.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                                            <svg class="w-3.5 h-3.5" :fill="reply.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                                            {{ reply.likes_count || 0 }}
-                                                        </button>
-                                                        <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
-                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                                            回复
-                                                        </button>
-                                                    </div>
-                                                    <comment-composer
-                                                        v-if="newComment.reply_to_id === reply.id"
-                                                        v-model="newComment.content"
-                                                        :is-logged-in="isLoggedIn"
-                                                        :reply-name="newComment.reply_to_name"
-                                                        inline
-                                                        @submit="submitComment"
-                                                        @cancel="cancelReply">
-                                                    </comment-composer>
-                                                </div>
-                                            </div>
-                                            <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
-                                                <svg class="w-3 h-3 transition-transform" :class="expandedComments.has(root.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                                {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
-                                        <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
+                        <card-detail-body class="flex-1"></card-detail-body>
 
                     </div>
                 </div>
@@ -1523,191 +1266,7 @@
                     <!-- Scrollable Content -->
                     <div class="flex-1 overflow-y-auto custom-scrollbar pr-4">
                         
-                        <!-- Title & Meta -->
-                        <div class="mb-8">
-                            <h2 class="detail-title">{{ selectedCard.name }}</h2>
-                            <div v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="mt-3 flex items-center">
-                                <span class="detail-featured inline-flex items-center text-xs">
-                                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                    精选角色卡
-                                </span>
-                            </div>
-                            <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
-                                {{ previewAsset.error }}
-                            </div>
-                            
-                            <!-- Creator Notes Content (Visible in Preview) -->
-                            <div v-if="selectedCard.creator_notes" class="detail-notes mt-4 p-4 text-sm leading-relaxed">
-                                <div class="flex flex-col gap-2">
-                                    <div v-if="selectedCard.clean_notes">{{ selectedCard.clean_notes }}</div>
-                                    <div v-if="selectedCard.tags && selectedCard.tags.length > 0" class="flex flex-wrap gap-2">
-                                        <span v-for="tag in selectedCard.tags" :key="tag"
-                                              class="px-2 py-1 rounded-lg text-xs font-bold border border-blue-200 bg-blue-50 text-blue-600">
-                                            {{ tag }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Content Sections -->
-                        <div class="space-y-10 pb-4">
-                            <section>
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    简要描述
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
-                            </section>
-
-                            <section v-if="selectedCardDetailLoading" class="rounded-3xl border border-primary-100 bg-primary-50/70 p-5">
-                                <div class="flex items-center gap-3 text-primary-700">
-                                    <div class="h-5 w-5 rounded-full border-2 border-primary-500 border-t-transparent animate-spin flex-shrink-0"></div>
-                                    <div>
-                                        <div class="text-sm font-black">正在加载完整角色卡</div>
-                                        <div class="text-xs text-primary-500 mt-1">设定、开场白和模板内容马上出来</div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section v-else-if="selectedCardDetailError" class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-700">
-                                {{ selectedCardDetailError }}
-                            </section>
-
-                            <section v-if="selectedCard._display.personality">
-                                <div class="detail-heading-row flex items-center">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    <h4 class="text-base font-black uppercase tracking-[0.2em] text-gray-400">设定</h4>
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    <button type="button" @click="personalityExpanded = !personalityExpanded" :aria-expanded="personalityExpanded" :aria-label="personalityExpanded ? '收起设定' : '展开设定'" class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 active:scale-95">
-                                        <svg class="w-5 h-5 transition-transform duration-200" :class="personalityExpanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M19 9l-7 7-7-7"/></svg>
-                                    </button>
-                                </div>
-                                <transition name="fade">
-                                    <div v-show="personalityExpanded" class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
-                                </transition>
-                            </section>
-
-                            <section v-if="selectedCard._display.first_mes">
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    开场白
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div :key="selectedCard.id + '-first-message'" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
-                            </section>
-
-                            <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    原始模板UI
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                <div class="space-y-6">
-                                    <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.id + '-ui-template-' + template.id" class="ui-preview p-3 overflow-hidden">
-                                        <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
-                                        <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Comments Section -->
-                            <section>
-                                <h4 class="detail-heading">
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                    评论 ({{ commentTotal }})
-                                    <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
-                                </h4>
-                                
-                                <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" :earns-credits="selectedCard.review_status !== 'unreviewed'" @submit="submitComment" @login="showUserAuthModal = true; userAuthMode = 'login'"></comment-composer>
-
-                                <!-- Hot Comment -->
-                                <div v-if="loadingComments" class="flex justify-center py-4">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
-                                </div>
-                                <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">
-                                    暂无评论，快来抢沙发吧~
-                                </div>
-                                <div v-else class="space-y-4">
-                                    <div v-for="root in commentTree" :key="'dt-' + root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
-                                        <div class="flex justify-between items-start mb-1">
-                                            <div class="flex items-center gap-2 flex-wrap">
-                                                <span class="comment-author">{{ root.author_name || root.nickname }}</span>
-                                                <span v-if="root.user_id && selectedCard && root.user_id === selectedCard.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                                <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
-                                                <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
-                                            </div>
-                                            <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="comment-delete text-xs">删除</button>
-                                        </div>
-                                        <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
-                                        <div class="flex items-center gap-3 mt-2">
-                                            <button @click="likeComment(root)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="root.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                                <svg class="w-4 h-4" :fill="root.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                                {{ root.likes_count || 0 }}
-                                            </button>
-                                            <button @click="replyToComment(root)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                                回复
-                                            </button>
-                                        </div>
-                                        <comment-composer
-                                            v-if="newComment.reply_to_id === root.id"
-                                            v-model="newComment.content"
-                                            :is-logged-in="isLoggedIn"
-                                            :reply-name="newComment.reply_to_name"
-                                            inline
-                                            @submit="submitComment"
-                                            @cancel="cancelReply">
-                                        </comment-composer>
-                                        <!-- Nested replies -->
-                                        <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
-                                            <div class="comment-thread space-y-2 pl-3 border-l-2">
-                                                <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="'dt-r-' + reply.id" class="comment-reply">
-                                                    <div class="flex justify-between items-start mb-1">
-                                                        <div class="flex items-center gap-1.5 flex-wrap">
-                                                            <span class="comment-author">{{ reply.author_name || reply.nickname }}</span>
-                                                            <span v-if="reply.user_id && selectedCard && reply.user_id === selectedCard.uploader_user_id" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
-                                                            <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
-                                                            <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
-                                                            <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
-                                                        </div>
-                                                        <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="comment-delete text-xs">删除</button>
-                                                    </div>
-                                                    <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
-                                                    <div class="flex items-center gap-3 mt-1.5">
-                                                        <button @click="likeComment(reply)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="reply.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
-                                                            <svg class="w-3.5 h-3.5" :fill="reply.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
-                                                            {{ reply.likes_count || 0 }}
-                                                        </button>
-                                                        <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
-                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                                                            回复
-                                                        </button>
-                                                    </div>
-                                                    <comment-composer
-                                                        v-if="newComment.reply_to_id === reply.id"
-                                                        v-model="newComment.content"
-                                                        :is-logged-in="isLoggedIn"
-                                                        :reply-name="newComment.reply_to_name"
-                                                        inline
-                                                        @submit="submitComment"
-                                                        @cancel="cancelReply">
-                                                    </comment-composer>
-                                                </div>
-                                            </div>
-                                            <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
-                                                <svg class="w-3 h-3 transition-transform" :class="expandedComments.has(root.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                                {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div v-if="commentsHasMore" ref="commentsLoadSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
-                                        <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
+                        <card-detail-body class="pb-4"></card-detail-body>
                     </div>
 
                     <!-- Footer Actions -->
@@ -2071,7 +1630,7 @@
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch, nextTick } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch, nextTick, provide, inject } = Vue;
 
         // API Configuration (local backend)
         const API_BASE = '';  // Same origin
@@ -2140,8 +1699,188 @@
             </div>`
         };
 
+        // One comment section shared by the card detail (mobile and desktop) and the UI template detail.
+        // State and actions come from the app through provide('commentSection').
+        const CommentSection = {
+            components: { CommentComposer },
+            props: {
+                authorId: { type: [Number, String], default: null },
+                earnsCredits: { type: Boolean, default: true }
+            },
+            setup() {
+                return inject('commentSection');
+            },
+            template: `
+                <div>
+                    <h4 class="detail-heading">
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                        评论 ({{ commentTotal }})
+                        <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                    </h4>
+                    <comment-composer v-if="!newComment.reply_to_id" v-model="newComment.content" :is-logged-in="isLoggedIn" :earns-credits="earnsCredits" @submit="submitComment" @login="openLogin"></comment-composer>
+                    <div v-if="loadingComments" class="flex justify-center py-4">
+                        <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-500 border-t-transparent"></div>
+                    </div>
+                    <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">暂无评论，快来抢沙发吧~</div>
+                    <div v-else class="space-y-4">
+                        <div v-for="root in commentTree" :key="root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
+                            <div class="flex justify-between items-start mb-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="comment-author">{{ root.author_name || root.nickname }}</span>
+                                    <span v-if="root.user_id && root.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
+                                    <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
+                                </div>
+                                <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="comment-delete text-xs">删除</button>
+                            </div>
+                            <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ root.content }}</p>
+                            <div class="flex items-center gap-3 mt-2">
+                                <button @click="likeComment(root)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="root.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
+                                    <svg class="w-4 h-4" :fill="root.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                    {{ root.likes_count || 0 }}
+                                </button>
+                                <button @click="replyToComment(root)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                    回复
+                                </button>
+                            </div>
+                            <comment-composer v-if="newComment.reply_to_id === root.id" v-model="newComment.content" :is-logged-in="isLoggedIn" :reply-name="newComment.reply_to_name" inline @submit="submitComment" @cancel="cancelReply"></comment-composer>
+                            <div v-if="root.replies.length > 0" class="mt-3 border-t border-gray-100 pt-3">
+                                <div class="comment-thread space-y-2 pl-3 border-l-2">
+                                    <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="reply.id" class="comment-reply">
+                                        <div class="flex justify-between items-start mb-1">
+                                            <div class="flex items-center gap-1.5 flex-wrap">
+                                                <span class="comment-author">{{ reply.author_name || reply.nickname }}</span>
+                                                <span v-if="reply.user_id && reply.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
+                                                <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
+                                                <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
+                                                <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
+                                            </div>
+                                            <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="comment-delete text-xs">删除</button>
+                                        </div>
+                                        <p class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mt-1">{{ reply.content }}</p>
+                                        <div class="flex items-center gap-3 mt-1.5">
+                                            <button @click="likeComment(reply)" class="flex items-center gap-1 text-xs transition-all active:scale-95" :class="reply.user_liked ? 'text-pink-500' : 'text-gray-400 hover:text-pink-400'">
+                                                <svg class="w-3.5 h-3.5" :fill="reply.user_liked ? 'currentColor' : 'none'" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                                                {{ reply.likes_count || 0 }}
+                                            </button>
+                                            <button @click="replyToComment(reply)" class="flex items-center gap-1 text-xs text-gray-400 hover:text-primary-500 transition-all active:scale-95">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                                回复
+                                            </button>
+                                        </div>
+                                        <comment-composer v-if="newComment.reply_to_id === reply.id" v-model="newComment.content" :is-logged-in="isLoggedIn" :reply-name="newComment.reply_to_name" inline @submit="submitComment" @cancel="cancelReply"></comment-composer>
+                                    </div>
+                                </div>
+                                <button v-if="root.replies.length > 2" @click="toggleReplies(root.id)" class="text-xs text-primary-500 font-bold mt-2 flex items-center gap-1 hover:text-primary-600 transition-colors pl-3">
+                                    <svg class="w-3 h-3 transition-transform" :class="expandedComments.has(root.id) ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    {{ expandedComments.has(root.id) ? '收起回复' : '展开更多 ' + (root.replies.length - 2) + ' 条回复' }}
+                                </button>
+                            </div>
+                        </div>
+                        <div v-if="commentsHasMore" :ref="setCommentsSentinel" class="min-h-12 flex items-center justify-center py-3 text-sm text-gray-400">
+                            <span v-if="loadingMoreComments" class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-primary-500 border-t-transparent animate-spin"></span>正在加载更多评论</span>
+                        </div>
+                    </div>
+                </div>
+            `
+        };
+
+        // Card detail body (title, notes, description, settings, greeting, UI templates, comments),
+        // shared by the mobile sheet and the desktop panel. State comes from provide('cardDetail').
+        const CardDetailBody = {
+            components: { CommentSection },
+            setup() {
+                return inject('cardDetail');
+            },
+            template: `
+                <div>
+                    <div class="mb-8">
+                        <h2 class="detail-title">{{ selectedCard.name }}</h2>
+                        <div v-if="(selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)) || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
+                            <span v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="detail-featured">
+                                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                精选角色卡
+                            </span>
+                            <span v-for="tag in selectedCard.tags" :key="tag" class="detail-tag">{{ tag }}</span>
+                        </div>
+                        <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
+                            {{ previewAsset.error }}
+                        </div>
+                        <p v-if="selectedCard.clean_notes" class="detail-notes">{{ selectedCard.clean_notes }}</p>
+                    </div>
+
+                    <div class="space-y-10">
+                        <section>
+                            <h4 class="detail-heading">
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                简要描述
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                            </h4>
+                            <div class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display?.description || selectedCard.description || '暂无描述')"></div>
+                        </section>
+
+                        <section v-if="selectedCardDetailLoading" class="rounded-3xl border border-primary-100 bg-primary-50/70 p-5">
+                            <div class="flex items-center gap-3 text-primary-700">
+                                <div class="h-5 w-5 rounded-full border-2 border-primary-500 border-t-transparent animate-spin flex-shrink-0"></div>
+                                <div>
+                                    <div class="text-sm font-black">正在加载完整角色卡</div>
+                                    <div class="text-xs text-primary-500 mt-1">设定、开场白和模板内容马上出来</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section v-else-if="selectedCardDetailError" class="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-700">
+                            {{ selectedCardDetailError }}
+                        </section>
+
+                        <section v-if="selectedCard._display.personality">
+                            <div class="detail-heading-row flex items-center">
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                <h4 class="text-base font-black uppercase tracking-[0.2em] text-gray-400">设定</h4>
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                <button type="button" @click="personalityExpanded = !personalityExpanded" :aria-expanded="personalityExpanded" :aria-label="personalityExpanded ? '收起设定' : '展开设定'" class="flex h-8 w-8 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 active:scale-95">
+                                    <svg class="w-5 h-5 transition-transform duration-200" :class="personalityExpanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.25" d="M19 9l-7 7-7-7"/></svg>
+                                </button>
+                            </div>
+                            <transition name="fade">
+                                <div v-show="personalityExpanded" class="text-gray-700 prose prose-lg max-w-none leading-[2] tracking-wide break-words" v-html="renderMarkdown(selectedCard._display.personality)"></div>
+                            </transition>
+                        </section>
+
+                        <section v-if="selectedCard._display.first_mes">
+                            <h4 class="detail-heading">
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                开场白
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                            </h4>
+                            <div :key="selectedCard.id + '-first-message'" class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderMarkdown(selectedCard._display.first_mes)"></div>
+                        </section>
+
+                        <section v-if="selectedCard._display.uiTemplates && selectedCard._display.uiTemplates.length">
+                            <h4 class="detail-heading">
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                                原始模板UI
+                                <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
+                            </h4>
+                            <div class="space-y-6">
+                                <div v-for="template in selectedCard._display.uiTemplates" :key="selectedCard.id + '-ui-template-' + template.id" class="ui-preview p-3 overflow-hidden">
+                                    <div v-if="template.name" class="px-1 pb-3 text-xs font-black text-gray-400 uppercase tracking-[0.18em]">{{ template.name }}</div>
+                                    <div class="text-gray-700 prose prose-lg max-w-none leading-relaxed tracking-normal break-words" v-html="renderUiTemplatePreview(template)"></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <comment-section :author-id="selectedCard.uploader_user_id" :earns-credits="selectedCard.review_status !== 'unreviewed'"></comment-section>
+                        </section>
+                    </div>
+                </div>
+            `
+        };
+
         const app = createApp({
-            components: { CommentComposer, CardTransferProgress },
+            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -6218,14 +5957,36 @@
                     cooldownTimers.clear();
                 });
 
+                provide('cardDetail', {
+                    selectedCard, previewAsset, personalityExpanded, selectedCardDetailLoading, selectedCardDetailError,
+                    renderMarkdown, renderUiTemplatePreview
+                });
+                provide('commentSection', {
+                    comments, loadingComments, loadingMoreComments, commentTotal, commentsHasMore, commentTree, expandedComments,
+                    newComment, isLoggedIn, formatDate, submitComment, cancelReply, replyToComment, toggleReplies,
+                    likeComment, canDeleteComment, deleteComment,
+                    setCommentsSentinel: element => { commentsLoadSentinel.value = element; },
+                    openLogin: () => { showUserAuthModal.value = true; userAuthMode.value = 'login'; }
+                });
+
+                // Appearance: theme.js owns the choice; the app only mirrors it for the switch.
+                const isDark = ref(document.documentElement.dataset.appTheme === 'dark');
+                const themeFollowsParent = ref(window.ForumTheme.followsParent);
+                window.addEventListener('forum-theme-change', event => {
+                    isDark.value = event.detail === 'dark';
+                    themeFollowsParent.value = window.ForumTheme.followsParent;
+                });
+                const toggleTheme = () => window.ForumTheme.toggle();
+
                 return {
+                    isDark, themeFollowsParent, toggleTheme,
                     cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
                     handleFileSelect, handleTemplateFileSelect, confirmUpload, confirmTemplateUpload, handleUploadClick,
                     downloadTemplate, reviewTemplate, deleteTemplate, toggleTemplateFeatured, formatFileSize, isTemplateOwnedByCurrentUser, canViewTemplateDownloads, computeTemplateHeat,
-                    selectedCard, personalityExpanded, previewCard, formatDate, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
+                    selectedCard, previewCard, downloadCard, deleteCard, toggleFeatured, reviewCard, markCardThumbnailLoaded, markCardThumbnailError,
                     rphubImportOrigin, isDownloadingCard, isImportingCard, cardTransferProgress, cardTransferPercent, cardTransferLabel,
                     previewOpening, stopPreviewOpening, closeSelectedCard,
                     toasts, currentTab, contentSection, myUploadedIds, popularTags, visiblePopularTags, showPopularTagsToggle, modalPopularTags, searchTag,
@@ -6234,12 +5995,9 @@
                     handleMobileScroll, windowWidth,
                     isAdmin, canModerate, handleLogoClick, handleAdminLogout, renderMarkdown, renderAnnouncementMarkdown, renderCardPreview, renderUiTemplatePreview,
                     showAdminLogin, adminLoginForm, adminLoginError, handleAdminLogin,
-                    comments, loadingComments, loadingMoreComments, commentTotal, commentsHasMore, commentsLoadSentinel,
-                    newComment, submitComment, deleteComment, canDeleteComment, likeComment, replyToComment, cancelReply,
-                    commentTree, expandedComments, toggleReplies,
                     downloadCredits, computeHeat,
                     showHeatEditModal, editingHeatCard, editingHeatType, heatEditForm, openHeatEdit, submitHeatEdit,
-                    previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi, selectedCardDetailLoading, selectedCardDetailError,
+                    previewAsset, canDownloadSelectedCard, downloadButtonLabel, selectedCardHasComplexUi,
                     // User Auth
                     isLoggedIn, currentUser, showUserAuthModal, userAuthMode, userAuthForm, userAuthError,
                     announcement, showAnnouncementModal, announcementConfirmCountdown, closeAnnouncement,

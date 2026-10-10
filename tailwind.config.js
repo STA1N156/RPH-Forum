@@ -1,6 +1,10 @@
 // Palette steps read the CSS variables in tailwind.input.css, so colors are defined in one place.
 const steps = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
-const scale = name => Object.fromEntries(steps.map(step => [step, `rgb(var(--${name}-${step}) / <alpha-value>)`]));
+const rgb = name => `rgb(var(--${name}) / <alpha-value>)`;
+// Optional role steps (e.g. --primary-text-600, --gray-fill-900) fall back to the base step.
+const scale = (name, role) => Object.fromEntries(steps.map(step => [step, role
+    ? `rgb(var(--${name}-${role}-${step}, var(--${name}-${step})) / <alpha-value>)`
+    : rgb(`${name}-${step}`)]));
 
 module.exports = {
     content: ['./public/index.html', './public/admin.html'],
@@ -27,6 +31,24 @@ module.exports = {
                 yellow: scale('amber'),
                 orange: scale('orange')
             },
+            // Dark mode: text needs lighter steps than fills, and 700-900 fills stay dark behind white text.
+            textColor: {
+                gray: scale('gray'),
+                primary: scale('primary', 'text'),
+                blue: scale('primary', 'text'),
+                indigo: scale('primary', 'text'),
+                red: scale('red', 'text'),
+                green: scale('green', 'text'),
+                emerald: scale('green', 'text'),
+                amber: scale('amber', 'text'),
+                yellow: scale('amber', 'text'),
+                orange: scale('orange', 'text')
+            },
+            backgroundColor: { white: rgb('surface'), gray: scale('gray', 'fill') },
+            gradientColorStops: { white: rgb('surface'), gray: scale('gray', 'fill') },
+            borderColor: { white: rgb('surface-edge') },
+            ringColor: { white: rgb('surface-edge') },
+            ringOffsetColor: { DEFAULT: 'rgb(var(--gray-50))' },
             borderRadius: {
                 '2xl': '1rem',
                 '3xl': '1.25rem'

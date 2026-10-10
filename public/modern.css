@@ -34,7 +34,7 @@ body.forum-shell {
 /* ---------- Header ---------- */
 .site-header {
     border-bottom: 1px solid rgb(var(--gray-200) / 0.7) !important;
-    background: rgb(255 255 255 / 0.8) !important;
+    background: rgb(var(--surface) / 0.8) !important;
     backdrop-filter: saturate(1.6) blur(16px);
     -webkit-backdrop-filter: saturate(1.6) blur(16px);
 }
@@ -130,7 +130,7 @@ body.forum-shell {
     padding: 0 10px;
     border-radius: 999px;
     background: var(--c-accent-soft);
-    color: var(--c-accent);
+    color: var(--c-accent-text);
     font-size: 12px;
     font-weight: 600;
 }
@@ -161,14 +161,14 @@ body.forum-shell {
 }
 
 .user-menu {
-    width: 188px !important;
+    width: max-content !important;
     padding: 6px !important;
     border: 1px solid var(--c-border) !important;
     border-radius: var(--r-lg) !important;
     box-shadow: var(--shadow-3) !important;
     transform-origin: top right;
 }
-.user-menu button { border-radius: 10px; font-weight: 500; }
+.user-menu button { padding-right: 20px !important; border-radius: 10px; font-weight: 500; white-space: nowrap; }
 .user-menu .border-t { margin: 6px 4px !important; }
 
 /* ---------- Catalog: sections, sort and tags ---------- */
@@ -221,7 +221,7 @@ body.forum-shell {
     opacity: 1 !important;
     font-variant-numeric: tabular-nums;
 }
-.catalog-tabs button.bg-blue-600 > span { background: var(--c-accent-soft); color: var(--c-accent); }
+.catalog-tabs button.bg-blue-600 > span { background: var(--c-accent-soft); color: var(--c-accent-text); }
 
 .section-note {
     margin: -4px 0 16px !important;
@@ -269,7 +269,7 @@ body.forum-shell {
     font-size: 13px !important;
     font-weight: 500 !important;
 }
-.sort-control > div button.text-gray-900 { background: var(--c-accent-soft); color: var(--c-accent) !important; }
+.sort-control > div button.text-gray-900 { background: var(--c-accent-soft); color: var(--c-accent-text) !important; }
 
 .tag-filter-list button {
     height: 32px;
@@ -288,7 +288,7 @@ body.forum-shell {
 .tag-filter-list button.bg-primary-500 {
     border-color: rgb(var(--gray-900)) !important;
     background: rgb(var(--gray-900)) !important;
-    color: #fff !important;
+    color: rgb(var(--gray-50)) !important;
 }
 .tag-filter-list > div { max-height: none; }
 .tag-filter-list > div.overflow-hidden { max-height: 2rem !important; }
@@ -314,7 +314,7 @@ body.forum-shell {
 .credits-banner {
     border: 1px solid var(--c-border) !important;
     border-radius: var(--r-xl) !important;
-    background: linear-gradient(135deg, #fff 55%, rgb(var(--primary-50))) !important;
+    background: linear-gradient(135deg, rgb(var(--surface)) 55%, rgb(var(--primary-50))) !important;
     box-shadow: var(--shadow-1) !important;
 }
 .credits-banner > .absolute { display: none; }
@@ -370,7 +370,7 @@ body.forum-shell {
         transform: translateY(-3px);
     }
     .content-card:hover .card-cover img { transform: scale(1.04); }
-    .content-card:hover h3 { color: var(--c-accent) !important; }
+    .content-card:hover h3 { color: var(--c-accent-text) !important; }
 }
 
 .card-cover {
@@ -393,7 +393,7 @@ body.forum-shell {
     border-right: 1px solid var(--c-border-soft) !important;
     background:
         radial-gradient(circle at 1px 1px, rgb(var(--primary-500) / 0.14) 1px, transparent 0) 0 0 / 14px 14px,
-        linear-gradient(160deg, rgb(var(--primary-50)), #fff 70%) !important;
+        linear-gradient(160deg, rgb(var(--primary-50)), rgb(var(--surface)) 70%) !important;
 }
 .template-cover > .absolute.inset-0 svg { width: 80px !important; height: 80px !important; color: rgb(var(--primary-500)); }
 
@@ -408,27 +408,52 @@ body.forum-shell {
     transition: color var(--dur-2) ease;
 }
 
-.card-tags { gap: 5px !important; }
-.card-tags span {
-    padding: 3px 8px !important;
+/* Tags: a quiet chip, the same look on the card and in the detail view. */
+.card-tags { gap: 6px !important; }
+.card-tags span,
+.detail-tag {
+    display: inline-flex !important;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px !important;
     border: 0 !important;
     border-radius: 6px !important;
     background: var(--c-raised) !important;
     color: var(--c-text-2) !important;
-    font-size: 11px !important;
+    font-size: 12px !important;
     font-weight: 500 !important;
-    line-height: 1.3 !important;
-}
-.card-tags span.ui-badge,
-.template-badge {
-    background: var(--c-accent-soft) !important;
-    color: var(--c-accent) !important;
-    border: 0 !important;
-    border-radius: 6px !important;
-    font-weight: 600 !important;
+    line-height: 1 !important;
+    white-space: nowrap;
 }
 
-.card-note { color: var(--c-accent) !important; font-weight: 500 !important; }
+/* UI-template variables are a feature of the card, so they get an icon and the accent color. */
+.card-tags span.ui-badge,
+.template-badge {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px !important;
+    height: 22px;
+    padding: 0 8px !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: var(--c-accent-soft) !important;
+    color: var(--c-accent-text) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+}
+.card-tags span.ui-badge::before,
+.template-badge::before {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    content: "";
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.card-note { color: var(--c-accent-text) !important; font-weight: 500 !important; }
 
 .content-card .text-gray-500.leading-relaxed { color: var(--c-text-3) !important; font-size: 13.5px !important; line-height: 1.75 !important; }
 
@@ -455,7 +480,7 @@ body.forum-shell {
 .card-badge.is-featured { background: linear-gradient(135deg, rgb(var(--amber-400)), rgb(var(--orange-500))) !important; }
 
 @media (min-width: 640px) {
-    .card-tags { max-height: 2.2rem; overflow: hidden; align-content: flex-start; }
+    .card-tags { max-height: 50px; overflow: hidden; align-content: flex-start; }
 }
 
 /* Owner and moderator tools on a card. */
@@ -474,7 +499,7 @@ body.forum-shell {
     font-weight: 500 !important;
 }
 .pager button:not(:disabled):hover { border-color: var(--c-border-strong) !important; color: var(--c-text) !important; }
-.pager button.bg-primary-500 { border-color: rgb(var(--gray-900)) !important; background: rgb(var(--gray-900)) !important; color: #fff !important; box-shadow: none !important; }
+.pager button.bg-primary-500 { border-color: rgb(var(--gray-900)) !important; background: rgb(var(--gray-900)) !important; color: rgb(var(--gray-50)) !important; box-shadow: none !important; }
 .pager > span,
 .pager > div > span { color: var(--c-text-4) !important; font-weight: 500 !important; }
 .pager input { height: 28px !important; width: 44px !important; border-radius: 8px !important; font-weight: 500 !important; }
@@ -509,7 +534,7 @@ body.forum-shell {
     padding: 10px 16px 10px 12px !important;
     border: 1px solid var(--c-border) !important;
     border-radius: 999px !important;
-    background: rgb(255 255 255 / 0.96) !important;
+    background: rgb(var(--surface) / 0.96) !important;
     color: var(--c-text) !important;
     box-shadow: var(--shadow-2) !important;
     backdrop-filter: blur(12px);
@@ -527,7 +552,7 @@ body.forum-shell {
 .forum-shell .fixed.inset-0.bg-gray-900\/60 { background-color: var(--overlay) !important; }
 
 .modal-panel {
-    border: 1px solid rgb(255 255 255 / 0.7);
+    border: 1px solid rgb(var(--surface-edge) / 0.7);
     border-radius: var(--r-2xl) !important;
     background: var(--c-surface) !important;
     box-shadow: var(--shadow-3) !important;
@@ -536,7 +561,7 @@ body.forum-shell {
 .modal-panel h3 { color: var(--c-text) !important; letter-spacing: 0; }
 .modal-head { padding: 18px 22px !important; background: transparent !important; border-color: var(--c-border-soft) !important; }
 .modal-head h3 { font-size: 17px !important; font-weight: 700 !important; }
-.modal-head h3 > svg { width: 20px !important; height: 20px !important; color: var(--c-accent); }
+.modal-head h3 > svg { width: 20px !important; height: 20px !important; color: var(--c-accent-text); }
 
 .modal-close {
     display: inline-grid;
@@ -564,7 +589,7 @@ body.forum-shell {
 
 /* Tag pickers inside the search and tag-library dialogs. */
 .modal-panel .flex-wrap > button.border { border-radius: 999px !important; font-weight: 500 !important; }
-.modal-panel .flex-wrap > button.bg-primary-500 { border-color: rgb(var(--gray-900)) !important; background: rgb(var(--gray-900)) !important; box-shadow: none !important; }
+.modal-panel .flex-wrap > button.bg-primary-500 { border-color: rgb(var(--gray-900)) !important; background: rgb(var(--gray-900)) !important; color: rgb(var(--gray-50)) !important; box-shadow: none !important; }
 
 .upload-drop {
     border-color: rgb(var(--gray-300)) !important;
@@ -574,11 +599,11 @@ body.forum-shell {
 }
 .upload-drop:hover { border-color: rgb(var(--primary-400)) !important; background: var(--c-accent-soft) !important; }
 .upload-drop .group-hover\:rotate-3 { transform: none !important; }
-.upload-drop > div > div:first-child { border-radius: var(--r-lg) !important; background: #fff !important; box-shadow: var(--shadow-1); }
+.upload-drop > div > div:first-child { border-radius: var(--r-lg) !important; background: var(--c-surface) !important; box-shadow: var(--shadow-1); }
 
 /* ---------- Detail views (card and UI template) ---------- */
 .detail-panel { border-radius: var(--r-2xl) !important; box-shadow: var(--shadow-3) !important; }
-.detail-panel .detail-media { background: rgb(var(--gray-900)) !important; }
+.detail-panel .detail-media { background: rgb(var(--gray-fill-900, var(--gray-900))) !important; }
 
 .detail-title {
     color: var(--c-text) !important;
@@ -613,29 +638,35 @@ body.forum-shell {
 .detail-heading-row button { width: 28px !important; height: 28px !important; border-radius: 8px; }
 .detail-heading-row button:hover { background: var(--c-raised); }
 
-.detail-notes {
-    border: 1px solid var(--c-border-soft) !important;
-    border-radius: var(--r-lg) !important;
-    background: var(--c-canvas) !important;
-    color: var(--c-text-2) !important;
-}
-.detail-notes span {
-    padding: 3px 9px !important;
-    border: 1px solid var(--c-border) !important;
-    border-radius: 999px !important;
-    background: #fff !important;
-    color: var(--c-text-2) !important;
-    font-weight: 500 !important;
-}
+.detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.detail-meta .detail-tag { height: 28px; padding: 0 10px !important; border-radius: 8px !important; font-size: 13px !important; max-width: 100%; }
 
 .detail-featured {
-    gap: 5px !important;
-    padding: 4px 10px !important;
-    border-radius: 999px !important;
-    background: rgb(var(--amber-50)) !important;
-    color: rgb(var(--amber-700)) !important;
-    font-weight: 600 !important;
-    box-shadow: inset 0 0 0 1px rgb(var(--amber-200)) !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 8px;
+    background: rgb(var(--amber-50));
+    color: rgb(var(--amber-text-700, var(--amber-700)));
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px rgb(var(--amber-200));
+}
+
+/* The author's note, kept apart from the tags and with its own line breaks. */
+.detail-notes {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--c-accent-edge);
+    border-radius: 0 10px 10px 0;
+    background: var(--c-canvas);
+    color: var(--c-text-2);
+    font-size: 14px;
+    line-height: 1.75;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 .forum-shell .prose { color: var(--c-text-2); font-size: 15px; line-height: 1.85; letter-spacing: 0; }
@@ -647,7 +678,7 @@ body.forum-shell {
 .ui-preview {
     border: 1px solid var(--c-border) !important;
     border-radius: var(--r-lg) !important;
-    background: #fff !important;
+    background: var(--c-surface) !important;
     box-shadow: none !important;
 }
 
@@ -675,7 +706,10 @@ body.forum-shell {
 .detail-sheet { border-radius: var(--r-2xl) var(--r-2xl) 0 0 !important; box-shadow: 0 -12px 40px rgb(0 0 0 / 0.18) !important; }
 .detail-sheet-hint { animation: none !important; letter-spacing: 0.04em !important; }
 
-.detail-footer { background: rgb(255 255 255 / 0.92) !important; border-color: var(--c-border-soft) !important; }
+.detail-footer { background: rgb(var(--surface) / 0.92) !important; border-color: var(--c-border-soft) !important; }
+
+/* Card authors style their own HTML; soften it once in dark mode, never touching images. */
+:root[data-app-theme="dark"] :is(.ui-preview .prose, .html-card-container) { filter: brightness(0.9); }
 
 /* ---------- Comments ---------- */
 .comment-composer {

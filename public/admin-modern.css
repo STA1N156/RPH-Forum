@@ -71,7 +71,7 @@ body.admin-body {
 .admin-sidebar {
     width: 240px !important;
     border-right: 1px solid rgb(255 255 255 / 0.04);
-    background: linear-gradient(180deg, rgb(var(--gray-900)), rgb(22 22 30)) !important;
+    background: linear-gradient(180deg, rgb(27 27 35), rgb(20 20 27)) !important;
     color: #fff !important;
 }
 
@@ -91,7 +91,7 @@ body.admin-body {
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 8px 18px -8px rgb(var(--primary-500) / 0.8);
 }
 .admin-brand h1 { color: #fff; font-size: 15px !important; font-weight: 700 !important; letter-spacing: 0.04em; }
-.admin-brand p { margin-top: 4px !important; color: rgb(var(--gray-500)) !important; font-size: 9px !important; font-weight: 600; letter-spacing: 0.2em; }
+.admin-brand p { margin-top: 4px !important; color: rgb(115 115 132) !important; font-size: 9px !important; font-weight: 600; letter-spacing: 0.2em; }
 
 .admin-nav { padding: 14px 12px !important; overflow-y: auto; }
 .admin-nav button {
@@ -102,12 +102,12 @@ body.admin-body {
     border: 0 !important;
     border-radius: 10px !important;
     background: transparent !important;
-    color: rgb(var(--gray-400)) !important;
+    color: rgb(157 157 171) !important;
     font-size: 13.5px;
     font-weight: 500;
     transition: color var(--dur-2) ease, background-color var(--dur-2) ease !important;
 }
-.admin-nav button:hover { background: rgb(255 255 255 / 0.05) !important; color: rgb(var(--gray-100)) !important; }
+.admin-nav button:hover { background: rgb(255 255 255 / 0.05) !important; color: rgb(240 240 244) !important; }
 .admin-nav button.bg-gray-800 { background: rgb(255 255 255 / 0.09) !important; color: #fff !important; font-weight: 600; }
 .admin-nav button.bg-gray-800::before {
     position: absolute;
@@ -122,7 +122,7 @@ body.admin-body {
 .admin-nav svg { width: 18px !important; height: 18px !important; margin-right: 11px !important; opacity: 0.9; }
 
 .admin-sidebar > .border-t { padding: 14px 18px !important; border-color: rgb(255 255 255 / 0.06) !important; }
-.admin-sidebar > .border-t .text-gray-300 { color: rgb(var(--gray-300)) !important; }
+.admin-sidebar > .border-t .text-gray-300 { color: rgb(206 206 215) !important; }
 .admin-sidebar > .border-t .bg-blue-600 { background: linear-gradient(150deg, rgb(var(--primary-400)), rgb(var(--primary-700))) !important; }
 
 .admin-main { min-height: 100vh; background: var(--c-canvas) !important; }
@@ -131,7 +131,7 @@ body.admin-body {
     min-height: 64px;
     padding: 0 clamp(20px, 3.5vw, 44px) !important;
     border-color: rgb(var(--gray-200) / 0.8) !important;
-    background: rgb(255 255 255 / 0.85) !important;
+    background: rgb(var(--surface) / 0.85) !important;
     backdrop-filter: saturate(1.6) blur(14px);
     -webkit-backdrop-filter: saturate(1.6) blur(14px);
 }
@@ -140,13 +140,13 @@ body.admin-body {
     padding: 7px 12px;
     border: 1px solid var(--c-border);
     border-radius: 999px;
-    background: #fff;
+    background: var(--c-surface);
     color: var(--c-text-2) !important;
     font-size: 12.5px !important;
     font-weight: 500;
     transition: border-color var(--dur-2) ease, color var(--dur-2) ease;
 }
-.admin-header a:hover { border-color: rgb(var(--primary-200)); color: var(--c-accent) !important; }
+.admin-header a:hover { border-color: rgb(var(--primary-200)); color: var(--c-accent-text) !important; }
 
 .admin-content {
     width: 100%;
@@ -253,7 +253,13 @@ body.admin-body {
 .admin-main .h-48 [class*="rounded-t"]:hover { filter: brightness(0.9); }
 
 /* ---------- Toasts ---------- */
-.admin-body .toast-item { border: 1px solid var(--c-border) !important; border-radius: 999px !important; background: rgb(255 255 255 / 0.96) !important; color: var(--c-text) !important; box-shadow: var(--shadow-2) !important; }
+.admin-body .toast-item { border: 1px solid var(--c-border) !important; border-radius: 999px !important; background: rgb(var(--surface) / 0.96) !important; color: var(--c-text) !important; box-shadow: var(--shadow-2) !important; }
+
+/* Purple, pink and cyan are not part of the shared palette; tone their pastel chips down in dark mode. */
+:root[data-app-theme="dark"] .admin-main :is(.bg-purple-100, .bg-pink-100, .bg-cyan-100) { background-color: rgb(255 255 255 / 0.08) !important; }
+:root[data-app-theme="dark"] .admin-main :is(.text-purple-600, .text-purple-700) { color: #c4b5fd !important; }
+:root[data-app-theme="dark"] .admin-main :is(.text-pink-600, .text-pink-700) { color: #f9a8d4 !important; }
+:root[data-app-theme="dark"] .admin-main :is(.text-cyan-600, .text-cyan-700) { color: #67e8f9 !important; }
 
 /* ---------- Scrollbars ---------- */
 .admin-body ::-webkit-scrollbar { width: 10px; height: 10px; }

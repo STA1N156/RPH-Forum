@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "角色卡广场 - RP Character Card Forum",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.js -i tailwind.input.css -o public/app.css --minify",
     "start": "node server.js",
@@ -13,10 +16,10 @@
     "better-sqlite3": "^11.7.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
-    "express": "^4.18.2",
+    "express": "^4.22.3",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"
