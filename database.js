@@ -509,6 +509,33 @@ function initDatabase() {
     try { db.exec("UPDATE character_cards SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec('ALTER TABLE character_cards ADD COLUMN latest_rank_at DATETIME'); } catch (e) { /* column exists */ }
     try { db.exec("ALTER TABLE character_cards ADD COLUMN audience TEXT NOT NULL DEFAULT 'general'"); } catch (e) { /* column exists */ }
+    // Author pages: follows, avatars, renames and the notices sent to followers and authors.
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS author_follows (
+            follower_user_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (follower_user_id, author_user_id),
+            FOREIGN KEY (follower_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (author_user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS idx_author_follows_author ON author_follows(author_user_id);
+        CREATE TABLE IF NOT EXISTS user_avatars (
+            user_id INTEGER PRIMARY KEY,
+            mime_type TEXT NOT NULL,
+            data BLOB NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+    `);
+    try { db.exec('ALTER TABLE users ADD COLUMN avatar_updated_at TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN username_changed_at TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE users ADD COLUMN follower_email_milestone INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    try {
+        db.exec('ALTER TABLE character_cards ADD COLUMN follow_notified_at TEXT');
+        // Cards already out, or edited before, count as announced: followers only hear about work from now on.
+        db.exec(`UPDATE character_cards SET follow_notified_at = created_at
+                 WHERE review_status IN ('approved', 'unreviewed') OR julianday(updated_at) > julianday(created_at)`);
+    } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET latest_rank_at = COALESCE(latest_rank_at, created_at, updated_at, CURRENT_TIMESTAMP) WHERE latest_rank_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }

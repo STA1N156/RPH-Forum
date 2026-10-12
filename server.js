@@ -1360,6 +1360,8 @@ function buildUserResponse(user) {
         requires_email_binding: !userEmailBound(user),
         download_credits: user.download_credits,
         created_at: user.created_at,
+        avatar_updated_at: user.avatar_updated_at || null,
+        username_changed_at: user.username_changed_at || null,
         is_moderator: Number(user.is_moderator || 0),
         is_banned: user.is_banned || 0,
         ban_reason: user.ban_reason || null
@@ -1458,6 +1460,65 @@ function sendCommentReplyNotificationEmail({ to, ownerName, commenterName, itemT
     });
 }
 
+function sendFollowerMilestoneEmail({ to, username, count }) {
+    sendResendEmailQuietly({
+        to,
+        subject: `你的关注者达到 ${count} 人`,
+        html: `<p>${escapeHtml(username || '你好')}，恭喜！你在万相广场的关注者已经达到 <strong>${count}</strong> 人。</p><p>感谢你的创作，大家都在期待你的新作品。</p>`,
+        text: `${username || '你好'}，恭喜！你在万相广场的关注者已经达到 ${count} 人。\n感谢你的创作，大家都在期待你的新作品。`
+    });
+}
+
+// Follower emails go out one at a time so a popular author does not trip the mail provider's rate limit.
+const followerEmailQueue = [];
+let followerEmailDraining = false;
+async function drainFollowerEmails() {
+    if (followerEmailDraining) return;
+    followerEmailDraining = true;
+    while (followerEmailQueue.length) {
+        const payload = followerEmailQueue.shift();
+        await sendResendEmail(payload).catch((err) => {
+            console.error(`[Email] Follower notice failed (${maskEmail(normalizeEmail(payload.to))}):`, err.message);
+        });
+        await delay(FOLLOWER_EMAIL_GAP_MS);
+    }
+    followerEmailDraining = false;
+}
+
+// Called whenever a card goes public: its author's followers hear of it as new the first time, as updated after.
+function announceCardToFollowers(cardId) {
+    try {
+        const card = db.prepare(
+            `SELECT cc.id, cc.name, cc.uploader_user_id, cc.follow_notified_at, u.username AS author_name
+             FROM character_cards cc
+             JOIN users u ON u.id = cc.uploader_user_id
+             WHERE cc.id = ? AND cc.review_status IN ('approved', 'unreviewed')`
+        ).get(cardId);
+        if (!card) return;
+        const isNew = !card.follow_notified_at;
+        if (!isNew && Date.now() - Date.parse(card.follow_notified_at) < FOLLOW_UPDATE_NOTICE_INTERVAL_MS) return;
+        db.prepare('UPDATE character_cards SET follow_notified_at = ? WHERE id = ?').run(new Date().toISOString(), card.id);
+        const action = isNew ? '上架了新角色卡' : '更新了角色卡';
+        const followers = db.prepare(
+            `SELECT u.username, u.email, u.email_verified
+             FROM author_follows f
+             JOIN users u ON u.id = f.follower_user_id
+             WHERE f.author_user_id = ? AND COALESCE(u.is_banned, 0) = 0`
+        ).all(card.uploader_user_id).filter(userEmailBound);
+        for (const follower of followers) {
+            followerEmailQueue.push({
+                to: follower.email,
+                subject: `你关注的作者 ${card.author_name} ${action}「${card.name}」`,
+                html: `<p>${escapeHtml(follower.username)}，你关注的作者 ${escapeHtml(card.author_name)} ${action}「${escapeHtml(card.name)}」，快去万相广场看看吧。</p><p style="color:#888;">不想再收到这类提醒，可以在作者主页取消关注。</p>`,
+                text: `${follower.username}，你关注的作者 ${card.author_name} ${action}「${card.name}」，快去万相广场看看吧。\n不想再收到这类提醒，可以在作者主页取消关注。`
+            });
+        }
+        drainFollowerEmails();
+    } catch (err) {
+        console.error('Announce card to followers error:', err);
+    }
+}
+
 function sendNewApiRedemptionSuccessEmail({ to, username, cookies, newApiUserId }) {
     const cookiesText = floorToTwoDecimals(cookies).toFixed(2).replace(/\.?0+$/, '');
     sendResendEmailQuietly({
@@ -1489,6 +1550,36 @@ const CARD_AUDIENCES = ['general', 'male', 'female'];
 // Lists treat a missing or unknown audience as "every audience".
 function parseCardAudience(value) {
     return CARD_AUDIENCES.includes(value) ? value : '';
+}
+
+// Author pages are addressed by the uploader's user id.
+function parseAuthorId(value) {
+    const id = Number.parseInt(value, 10);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+const USERNAME_CHANGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+// Followers hear about a card once when it first goes out, then about its updates at most once a day.
+const FOLLOW_UPDATE_NOTICE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const FOLLOWER_EMAIL_GAP_MS = 600;
+const AVATAR_MAX_BYTES = 300 * 1024;
+const AVATAR_SIGNATURES = { 'image/png': '89504e47', 'image/jpeg': 'ffd8ff', 'image/webp': '52494646' };
+
+function getAuthorFollowerCount(authorId) {
+    return db.prepare('SELECT COUNT(*) AS count FROM author_follows WHERE author_user_id = ?').get(authorId).count;
+}
+
+// Avatars arrive as a small square data URL from the settings dialog; only real PNG, JPEG or WebP data is kept.
+function parseAvatarImage(dataUrl) {
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+=*)$/.exec(String(dataUrl || ''));
+    if (!match) return null;
+    const [, mimeType, base64] = match;
+    const data = Buffer.from(base64, 'base64');
+    const signature = AVATAR_SIGNATURES[mimeType];
+    if (!data.length || data.length > AVATAR_MAX_BYTES) return null;
+    if (data.toString('hex', 0, signature.length / 2) !== signature) return null;
+    if (mimeType === 'image/webp' && data.toString('ascii', 8, 12) !== 'WEBP') return null;
+    return { mimeType, data };
 }
 
 function getRankingPeriodModifier(sortMode) {
@@ -1995,7 +2086,7 @@ app.post('/api/user/register', async (req, res) => {
 app.post('/api/user/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
-        return res.status(400).json({ error: '请输入用户名和密码' });
+        return res.status(400).json({ error: '请输入用户名或邮箱和密码' });
     }
 
     const ip = getRequestIp(req);
@@ -2005,9 +2096,13 @@ app.post('/api/user/login', async (req, res) => {
         return res.status(429).json({ error: loginRate.reason });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    // Either the username or the verified email logs in; a username that looks like an email wins.
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+        || (String(username).includes('@')
+            ? db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE AND email_verified = 1').get(normalizeEmail(username))
+            : null);
     if (!user) {
-        return res.status(401).json({ error: '用户名或密码错误' });
+        return res.status(401).json({ error: '账号或密码错误' });
     }
     if (user.is_banned) {
         return res.status(403).json({ error: user.ban_reason ? `账号已被封禁：${user.ban_reason}` : '账号已被封禁' });
@@ -2015,7 +2110,7 @@ app.post('/api/user/login', async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-        return res.status(401).json({ error: '用户名或密码错误' });
+        return res.status(401).json({ error: '账号或密码错误' });
     }
 
     db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id);
@@ -2031,7 +2126,7 @@ app.post('/api/user/login', async (req, res) => {
 app.get('/api/user/me', authenticateUserAllowUnbound, (req, res) => {
     res.set('Cache-Control', 'no-store');
     markPerf(req, 'user-me-start', { userId: req.user.id });
-    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
     markPerf(req, 'user-me-db-read', { found: Boolean(user) });
     if (!user) return res.status(404).json({ error: '用户不存在' });
     res.json({ user: buildUserResponse(user) });
@@ -2046,7 +2141,7 @@ app.put('/api/user/preferences', authenticateUser, (req, res) => {
             || req.body.comment_email_notifications === 'true';
         db.prepare('UPDATE users SET comment_email_notifications = ? WHERE id = ?')
             .run(commentEmailNotifications ? 1 : 0, req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -2064,6 +2159,82 @@ app.put('/api/user/preferences', authenticateUser, (req, res) => {
     }
 });
 
+// A user may rename once every seven days; the name is also what they log in with.
+app.put('/api/user/username', authenticateUser, (req, res) => {
+    try {
+        const username = String(req.body.username || '').trim();
+        if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名长度需为2-20个字符' });
+        const current = db.prepare('SELECT username, username_changed_at FROM users WHERE id = ?').get(req.user.id);
+        if (username === current.username) return res.status(400).json({ error: '新用户名和当前用户名相同' });
+        const nextChangeAt = current.username_changed_at ? Date.parse(current.username_changed_at) + USERNAME_CHANGE_INTERVAL_MS : 0;
+        if (nextChangeAt > Date.now()) {
+            const when = new Date(nextChangeAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            return res.status(429).json({ error: `用户名 7 天只能修改一次，${when} 后可再次修改` });
+        }
+        if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) return res.status(409).json({ error: '用户名已存在' });
+        db.prepare('UPDATE users SET username = ?, username_changed_at = ? WHERE id = ?').run(username, new Date().toISOString(), req.user.id);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username,
+            action: 'change_username',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: { from: current.username, to: username }
+        });
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
+        // Login tokens carry the name, so this device gets a fresh one; sessions elsewhere end.
+        res.json({ success: true, token: generateUserToken(user), user: buildUserResponse(user) });
+    } catch (err) {
+        if (String(err.message || '').includes('UNIQUE')) return res.status(409).json({ error: '用户名已存在' });
+        console.error('Change username error:', err);
+        res.status(500).json({ error: '修改用户名失败' });
+    }
+});
+
+app.put('/api/user/avatar', authenticateUser, (req, res) => {
+    try {
+        const avatar = parseAvatarImage(req.body.image);
+        if (!avatar) return res.status(400).json({ error: '头像需为 300KB 以内的 PNG、JPG 或 WebP 图片' });
+        const now = new Date().toISOString();
+        db.transaction(() => {
+            db.prepare('INSERT OR REPLACE INTO user_avatars (user_id, mime_type, data) VALUES (?, ?, ?)').run(req.user.id, avatar.mimeType, avatar.data);
+            db.prepare('UPDATE users SET avatar_updated_at = ? WHERE id = ?').run(now, req.user.id);
+        })();
+        res.json({ success: true, avatar_updated_at: now });
+    } catch (err) {
+        console.error('Update avatar error:', err);
+        res.status(500).json({ error: '保存头像失败' });
+    }
+});
+
+app.delete('/api/user/avatar', authenticateUser, (req, res) => {
+    try {
+        db.transaction(() => {
+            db.prepare('DELETE FROM user_avatars WHERE user_id = ?').run(req.user.id);
+            db.prepare('UPDATE users SET avatar_updated_at = NULL WHERE id = ?').run(req.user.id);
+        })();
+        res.json({ success: true, avatar_updated_at: null });
+    } catch (err) {
+        console.error('Remove avatar error:', err);
+        res.status(500).json({ error: '移除头像失败' });
+    }
+});
+
+app.get('/api/users/:id/avatar', (req, res) => {
+    const userId = parseAuthorId(req.params.id);
+    const avatar = userId && db.prepare('SELECT mime_type, data FROM user_avatars WHERE user_id = ?').get(userId);
+    if (!avatar) return res.status(404).end();
+    res.set({
+        'Content-Type': avatar.mime_type,
+        // Avatar addresses carry the upload time (?v=), so a cached copy never goes stale.
+        'Cache-Control': req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache',
+        'X-Content-Type-Options': 'nosniff'
+    });
+    res.send(avatar.data);
+});
+
 app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
     try {
         const emailCheck = validateQqEmail(req.body.email);
@@ -2078,7 +2249,7 @@ app.post('/api/user/bind-email', authenticateUserAllowUnbound, (req, res) => {
         if (!codeCheck.ok) return res.status(400).json({ error: codeCheck.error });
 
         db.prepare('UPDATE users SET email = ?, email_verified = 1, token_version = token_version + 1 WHERE id = ?').run(email, req.user.id);
-        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const updated = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
         logOperation({ userType: 'user', userId: req.user.id, username: req.user.username, action: 'bind_email', targetType: 'user', targetId: String(req.user.id), ip: getRequestIp(req), details: { email: maskEmail(email) } });
         const token = generateUserToken(updated);
         res.json({ success: true, token, user: buildUserResponse(updated) });
@@ -2141,7 +2312,7 @@ app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
             return res.status(409).json({ error: '这个 STA1N API 用户 ID 已被其他账号绑定' });
         }
         db.prepare('UPDATE users SET newapi_user_id = ? WHERE id = ?').run(rawId, req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -2163,11 +2334,11 @@ app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
     try {
         const current = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
         if (!current?.newapi_user_id) {
-            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+            const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
             return res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
         }
         db.prepare("UPDATE users SET newapi_user_id = '' WHERE id = ?").run(req.user.id);
-        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason FROM users WHERE id = ?').get(req.user.id);
+        const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -2820,6 +2991,7 @@ function completeAiReviewJob(job, { decision, reason, error = '', model = '', te
          SET review_status = ?, rejection_reason = ?, reviewed_at = ?
          WHERE id = ? AND review_status = 'ai_pending'`
     ).run(nextStatus, shouldReject ? `AI审核：${reason}` : null, shouldReject ? now : null, job.card_id);
+    if (update.changes && !shouldReject) announceCardToFollowers(job.card_id);
     db.prepare(
         `UPDATE ai_review_queue
          SET status = ?, decision = ?, reason = ?, error = ?, model = ?,
@@ -3543,6 +3715,79 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
     return metrics;
 }
 
+// Author page header: the public profile and counts over the works everyone can see.
+app.get('/api/authors/:id', optionalUserAuth, (req, res) => {
+    try {
+        const authorId = parseAuthorId(req.params.id);
+        const author = authorId && db.prepare('SELECT id, username, created_at, avatar_updated_at FROM users WHERE id = ?').get(authorId);
+        if (!author) return res.status(404).json({ error: '作者不存在' });
+        const cards = db.prepare(
+            `SELECT COUNT(CASE WHEN review_status = 'approved' THEN 1 END) AS card_count,
+                    COUNT(CASE WHEN review_status = 'unreviewed' THEN 1 END) AS unreviewed_count,
+                    COALESCE(SUM(CASE WHEN review_status = 'approved' THEN is_featured ELSE 0 END), 0) AS featured_count
+             FROM character_card_catalog
+             WHERE uploader_user_id = ? AND review_status IN ('approved', 'unreviewed')`
+        ).get(authorId);
+        const templates = db.prepare(
+            `SELECT COUNT(*) AS template_count,
+                    COALESCE(SUM(is_featured), 0) AS featured_count
+             FROM ui_templates
+             WHERE uploader_user_id = ? AND review_status = 'approved'`
+        ).get(authorId);
+        res.json({
+            ...author,
+            card_count: cards.card_count,
+            unreviewed_count: cards.unreviewed_count,
+            template_count: templates.template_count,
+            featured_count: cards.featured_count + templates.featured_count,
+            follower_count: getAuthorFollowerCount(authorId),
+            following: Boolean(req.user && db.prepare(
+                'SELECT 1 FROM author_follows WHERE follower_user_id = ? AND author_user_id = ?'
+            ).get(req.user.id, authorId))
+        });
+    } catch (err) {
+        console.error('Fetch author error:', err);
+        res.status(500).json({ error: '获取作者信息失败' });
+    }
+});
+
+app.post('/api/authors/:id/follow', authenticateUser, (req, res) => {
+    try {
+        const authorId = parseAuthorId(req.params.id);
+        const author = authorId && db.prepare(
+            'SELECT id, username, email, email_verified, follower_email_milestone FROM users WHERE id = ?'
+        ).get(authorId);
+        if (!author) return res.status(404).json({ error: '作者不存在' });
+        if (author.id === req.user.id) return res.status(400).json({ error: '不能关注自己' });
+        const followed = db.prepare(
+            'INSERT OR IGNORE INTO author_follows (follower_user_id, author_user_id) VALUES (?, ?)'
+        ).run(req.user.id, authorId).changes > 0;
+        const followerCount = getAuthorFollowerCount(authorId);
+        // Every tenth follower is announced to the author, each milestone only once.
+        const milestone = Math.floor(followerCount / 10) * 10;
+        if (followed && milestone > Number(author.follower_email_milestone || 0)) {
+            db.prepare('UPDATE users SET follower_email_milestone = ? WHERE id = ?').run(milestone, authorId);
+            if (userEmailBound(author)) sendFollowerMilestoneEmail({ to: author.email, username: author.username, count: followerCount });
+        }
+        res.json({ following: true, follower_count: followerCount });
+    } catch (err) {
+        console.error('Follow author error:', err);
+        res.status(500).json({ error: '关注失败' });
+    }
+});
+
+app.delete('/api/authors/:id/follow', authenticateUser, (req, res) => {
+    try {
+        const authorId = parseAuthorId(req.params.id);
+        if (!authorId) return res.status(404).json({ error: '作者不存在' });
+        db.prepare('DELETE FROM author_follows WHERE follower_user_id = ? AND author_user_id = ?').run(req.user.id, authorId);
+        res.json({ following: false, follower_count: getAuthorFollowerCount(authorId) });
+    } catch (err) {
+        console.error('Unfollow author error:', err);
+        res.status(500).json({ error: '取消关注失败' });
+    }
+});
+
 app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
     try {
         let reviewedWhere = "review_status = 'approved'";
@@ -3642,6 +3887,9 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         const tagFilter = String(req.query.tag || '').trim().toLowerCase().slice(0, 100);
         const mineOnly = req.query.mine === '1';
         const audience = parseCardAudience(req.query.audience);
+        const authorId = parseAuthorId(req.query.author);
+        // The audience gate asks for covers without R18 cards: same rule as the page, a #R18 tag in the notes.
+        const excludeR18 = req.query.exclude_r18 === '1';
         const requestedLimit = parseInt(req.query.limit, 10);
         const limit = !idsOnly
             ? (Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 10)
@@ -3651,7 +3899,7 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
             ? Math.min(requestedOffset, 1000000)
             : 0;
         markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit, offset, hasSearch: Boolean(searchQuery), hasTag: Boolean(tagFilter), mineOnly });
-        const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly, audience])).digest('hex').slice(0, 12);
+        const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly, audience, authorId, excludeR18])).digest('hex').slice(0, 12);
         const representation = `${idsOnly ? 'ids' : (limit ? `full-${limit}-${offset}` : 'full')}-${filterHash}`;
         const cacheKey = getCardListCacheKey(req, sortMode, zone, representation);
         const cached = getFreshCardListCache(cacheKey);
@@ -3671,7 +3919,12 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         let joinClause = '';
         let orderByClause = 'cc.created_at DESC';
 
-        if (zone === 'unreviewed') {
+        if (authorId) {
+            // Author pages list what everyone can see, whoever is looking.
+            whereParts.push(zone === 'unreviewed' ? "cc.review_status = 'unreviewed'" : "cc.review_status = 'approved'");
+            whereParts.push('cc.uploader_user_id = ?');
+            params.push(authorId);
+        } else if (zone === 'unreviewed') {
             whereParts.push("cc.review_status = 'unreviewed'");
         } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
@@ -3698,6 +3951,10 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         if (audience) {
             whereParts.push('cc.audience = ?');
             params.push(audience);
+        }
+
+        if (excludeR18) {
+            whereParts.push("NOT EXISTS (SELECT 1 FROM character_card_tags r18 WHERE r18.card_id = cc.id AND r18.tag_key = 'r18')");
         }
 
         if (searchQuery) {
@@ -3729,7 +3986,7 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'cards-query-built', { whereParts: whereParts.length, params: params.length });
-        const useFastLane = !idsOnly && !searchQuery && !tagFilter && !mineOnly
+        const useFastLane = !idsOnly && !searchQuery && !tagFilter && !mineOnly && !authorId
             && (sortMode === 'latest' || sortMode === 'featured');
         const readGet = useFastLane ? sqliteReadPool.fastGet.bind(sqliteReadPool) : sqliteReadPool.get.bind(sqliteReadPool);
         const readAll = useFastLane ? sqliteReadPool.fastAll.bind(sqliteReadPool) : sqliteReadPool.all.bind(sqliteReadPool);
@@ -3793,6 +4050,7 @@ app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
         const sortMode = req.query.sort || 'latest';
         const searchQuery = String(req.query.q || '').trim().toLowerCase().slice(0, 100);
         const mineOnly = req.query.mine === '1';
+        const authorId = parseAuthorId(req.query.author);
         const requestedLimit = parseInt(req.query.limit, 10);
         const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 100) : 10;
         const requestedOffset = parseInt(req.query.offset, 10);
@@ -3803,7 +4061,11 @@ app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
         const orderParams = [];
         let orderByClause = 'ui_templates.created_at DESC';
 
-        if (req.admin || isModeratorUser(req.user)) {
+        if (authorId) {
+            // Author pages list what everyone can see, whoever is looking.
+            whereParts.push("review_status = 'approved'", 'uploader_user_id = ?');
+            params.push(authorId);
+        } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
         } else if (req.user) {
             whereParts.push("(review_status = 'approved' OR uploader_user_id = ?)");
@@ -3853,7 +4115,7 @@ app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
 
         const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
         markPerf(req, 'ui-templates-query-built', { whereParts: whereParts.length, params: params.length });
-        const useFastLane = !searchQuery && !mineOnly && (sortMode === 'latest' || sortMode === 'featured');
+        const useFastLane = !searchQuery && !mineOnly && !authorId && (sortMode === 'latest' || sortMode === 'featured');
         const readGet = useFastLane ? sqliteReadPool.fastGet.bind(sqliteReadPool) : sqliteReadPool.get.bind(sqliteReadPool);
         const readAll = useFastLane ? sqliteReadPool.fastAll.bind(sqliteReadPool) : sqliteReadPool.all.bind(sqliteReadPool);
         const totalQuery = readGet(
@@ -4217,7 +4479,14 @@ app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
 app.get('/api/ui-templates/:id', optionalUserAuth, (req, res) => {
     try {
         markPerf(req, 'ui-template-detail-start', { id: req.params.id });
-        const template = db.prepare('SELECT * FROM ui_templates WHERE id = ?').get(req.params.id);
+        const template = db.prepare(
+            `SELECT ui_templates.*, u.username AS uploader_username, u.avatar_updated_at AS uploader_avatar_at,
+                    EXISTS(SELECT 1 FROM author_follows f WHERE f.author_user_id = ui_templates.uploader_user_id AND f.follower_user_id = ?) AS uploader_followed,
+                    (SELECT COUNT(*) FROM author_follows f WHERE f.author_user_id = ui_templates.uploader_user_id) AS uploader_follower_count
+             FROM ui_templates
+             LEFT JOIN users u ON u.id = ui_templates.uploader_user_id
+             WHERE ui_templates.id = ?`
+        ).get(req.user?.id || 0, req.params.id);
         markPerf(req, 'ui-template-detail-db-read', { found: Boolean(template), contentBytes: template ? Buffer.byteLength(template.content || '', 'utf8') : 0 });
         if (!template) return res.status(404).json({ error: '模板不存在' });
         const canView = template.review_status === 'approved'
@@ -5240,10 +5509,14 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
                     cc.uploader_user_id, cc.review_status, cc.reviewed_by_admin_id,
                     cc.reviewed_at, cc.rejection_reason, cc.uploader_ip_address,
                     cc.heat_email_milestone, cc.created_at, cc.latest_rank_at, cc.updated_at,
-                    cc.views_count, cc.is_featured, cc.audience
+                    cc.views_count, cc.is_featured, cc.audience,
+                    u.username AS uploader_username, u.avatar_updated_at AS uploader_avatar_at,
+                    EXISTS(SELECT 1 FROM author_follows f WHERE f.author_user_id = cc.uploader_user_id AND f.follower_user_id = ?) AS uploader_followed,
+                    (SELECT COUNT(*) FROM author_follows f WHERE f.author_user_id = cc.uploader_user_id) AS uploader_follower_count
              FROM character_cards cc
+             LEFT JOIN users u ON u.id = cc.uploader_user_id
              WHERE cc.id = ?`
-        ).get(req.params.id);
+        ).get(req.user?.id || 0, req.params.id);
         markPerf(req, 'card-detail-db-read', {
             found: Boolean(card),
             previewBytes: card ? Buffer.byteLength(card.detail_preview || '', 'utf8') : 0,
@@ -5383,6 +5656,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
                 console.error('AI review enqueue error:', queueErr);
                 db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(id);
                 reviewStatus = 'unreviewed';
+                announceCardToFollowers(id);
             }
         }
 
@@ -5641,6 +5915,7 @@ app.put('/api/cards/:id', (req, res) => {
             } catch (queueErr) {
                 console.error('AI review requeue error:', queueErr);
                 db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(req.params.id);
+                announceCardToFollowers(req.params.id);
             }
         }
         clearCardImageCaches(req.params.id);
@@ -6851,6 +7126,7 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
             }
         });
         reviewAndReward();
+        if (status === 'approved' && card.review_status !== 'approved') announceCardToFollowers(id);
 
         clearCardImageCaches(id);
         clearCardListCache('card-review');

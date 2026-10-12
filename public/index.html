@@ -270,7 +270,7 @@
             overflow: hidden;
         }
     </style>
-    <link rel="stylesheet" href="/modern.css?v=20261011-audience">
+    <link rel="stylesheet" href="/modern.css?v=20261013-gate-all">
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
@@ -335,7 +335,7 @@
                             <span>{{ downloadCredits }}</span>
                         </div>
                         <button @click.stop="showUserMenu = !showUserMenu" class="user-chip" :title="currentUser.username">
-                            <div class="user-avatar">{{ currentUser.username.charAt(0).toUpperCase() }}</div>
+                            <user-avatar class="user-avatar" :user-id="currentUser.id" :name="currentUser.username" :avatar-at="currentUser.avatar_updated_at"></user-avatar>
                             <span class="hidden sm:inline">{{ currentUser.username }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="{ 'rotate-180': showUserMenu }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                         </button>
@@ -358,7 +358,7 @@
                                 <svg v-else class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.5 13.1A8.5 8.5 0 0110.9 3.5 8.5 8.5 0 1020.5 13.1Z"/></svg>
                                 {{ isDark ? '日间模式' : '夜间模式' }}
                             </button>
-                            <button @click="currentTab = 'all'; showUserMenu = false" v-if="currentTab === 'mine'" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                            <button @click="currentTab = 'all'; showUserMenu = false" v-if="currentTab !== 'all'" class="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
                                 返回广场
                             </button>
@@ -381,7 +381,7 @@
         <main v-if="showAudienceGate" class="site-main audience-gate flex-1 w-full px-4">
             <h1>选择分区</h1>
             <div class="audience-gate-list">
-                <button v-for="(option, index) in cardAudiences" :key="option.value" type="button" class="audience-gate-item" :data-audience="option.value" :style="{ '--i': index }" @click="pickAudience(option.value)">
+                <button v-for="(option, index) in gateAudiences" :key="option.value" type="button" class="audience-gate-item" :data-audience="option.value" :style="{ '--i': index }" @click="pickAudience(option.value)">
                     <span class="audience-gate-covers" aria-hidden="true">
                         <img v-for="(card, cardIndex) in audiencePreviews[option.value]" :key="card.id" :src="card.thumbnail_url" alt="" decoding="async"
                              :style="audienceCoverStyle(audiencePreviews[option.value].length, cardIndex)">
@@ -435,10 +435,37 @@
                 </div>
             </div>
 
+            <!-- Author page header -->
+            <section v-if="currentTab === 'author' && viewingAuthor" class="author-hero" :style="authorHueStyle(viewingAuthor.id)">
+                <button type="button" class="author-back" @click="leaveAuthor">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                    返回广场
+                </button>
+                <div class="author-hero-main">
+                    <user-avatar class="author-avatar" :user-id="viewingAuthor.id" :name="viewingAuthor.username" :avatar-at="viewingAuthor.avatar_updated_at"></user-avatar>
+                    <div class="author-hero-text">
+                        <div v-if="viewingAuthor.username" class="author-name-row">
+                            <h1 class="author-name">{{ viewingAuthor.username }}</h1>
+                            <span v-if="viewingAuthor.featured_count > 0" class="author-badge">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                                精选作者
+                            </span>
+                        </div>
+                        <span v-else class="author-skeleton is-name"></span>
+                        <p v-if="viewingAuthor.created_at" class="author-meta">
+                            <span>{{ formatJoinDate(viewingAuthor.created_at) }}</span>
+                            <span><strong>{{ viewingAuthor.follower_count }}</strong> 位关注者</span>
+                        </p>
+                        <span v-else class="author-skeleton is-line"></span>
+                    </div>
+                    <follow-button v-if="viewingAuthor.username && !isSelf(viewingAuthor.id)" class="author-follow" :following="viewingAuthor.following" :busy="followBusy" @toggle="toggleFollow(viewingAuthor.id, viewingAuthor.following)"></follow-button>
+                </div>
+            </section>
+
             <!-- Plaza Sections -->
             <div class="catalog-tabs mb-4 animate-fade-in">
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                    <button v-if="currentTab !== 'mine'" @click="leaveAudience" class="audience-back flex items-center flex-shrink-0" title="返回分区选择">
+                    <button v-if="currentTab === 'all'" @click="leaveAudience" class="audience-back flex items-center flex-shrink-0" title="返回分区选择">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         <span class="audience-back-label">{{ currentAudienceLabel }}</span>
                     </button>
@@ -451,7 +478,7 @@
                         角色卡
                         <span class="text-[10px] opacity-70">{{ cardSectionCounts.reviewed }}</span>
                     </button>
-                    <button @click="contentSection = 'unreviewed'; currentTab = 'all'"
+                    <button @click="contentSection = 'unreviewed'; currentTab === 'mine' && (currentTab = 'all')"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
                             :class="contentSection === 'unreviewed'
                                 ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
@@ -521,7 +548,7 @@
                             </button>
                         </div>
                     </div>
-                    <button v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && showPopularTagsToggle"
+                    <button v-if="contentSection !== 'uitemplates' && currentTab === 'all' && showPopularTagsToggle"
                             @click="tagsExpanded = !tagsExpanded"
                             class="tag-filter-toggle mt-1 flex items-center gap-0.5 text-xs font-bold text-gray-400 hover:text-primary-500 transition-colors flex-shrink-0">
                         <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="tagsExpanded ? 'rotate-180' : ''"
@@ -533,7 +560,7 @@
                     <div class="tag-filter-list flex-1 min-w-0">
                         <div class="flex items-center gap-2 flex-wrap" :class="tagsExpanded ? '' : 'max-h-[2.25rem] overflow-hidden'">
                             <!-- Tags (only on non-mine tab) -->
-                            <template v-if="contentSection !== 'uitemplates' && currentTab !== 'mine' && visiblePopularTags.length > 0">
+                            <template v-if="contentSection !== 'uitemplates' && currentTab === 'all' && visiblePopularTags.length > 0">
                                 <button v-for="tag in visiblePopularTags" :key="tag"
                                 @click="searchTag(tag)"
                                 class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 border active:scale-95 flex-shrink-0 max-w-[5.5rem] sm:max-w-[7rem] lg:max-w-[8rem] truncate"
@@ -849,7 +876,7 @@
                 <div class="p-5 sm:p-6">
                     <div class="relative flex items-center">
                         <svg class="w-5 h-5 text-gray-400 absolute left-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <input v-model="searchQuery" ref="searchInput" autofocus type="text" :placeholder="contentSection === 'uitemplates' ? '搜索UI模板名称、简介或文件名...' : '搜索角色卡名称、描述或标签...'" class="w-full border py-3 pl-12 pr-12 text-base outline-none">
+                        <input v-model="searchQuery" ref="searchInput" autofocus type="text" @keydown.enter="submitSearch" :placeholder="contentSection === 'uitemplates' ? '搜索UI模板名称、简介或文件名...' : '搜索角色卡名称、描述或标签...'" class="w-full border py-3 pl-12 pr-12 text-base outline-none">
                         <button v-if="searchQuery" @click="searchQuery = ''" class="absolute right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
@@ -875,7 +902,7 @@
                 </div>
                 <div class="bg-gray-50 px-6 py-4 border-t border-gray-100 flex justify-end">
                     <button @click="showSearchModal = false" class="text-sm font-bold text-gray-500 hover:text-gray-800 px-4 py-2 rounded-xl hover:bg-gray-200 transition-all">关闭</button>
-                    <button @click="showSearchModal = false" class="btn-primary ml-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold px-6 py-2 rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-95">
+                    <button @click="submitSearch" class="btn-primary ml-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold px-6 py-2 rounded-xl shadow-lg shadow-primary-200 transition-all active:scale-95">
                         查看结果
                     </button>
                 </div>
@@ -930,6 +957,19 @@
                     <div class="space-y-10">
                         <div class="mb-2">
                             <h1 class="detail-title break-words">{{ selectedTemplate.title }}</h1>
+                            <div v-if="selectedTemplate.uploader_username" class="detail-byline" :style="authorHueStyle(selectedTemplate.uploader_user_id)">
+                                <button type="button" class="detail-author" @click="openAuthor(selectedTemplate.uploader_user_id)">
+                                    <user-avatar class="detail-author-avatar" :user-id="selectedTemplate.uploader_user_id" :name="selectedTemplate.uploader_username" :avatar-at="selectedTemplate.uploader_avatar_at"></user-avatar>
+                                    <span class="detail-author-text">
+                                        <span class="detail-author-name">
+                                            <span>{{ selectedTemplate.uploader_username }}</span>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                        </span>
+                                        <span class="detail-author-hint">{{ selectedTemplate.uploader_follower_count || 0 }} 位关注者</span>
+                                    </span>
+                                </button>
+                                <follow-button v-if="!isSelf(selectedTemplate.uploader_user_id)" :following="Boolean(selectedTemplate.uploader_followed)" :busy="followBusy" @toggle="toggleFollow(selectedTemplate.uploader_user_id, selectedTemplate.uploader_followed)"></follow-button>
+                            </div>
                         </div>
 
                         <section>
@@ -1429,7 +1469,7 @@
                 <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">{{ authTitle }}</h3>
                 <p class="text-xs text-gray-400 text-center mb-4">{{ authSubtitle }}</p>
                 <form @submit.prevent="handleUserAuth" class="space-y-3">
-                    <input v-if="userAuthMode !== 'forgot'" v-model="userAuthForm.username" type="text" placeholder="用户名（2-20个字符）" autocomplete="username"
+                    <input v-if="userAuthMode !== 'forgot'" v-model="userAuthForm.username" type="text" :placeholder="userAuthMode === 'login' ? '用户名或邮箱' : '用户名（2-20个字符）'" autocomplete="username"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
                     <input v-if="userAuthMode !== 'login'" v-model="userAuthForm.email" type="email" placeholder="QQ邮箱（例如 123456@qq.com）"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
@@ -1533,6 +1573,21 @@
                     </button>
                 </div>
                 <div class="p-5">
+                    <div class="settings-profile">
+                        <label class="settings-avatar" title="更换头像">
+                            <user-avatar :user-id="currentUser.id" :name="userSettingsForm.username || currentUser.username" :avatar-at="userSettingsForm.removeAvatar ? '' : currentUser.avatar_updated_at" :src="userSettingsForm.avatarImage"></user-avatar>
+                            <span class="settings-avatar-edit" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.66-.9l.82-1.2A2 2 0 0110.07 4h3.86a2 2 0 011.66.9l.82 1.2a2 2 0 001.66.9H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            </span>
+                            <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="pickAvatar">
+                        </label>
+                        <div class="settings-profile-fields">
+                            <label class="settings-label" for="settings-username">用户名</label>
+                            <input id="settings-username" v-model="userSettingsForm.username" :disabled="Boolean(userSettingsForm.usernameLockedUntil)" maxlength="20" autocomplete="off" class="settings-input">
+                            <p class="settings-hint">{{ userSettingsForm.usernameLockedUntil ? userSettingsForm.usernameLockedUntil + ' 后可再次修改用户名' : '7 天只能修改一次，改名后用新用户名或邮箱登录' }}</p>
+                            <button v-if="(currentUser.avatar_updated_at && !userSettingsForm.removeAvatar) || userSettingsForm.avatarImage" type="button" class="settings-link" @click="userSettingsForm.avatarImage = ''; userSettingsForm.removeAvatar = Boolean(currentUser.avatar_updated_at)">移除头像</button>
+                        </div>
+                    </div>
                     <div class="flex items-center justify-between gap-4 py-2">
                         <div class="min-w-0">
                             <div class="text-base font-bold text-gray-900">评论邮件提醒</div>
@@ -1735,6 +1790,11 @@
             { value: 'female', label: '女性向', icon: 'M17.5 9a5.5 5.5 0 11-11 0 5.5 5.5 0 0111 0zM12 14.5V21M9 18h6' },
             { value: 'general', label: '全性向', icon: 'M15 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM13.7 8.8L18.5 4M14.5 4h4v4M10.5 16.5v5M8 19.5h5' }
         ];
+        // The gate also offers every audience at once; the server reads the unknown value 'all' as no filter.
+        const GATE_AUDIENCES = [
+            { value: 'all', label: '全部', icon: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z' },
+            ...CARD_AUDIENCES
+        ];
 
         // Segmented audience switch shared by the catalog toolbar and the upload and edit forms.
         const AudiencePicker = {
@@ -1746,6 +1806,35 @@
             </div>`
         };
         // One comment section shared by the card detail (mobile and desktop) and the UI template detail.
+        // Each user has a colour (from their id) shared by their initial avatar and their author page.
+        const authorHueStyle = (userId) => ({ '--author-hue': (Number(userId) * 47) % 360 });
+
+        // A user's avatar: their uploaded picture, or the first letter of their name on their colour.
+        const UserAvatar = {
+            props: { userId: [Number, String], name: String, avatarAt: String, src: String },
+            setup(props) {
+                const imageUrl = computed(() => props.src
+                    || (props.avatarAt ? `${API_BASE}/api/users/${props.userId}/avatar?v=${encodeURIComponent(props.avatarAt)}` : ''));
+                const initial = computed(() => (Array.from(String(props.name || '').trim())[0] || '').toUpperCase());
+                const hueStyle = computed(() => authorHueStyle(props.userId));
+                return { imageUrl, initial, hueStyle };
+            },
+            template: `<span class="user-avatar-img" :style="hueStyle" aria-hidden="true"><img v-if="imageUrl" :src="imageUrl" alt="" decoding="async"><template v-else>{{ initial }}</template></span>`
+        };
+
+        // Follow toggle next to an author; once followed, hovering offers to unfollow.
+        const FollowButton = {
+            props: { following: Boolean, busy: Boolean },
+            emits: ['toggle'],
+            template: `
+                <button type="button" class="follow-button" :class="{ 'is-following': following }" :disabled="busy" @click="$emit('toggle')">
+                    <svg v-if="following" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>
+                    <span class="follow-label">{{ following ? '已关注' : '关注' }}</span>
+                    <span v-if="following" class="follow-label-hover">取消关注</span>
+                </button>`
+        };
+
         // State and actions come from the app through provide('commentSection').
         const CommentSection = {
             components: { CommentComposer },
@@ -1772,7 +1861,8 @@
                         <div v-for="root in commentTree" :key="root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="comment-author">{{ root.author_name || root.nickname }}</span>
+                                    <button v-if="root.user_id" type="button" class="comment-author is-link" @click="openAuthor(root.user_id)">{{ root.author_name || root.nickname }}</button>
+                                    <span v-else class="comment-author">{{ root.author_name || root.nickname }}</span>
                                     <span v-if="root.user_id && root.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
                                     <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
                                     <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
@@ -1796,7 +1886,8 @@
                                     <div v-for="reply in (expandedComments.has(root.id) ? root.replies : root.replies.slice(0, 2))" :key="reply.id" class="comment-reply">
                                         <div class="flex justify-between items-start mb-1">
                                             <div class="flex items-center gap-1.5 flex-wrap">
-                                                <span class="comment-author">{{ reply.author_name || reply.nickname }}</span>
+                                                <button v-if="reply.user_id" type="button" class="comment-author is-link" @click="openAuthor(reply.user_id)">{{ reply.author_name || reply.nickname }}</button>
+                                                <span v-else class="comment-author">{{ reply.author_name || reply.nickname }}</span>
                                                 <span v-if="reply.user_id && reply.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
                                                 <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
                                                 <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
@@ -1835,7 +1926,7 @@
         // Card detail body (title, notes, description, settings, greeting, UI templates, comments),
         // shared by the mobile sheet and the desktop panel. State comes from provide('cardDetail').
         const CardDetailBody = {
-            components: { CommentSection },
+            components: { CommentSection, UserAvatar, FollowButton },
             setup() {
                 return inject('cardDetail');
             },
@@ -1843,6 +1934,19 @@
                 <div>
                     <div class="mb-8">
                         <h2 class="detail-title">{{ selectedCard.name }}</h2>
+                        <div v-if="selectedCard.uploader_username" class="detail-byline" :style="authorHueStyle(selectedCard.uploader_user_id)">
+                            <button type="button" class="detail-author" @click="openAuthor(selectedCard.uploader_user_id)">
+                                <user-avatar class="detail-author-avatar" :user-id="selectedCard.uploader_user_id" :name="selectedCard.uploader_username" :avatar-at="selectedCard.uploader_avatar_at"></user-avatar>
+                                <span class="detail-author-text">
+                                    <span class="detail-author-name">
+                                        <span>{{ selectedCard.uploader_username }}</span>
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                    </span>
+                                    <span class="detail-author-hint">{{ selectedCard.uploader_follower_count || 0 }} 位关注者</span>
+                                </span>
+                            </button>
+                            <follow-button v-if="!isSelf(selectedCard.uploader_user_id)" :following="Boolean(selectedCard.uploader_followed)" :busy="followBusy" @toggle="toggleFollow(selectedCard.uploader_user_id, selectedCard.uploader_followed)"></follow-button>
+                        </div>
                         <div v-if="cardAudienceLabel || (selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)) || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
                             <span v-if="cardAudienceLabel" class="detail-tag is-audience">{{ cardAudienceLabel }}</span>
                             <span v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="detail-featured">
@@ -1927,7 +2031,7 @@
         };
 
         const app = createApp({
-            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody, AudiencePicker },
+            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody, AudiencePicker, UserAvatar, FollowButton },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -1944,10 +2048,12 @@
                 const contentSection = ref('all');
                 // Every visit starts in the general audience; the choice is deliberately not remembered.
                 const cardAudience = ref('general');
-                // The plaza opens on the audience gate; "my cards" and the review queue skip it.
+                // The plaza opens on the audience gate; "my cards", author pages and the review queue skip it.
                 const audiencePicked = ref(false);
-                const showAudienceGate = computed(() => !audiencePicked.value && currentTab.value !== 'mine');
-                const currentAudienceLabel = computed(() => CARD_AUDIENCES.find(option => option.value === cardAudience.value).label);
+                const showAudienceGate = computed(() => !audiencePicked.value && !['mine', 'author'].includes(currentTab.value));
+                // An author page lists one uploader's public works; this is the profile shown above them.
+                const viewingAuthor = ref(null);
+                const currentAudienceLabel = computed(() => GATE_AUDIENCES.find(option => option.value === cardAudience.value).label);
                 const pickAudience = (value) => {
                     cardAudience.value = value;
                     contentSection.value = 'all';
@@ -2059,7 +2165,7 @@
                         return;
                     }
                     showR18Modal.value = true;
-                    r18Countdown.value = 5;
+                    r18Countdown.value = 3;
                     if (r18Timer) clearInterval(r18Timer);
                     r18Timer = setInterval(() => {
                         r18Countdown.value--;
@@ -2217,7 +2323,7 @@
                 const newApiForm = reactive({ userId: '', cookies: 1 });
                 const showUserSettingsModal = ref(false);
                 const userSettingsSaving = ref(false);
-                const userSettingsForm = reactive({ comment_email_notifications: false });
+                const userSettingsForm = reactive({ comment_email_notifications: false, username: '', usernameLockedUntil: '', avatarImage: '', removeAvatar: false });
                 const floorToTwoDecimals = (value) => {
                     const number = Number(value || 0);
                     if (!Number.isFinite(number)) return 0;
@@ -2624,23 +2730,71 @@
                         return;
                     }
                     userSettingsForm.comment_email_notifications = Boolean(currentUser.value?.comment_email_notifications);
+                    userSettingsForm.username = currentUser.value.username;
+                    // Renames are allowed once every seven days.
+                    const unlockAt = Date.parse(currentUser.value.username_changed_at || '') + 7 * 24 * 60 * 60 * 1000;
+                    userSettingsForm.usernameLockedUntil = unlockAt > Date.now()
+                        ? new Date(unlockAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : '';
+                    userSettingsForm.avatarImage = '';
+                    userSettingsForm.removeAvatar = false;
                     showUserSettingsModal.value = true;
+                };
+
+                // The chosen picture is cropped to a centred square and shrunk to 256px before upload.
+                const pickAvatar = (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    if (!file) return;
+                    const url = URL.createObjectURL(file);
+                    const image = new Image();
+                    image.onload = () => {
+                        const side = Math.min(image.naturalWidth, image.naturalHeight);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = canvas.height = 256;
+                        const context = canvas.getContext('2d');
+                        context.fillStyle = '#fff';
+                        context.fillRect(0, 0, 256, 256);
+                        context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+                        URL.revokeObjectURL(url);
+                        userSettingsForm.avatarImage = canvas.toDataURL('image/jpeg', 0.88);
+                        userSettingsForm.removeAvatar = false;
+                    };
+                    image.onerror = () => {
+                        URL.revokeObjectURL(url);
+                        showToast('无法读取这张图片', 'error');
+                    };
+                    image.src = url;
                 };
 
                 const saveUserSettings = async () => {
                     if (!isLoggedIn.value) return;
                     userSettingsSaving.value = true;
-                    try {
-                        const resp = await fetch(API_BASE + '/api/user/preferences', {
-                            method: 'PUT',
-                            headers: userAuthHeaders(),
-                            body: JSON.stringify({
-                                comment_email_notifications: Boolean(userSettingsForm.comment_email_notifications)
-                            })
-                        });
+                    const send = async (path, method, body) => {
+                        const resp = await fetch(API_BASE + path, { method, headers: userAuthHeaders(), body: body && JSON.stringify(body) });
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) throw new Error(data.error || '保存失败');
-                        currentUser.value = { ...currentUser.value, ...data.user };
+                        return data;
+                    };
+                    try {
+                        const preferences = await send('/api/user/preferences', 'PUT', {
+                            comment_email_notifications: Boolean(userSettingsForm.comment_email_notifications)
+                        });
+                        currentUser.value = { ...currentUser.value, ...preferences.user };
+                        const nextUsername = userSettingsForm.username.trim();
+                        if (nextUsername !== currentUser.value.username) {
+                            const renamed = await send('/api/user/username', 'PUT', { username: nextUsername });
+                            // The login token names the user, so a rename comes with a fresh one.
+                            userToken.value = renamed.token;
+                            currentUser.value = { ...currentUser.value, ...renamed.user };
+                            userTokenStorage.setItem('user_token', renamed.token, currentUser.value);
+                        }
+                        if (userSettingsForm.avatarImage || userSettingsForm.removeAvatar) {
+                            const avatar = userSettingsForm.avatarImage
+                                ? await send('/api/user/avatar', 'PUT', { image: userSettingsForm.avatarImage })
+                                : await send('/api/user/avatar', 'DELETE');
+                            currentUser.value = { ...currentUser.value, avatar_updated_at: avatar.avatar_updated_at };
+                        }
                         showUserSettingsModal.value = false;
                         showToast('个人设置已保存', 'success');
                     } catch (err) {
@@ -2970,6 +3124,17 @@
                     selectedTag.value = '';
                 };
 
+                // Typing searches by itself; "查看结果" and Enter also run an unchanged search, e.g. after going
+                // back to the audience gate, which otherwise only a changed query would leave.
+                const submitSearch = () => {
+                    showSearchModal.value = false;
+                    if (!searchQuery.value && !selectedTag.value) return;
+                    audiencePicked.value = true;
+                    clearTimeout(filterFetchTimer);
+                    if (contentSection.value === 'uitemplates') fetchUiTemplates({ page: 1 });
+                    else fetchCards({ page: 1 });
+                };
+
                 const isUiTemplateCard = (card) => {
                     if (!card) return false;
                     if (card.has_ui_templates || Number(card.ui_template_count || 0) > 0) return true;
@@ -2983,6 +3148,9 @@
                     return cardSectionCounts.uiTemplates;
                 });
                 const emptyStateTitle = computed(() => {
+                    if (currentTab.value === 'author' && !searchQuery.value) {
+                        return { all: '还没有公开的角色卡', unreviewed: '无收益专区里还没有 TA 的作品', uitemplates: '还没有公开的 UI 模板' }[contentSection.value];
+                    }
                     if (contentSection.value === 'uitemplates') {
                         if (currentTab.value === 'mine' && canModerate.value) return '没有待审核的 UI 模板';
                         if (currentTab.value === 'mine') return '你还没有上传 UI 模板';
@@ -2996,6 +3164,7 @@
                 });
 
                 const emptyStateDescription = computed(() => {
+                    if (currentTab.value === 'author' && !searchQuery.value) return '看看 TA 的其他分区，或者回到广场逛逛。';
                     if (contentSection.value === 'uitemplates') {
                         if (currentTab.value === 'mine' && canModerate.value) return '新的模板投稿会出现在这里。';
                         if (currentTab.value === 'mine') return '上传一个独立模板文件，就能在这里管理它。';
@@ -3184,28 +3353,18 @@
                     return card;
                 });
                 // The gate previews each audience with the covers of its weekly top three, public cards only.
-                // R18 cards are skipped and the next ones move up, so an audience shows three whenever it has them.
-                const audiencePreviews = reactive({ general: [], male: [], female: [] });
+                // The server leaves R18 cards out, so the next ones move up and one request per audience is enough.
+                const audiencePreviews = reactive({ all: [], general: [], male: [], female: [] });
                 let audiencePreviewsLoaded = false;
-                const AUDIENCE_PREVIEW_PAGE = 6;
                 const loadAudienceCovers = async (audience) => {
-                    const covers = [];
-                    for (let offset = 0; covers.length < 3 && offset < 60; offset += AUDIENCE_PREVIEW_PAGE) {
-                        const params = new URLSearchParams({ sort: 'weekly', zone: 'reviewed', audience, limit: String(AUDIENCE_PREVIEW_PAGE), offset: String(offset) });
-                        const resp = await fetch(API_BASE + '/api/cards?' + params.toString());
-                        if (!resp.ok) break;
-                        const items = await resp.json();
-                        for (const card of prepareCardList(items)) {
-                            if (!isR18Card(card) && !covers.some(cover => cover.id === card.id)) covers.push(card);
-                        }
-                        if (items.length < AUDIENCE_PREVIEW_PAGE) break;
-                    }
-                    audiencePreviews[audience] = covers.slice(0, 3);
+                    const params = new URLSearchParams({ sort: 'weekly', zone: 'reviewed', audience, limit: '3', exclude_r18: '1' });
+                    const resp = await fetch(API_BASE + '/api/cards?' + params.toString());
+                    if (resp.ok) audiencePreviews[audience] = prepareCardList(await resp.json());
                 };
                 const loadAudiencePreviews = () => {
                     if (audiencePreviewsLoaded) return;
                     audiencePreviewsLoaded = true;
-                    for (const { value } of CARD_AUDIENCES) loadAudienceCovers(value).catch(() => {});
+                    for (const { value } of GATE_AUDIENCES) loadAudienceCovers(value).catch(() => {});
                 };
                 // Covers fan out from the middle one: --k is the offset (-1, 0, 1), --k2 its square for the dip.
                 const audienceCoverStyle = (count, index) => {
@@ -3215,6 +3374,8 @@
 
                 const fetchCardSectionCounts = async () => {
                     const requestId = ++cardCountsRequestId;
+                    // An author page takes its counts from the author's profile.
+                    if (currentTab.value === 'author') return;
                     try {
                         const audienceQuery = currentTab.value === 'mine' ? '' : '?audience=' + cardAudience.value;
                         const resp = await fetch(API_BASE + '/api/cards/counts' + audienceQuery, { headers: getCardRequestHeaders() });
@@ -3238,6 +3399,7 @@
                     const requestedQuery = String(searchQuery.value || '').trim();
                     const requestedTag = String(selectedTag.value || '').trim();
                     const requestedMine = currentTab.value === 'mine';
+                    const requestedAuthor = currentTab.value === 'author' ? viewingAuthor.value?.id || '' : '';
                     const requestedPage = Math.max(1, Number(page) || 1);
                     const requestedScope = getCatalogScope();
                     fetchCardSectionCounts();
@@ -3256,9 +3418,10 @@
                     if (requestedQuery) params.set('q', requestedQuery);
                     if (requestedTag) params.set('tag', requestedTag);
                     if (requestedMine) params.set('mine', '1');
-                    const requestedAudience = requestedMine ? '' : cardAudience.value;
+                    if (requestedAuthor) params.set('author', String(requestedAuthor));
+                    const requestedAudience = requestedMine || requestedAuthor ? '' : cardAudience.value;
                     if (requestedAudience) params.set('audience', requestedAudience);
-                    const queryKey = JSON.stringify(['cards', requestedScope, requestedSort, requestedZone, requestedAudience, requestedQuery, requestedTag, requestedMine]);
+                    const queryKey = JSON.stringify(['cards', requestedScope, requestedSort, requestedZone, requestedAudience, requestedQuery, requestedTag, requestedMine, requestedAuthor]);
                     const cached = !force ? getFreshCatalogPage(cardPageCache, queryKey, requestedPage) : null;
                     if (cached) {
                         cards.value = cached.items;
@@ -3327,6 +3490,7 @@
                     const requestedSort = cardSort.value;
                     const requestedQuery = String(searchQuery.value || '').trim();
                     const requestedMine = currentTab.value === 'mine';
+                    const requestedAuthor = currentTab.value === 'author' ? viewingAuthor.value?.id || '' : '';
                     const requestedPage = Math.max(1, Number(page) || 1);
                     const requestedScope = getCatalogScope();
                     uiTemplatesRequestController?.abort();
@@ -3338,7 +3502,8 @@
                     });
                     if (requestedQuery) params.set('q', requestedQuery);
                     if (requestedMine) params.set('mine', '1');
-                    const queryKey = JSON.stringify(['templates', requestedScope, requestedSort, requestedQuery, requestedMine]);
+                    if (requestedAuthor) params.set('author', String(requestedAuthor));
+                    const queryKey = JSON.stringify(['templates', requestedScope, requestedSort, requestedQuery, requestedMine, requestedAuthor]);
                     const cached = !force ? getFreshCatalogPage(uiTemplatePageCache, queryKey, requestedPage) : null;
                     if (cached) {
                         uiTemplates.value = cached.items;
@@ -4016,6 +4181,71 @@
                         newComment.reply_to_id = null;
                         newComment.reply_to_name = '';
                     }
+                };
+
+                // Author pages open from a card, a template or a comment; the list below reuses the catalog.
+                const openAuthor = async (userId) => {
+                    const authorId = Number(userId);
+                    if (!authorId) return;
+                    closeSelectedCard();
+                    closeTemplateDetail();
+                    // When nothing below changes no watcher fires, so the list is fetched here.
+                    const unchanged = currentTab.value === 'author' && contentSection.value === 'all' && !selectedTag.value;
+                    viewingAuthor.value = { id: authorId };
+                    Object.assign(cardSectionCounts, { reviewed: 0, unreviewed: 0, uiTemplates: 0 });
+                    selectedTag.value = '';
+                    contentSection.value = 'all';
+                    currentTab.value = 'author';
+                    if (unchanged) fetchCards({ page: 1 });
+                    window.scrollTo(0, 0);
+                    try {
+                        const resp = await fetch(API_BASE + '/api/authors/' + authorId, { headers: getCardRequestHeaders() });
+                        if (!resp.ok) throw new Error('author');
+                        const author = await resp.json();
+                        if (viewingAuthor.value?.id !== authorId) return;
+                        viewingAuthor.value = author;
+                        Object.assign(cardSectionCounts, { reviewed: author.card_count, unreviewed: author.unreviewed_count, uiTemplates: author.template_count });
+                    } catch {
+                        if (viewingAuthor.value?.id === authorId) showToast('作者信息加载失败', 'error');
+                    }
+                };
+                const leaveAuthor = () => {
+                    currentTab.value = 'all';
+                    window.scrollTo(0, 0);
+                };
+                // Whatever shows an author (card, template, author page) holds the follow state; a toggle updates them all.
+                const followBusy = ref(false);
+                const isSelf = (userId) => Boolean(currentUser.value) && currentUser.value.id === Number(userId);
+                const toggleFollow = async (authorId, following) => {
+                    if (!isLoggedIn.value) {
+                        showUserAuthModal.value = true;
+                        userAuthMode.value = 'login';
+                        return;
+                    }
+                    if (followBusy.value) return;
+                    followBusy.value = true;
+                    try {
+                        const resp = await fetch(`${API_BASE}/api/authors/${authorId}/follow`, { method: following ? 'DELETE' : 'POST', headers: userAuthHeaders() });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '操作失败');
+                        for (const item of [selectedCard.value, selectedTemplate.value]) {
+                            if (item && item.uploader_user_id === authorId) {
+                                Object.assign(item, { uploader_followed: data.following, uploader_follower_count: data.follower_count });
+                            }
+                        }
+                        if (viewingAuthor.value?.id === authorId) {
+                            Object.assign(viewingAuthor.value, { following: data.following, follower_count: data.follower_count });
+                        }
+                        showToast(data.following ? '已关注，TA 上新或更新角色卡时会邮件提醒你' : '已取消关注', 'success');
+                    } catch (err) {
+                        showToast(err.message || '操作失败', 'error');
+                    } finally {
+                        followBusy.value = false;
+                    }
+                };
+                const formatJoinDate = (value) => {
+                    const match = /^(\d{4})-(\d{2})/.exec(String(value || ''));
+                    return match ? `${match[1]} 年 ${Number(match[2])} 月加入` : '';
                 };
 
                 const fetchTemplateDetail = async (template) => {
@@ -6057,18 +6287,18 @@
                     cooldownTimers.clear();
                 });
 
-                // Only "my cards" and the review queue mix audiences, so only there does the detail name it.
-                const cardAudienceLabel = computed(() => currentTab.value === 'mine'
+                // Lists that mix audiences ("全部", my cards, author pages, the review queue) name it on the detail.
+                const cardAudienceLabel = computed(() => currentTab.value !== 'all' || cardAudience.value === 'all'
                     ? CARD_AUDIENCES.find(option => option.value === (selectedCard.value?.audience || 'general'))?.label || ''
                     : '');
                 provide('cardDetail', {
                     selectedCard, previewAsset, personalityExpanded, selectedCardDetailLoading, selectedCardDetailError,
-                    renderMarkdown, renderUiTemplatePreview, cardAudienceLabel
+                    renderMarkdown, renderUiTemplatePreview, cardAudienceLabel, openAuthor, isSelf, followBusy, toggleFollow, authorHueStyle
                 });
                 provide('commentSection', {
                     comments, loadingComments, loadingMoreComments, commentTotal, commentsHasMore, commentTree, expandedComments,
                     newComment, isLoggedIn, formatDate, submitComment, cancelReply, replyToComment, toggleReplies,
-                    likeComment, canDeleteComment, deleteComment,
+                    likeComment, canDeleteComment, deleteComment, openAuthor,
                     setCommentsSentinel: element => { commentsLoadSentinel.value = element; },
                     openLogin: () => { showUserAuthModal.value = true; userAuthMode.value = 'login'; }
                 });
@@ -6084,7 +6314,8 @@
 
                 return {
                     isDark, themeFollowsParent, toggleTheme,
-                    cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, cardAudience, cardAudiences: CARD_AUDIENCES, audiencePreviews, audienceCoverStyle, showAudienceGate, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, cardAudience, gateAudiences: GATE_AUDIENCES, audiencePreviews, audienceCoverStyle, showAudienceGate,
+                    viewingAuthor, openAuthor, leaveAuthor, submitSearch, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
