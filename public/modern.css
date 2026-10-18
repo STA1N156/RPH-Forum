@@ -407,6 +407,9 @@ body.forum-shell {
 .notice-item:nth-child(3) { animation-delay: 60ms; }
 .notice-item:nth-child(4) { animation-delay: 90ms; }
 .notice-item:nth-child(n + 5) { animation-delay: 120ms; }
+.notice-item { cursor: pointer; }
+/* Room above the comments when a reply notice scrolls them into view. */
+.comment-section { scroll-margin-top: 16px; }
 .notice-item:hover { background: rgb(var(--gray-500) / 0.07); }
 .notice-item.is-unread { background: var(--c-accent-soft); }
 .notice-item.is-unread::before {
@@ -816,6 +819,7 @@ body.forum-shell {
 }
 
 .content-card .text-gray-500.leading-relaxed { margin-top: -2px; color: var(--c-text-3) !important; font-size: 12.5px !important; line-height: 1.6 !important; -webkit-line-clamp: 2 !important; }
+.content-card[data-title-lines="1"] .text-gray-500.leading-relaxed { -webkit-line-clamp: 3 !important; }
 
 .card-stats { gap: 2px !important; }
 .card-stats > span {

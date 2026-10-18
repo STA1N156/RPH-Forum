@@ -302,18 +302,18 @@
                                     {{ notificationsLoading ? '正在加载…' : '暂时没有新消息' }}
                                 </div>
                                 <ul v-else class="notice-list">
-                                    <li v-for="item in notifications" :key="item.id" class="notice-item" :class="{ 'is-unread': item.unread }">
-                                        <button type="button" class="notice-item__avatar" @click="openNotificationActor(item)" :title="item.actor.username">
+                                    <li v-for="item in notifications" :key="item.id" class="notice-item" :class="{ 'is-unread': item.unread }" @click="openNotification(item)">
+                                        <button type="button" class="notice-item__avatar" :title="item.actor.username">
                                             <user-avatar :user-id="item.actor.id" :name="item.actor.username" :avatar-at="item.actor.avatar_updated_at"></user-avatar>
                                         </button>
                                         <div class="notice-item__body">
                                             <p class="notice-item__text">
-                                                <button type="button" class="notice-item__actor" @click="openNotificationActor(item)">{{ item.actor.username }}</button>
+                                                <button type="button" class="notice-item__actor">{{ item.actor.username }}</button>
                                                 {{ notificationAction(item) }}<b v-if="item.target_name">「{{ item.target_name }}」</b>{{ item.type === 'reply' ? '的评论' : '' }}<b v-if="item.type === 'tip'">{{ formatCookieAmount(item.tip_cookies) }}🍪</b><template v-if="item.type === 'tip' && item.tip_message">，留言「{{ item.tip_message }}」</template>
                                             </p>
                                             <span class="notice-item__time">{{ formatNoticeTime(item.created_at) }}</span>
                                         </div>
-                                        <button v-if="item.card_id || item.template_id || item.type === 'tip'" type="button" class="notice-item__go" title="去查看" aria-label="去查看" @click="openNotificationTarget(item)">
+                                        <button type="button" class="notice-item__go" :title="opensComments(item) ? '查看评论' : '进入 ' + item.actor.username + ' 的主页'" :aria-label="opensComments(item) ? '查看评论' : '进入 ' + item.actor.username + ' 的主页'">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                                         </button>
                                     </li>
@@ -661,7 +661,7 @@
                             <div class="flex flex-col gap-2">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="flex-1 min-w-0">
-                                        <h3 class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight break-words">{{ template.title }}</h3>
+                                        <h3 v-title-lines class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight break-words">{{ template.title }}</h3>
                                     </div>
                                     <div v-if="canModerate || isTemplateOwnedByCurrentUser(template)" class="card-actions flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
                                         <button v-if="canModerate && template.review_status === 'pending'"
@@ -756,7 +756,7 @@
                         <div class="flex flex-col gap-2">
                             <div class="flex justify-between items-start gap-2">
                                 <div class="flex-1 min-w-0">
-                                    <h3 :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 leading-tight break-words">{{ card.name }}</h3>
+                                    <h3 v-title-lines :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 leading-tight break-words">{{ card.name }}</h3>
                                 </div>
                                 
                                 <div class="card-actions flex items-center gap-1 flex-shrink-0 ml-1">
@@ -1920,7 +1920,7 @@
                 return inject('commentSection');
             },
             template: `
-                <div>
+                <div class="comment-section">
                     <h4 class="detail-heading">
                         <span class="w-8 h-0.5 bg-primary-200 rounded-full"></span>
                         评论 ({{ commentTotal }})
@@ -4352,12 +4352,14 @@
                     else if (path === '/') history.replaceState(null, '', '/');
                     else history.pushState({ rphFrom: location.pathname }, '', path);
                 });
-                const openCardFromLink = async (id) => {
+                // Opened from the address bar, the card shows only if the address still points at it once it has loaded
+                // (the reader may have moved on); opened from the page itself, it always shows.
+                const openCardFromLink = async (id, fromAddress = false) => {
                     try {
                         const resp = await fetch(API_BASE + '/api/cards/' + encodeURIComponent(id), { headers: getCardRequestHeaders() });
                         if (!resp.ok) throw new Error('card');
                         const [card] = prepareCardList([await resp.json()]);
-                        if (parseRoute(location.pathname).id !== id) return;
+                        if (fromAddress && parseRoute(location.pathname).id !== id) return;
                         if (isR18Card(card) && !r18Confirmed.value) {
                             if (isLoggedIn.value) pendingR18Card = card;
                             showR18Disclaimer();
@@ -4384,7 +4386,7 @@
                     } else if (currentTab.value === 'author') {
                         leaveAuthor();
                     }
-                    if (route.type === 'card' && selectedCard.value?.id !== route.id) await openCardFromLink(route.id);
+                    if (route.type === 'card' && selectedCard.value?.id !== route.id) await openCardFromLink(route.id, true);
                     if (route.type === 'template' && selectedTemplate.value?.id !== route.id) {
                         await openTemplateDetail({ id: route.id });
                         if (!selectedTemplate.value && parseRoute(location.pathname).id === route.id) history.replaceState(null, '', routePath.value);
@@ -6301,15 +6303,30 @@
                     const date = new Date(value);
                     return `${date.getMonth() + 1}月${date.getDate()}日`;
                 };
-                const openNotificationTarget = (item) => {
-                    showNotifications.value = false;
-                    if (item.card_id) openCardFromLink(item.card_id);
-                    else if (item.template_id) openTemplateDetail({ id: item.template_id });
-                    else if (item.type === 'tip') openNewApiModal();
+                // A reply notice opens its card or template and brings the comments into view; any other notice opens
+                // the person's page. The whole notice is the click target; its buttons pass their clicks up to it.
+                const opensComments = item => item.type === 'reply' && Boolean(item.card_id || item.template_id);
+                // The comment section appears once the detail has loaded, so wait for it (about five seconds at most).
+                const scrollToComments = async () => {
+                    for (let attempt = 0; attempt < 50; attempt++) {
+                        await nextTick();
+                        const section = [...document.querySelectorAll('.comment-section')].find(element => element.getClientRects().length);
+                        if (section && !selectedCardDetailLoading.value && !selectedTemplateLoading.value) {
+                            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            return;
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
                 };
-                const openNotificationActor = (item) => {
+                const openNotification = async (item) => {
                     showNotifications.value = false;
-                    if (item.actor?.id) openAuthor(item.actor.id);
+                    if (!opensComments(item)) {
+                        if (item.actor?.id) openAuthor(item.actor.id);
+                        return;
+                    }
+                    if (item.card_id) await openCardFromLink(item.card_id);
+                    else await openTemplateDetail({ id: item.template_id });
+                    scrollToComments();
                 };
                 watch(isLoggedIn, (loggedIn) => {
                     if (loggedIn) return loadNotifications();
@@ -6685,7 +6702,7 @@
                     cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, cardAudience, gateAudiences: GATE_AUDIENCES, audiencePreviews, audienceCoverStyle, showAudienceGate,
                     viewingAuthor, openAuthor, leaveAuthor, submitSearch, sizedThumbnailUrl,
                     notifications, unreadNotifications, showNotifications, notificationsLoading, toggleNotifications, notificationAction, formatNoticeTime,
-                    openNotificationTarget, openNotificationActor, authorBackdropCovers, authorBackdropIndex, authorBioEditing, authorBioDraft, authorBioSaving, startAuthorBioEdit, saveAuthorBio,
+                    openNotification, opensComments, authorBackdropCovers, authorBackdropIndex, authorBioEditing, authorBioDraft, authorBioSaving, startAuthorBioEdit, saveAuthorBio,
                     TIP_PRESETS, tipsEnabled, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipMessage, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
@@ -6739,6 +6756,18 @@
                 });
             }, { rootMargin: '200px 0px' })
             : null;
+        // A tile's description takes the line its title leaves free: under a one-line title it shows three lines.
+        // The title is watched for size changes, so a resize that rewraps it updates the tile too.
+        const titleLineObserver = 'ResizeObserver' in window
+            ? new ResizeObserver(entries => entries.forEach(({ target }) => {
+                const lines = Math.round(target.getBoundingClientRect().height / parseFloat(getComputedStyle(target).lineHeight));
+                target.closest('.content-card')?.setAttribute('data-title-lines', String(lines));
+            }))
+            : null;
+        app.directive('title-lines', {
+            mounted: element => titleLineObserver?.observe(element),
+            unmounted: element => titleLineObserver?.unobserve(element)
+        });
         app.directive('lazy-card-image', {
             mounted(element, binding) {
                 element.dataset.lazySource = String(binding.value || '');
