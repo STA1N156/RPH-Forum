@@ -284,31 +284,6 @@ function initDatabase() {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
-        CREATE TABLE IF NOT EXISTS ai_review_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            card_id TEXT UNIQUE NOT NULL,
-            card_name TEXT,
-            uploader_user_id INTEGER,
-            uploader_username TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
-            decision TEXT,
-            reason TEXT,
-            error TEXT,
-            model TEXT,
-            text_decision TEXT,
-            text_reason TEXT,
-            text_error TEXT,
-            text_model TEXT,
-            cover_decision TEXT,
-            cover_reason TEXT,
-            cover_error TEXT,
-            cover_model TEXT,
-            attempts INTEGER DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            started_at DATETIME,
-            completed_at DATETIME
-        );
-
         CREATE INDEX IF NOT EXISTS idx_cards_created_at ON character_cards(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cards_review_created ON character_cards(review_status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_cards_review_updated ON character_cards(review_status, updated_at DESC);
@@ -346,7 +321,6 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_user ON newapi_redemptions(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_created_at ON newapi_redemptions(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_newapi_redemptions_status ON newapi_redemptions(status, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_ai_review_queue_status ON ai_review_queue(status, id);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_user ON card_downloads(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_card_downloads_card_time ON card_downloads(card_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_ui_template_downloads_user ON ui_template_downloads(user_id, created_at DESC);
@@ -380,74 +354,6 @@ function initDatabase() {
     }
 
     // Migration: add columns if they don't exist (for existing databases)
-    try {
-        const hasCardCascade = db.pragma('foreign_key_list(ai_review_queue)')
-            .some(row => row.table === 'character_cards');
-        if (hasCardCascade) {
-            db.pragma('foreign_keys = OFF');
-            db.transaction(() => {
-                db.exec('ALTER TABLE ai_review_queue RENAME TO ai_review_queue_with_card_fk');
-                db.exec(`
-                    CREATE TABLE ai_review_queue (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        card_id TEXT UNIQUE NOT NULL,
-                        card_name TEXT,
-                        uploader_user_id INTEGER,
-                        uploader_username TEXT,
-                        status TEXT NOT NULL DEFAULT 'pending',
-                        decision TEXT,
-                        reason TEXT,
-                        error TEXT,
-                        model TEXT,
-                        text_decision TEXT,
-                        text_reason TEXT,
-                        text_error TEXT,
-                        text_model TEXT,
-                        cover_decision TEXT,
-                        cover_reason TEXT,
-                        cover_error TEXT,
-                        cover_model TEXT,
-                        attempts INTEGER DEFAULT 0,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        started_at DATETIME,
-                        completed_at DATETIME
-                    );
-                    INSERT INTO ai_review_queue (
-                        id, card_id, card_name, uploader_user_id, uploader_username,
-                        status, decision, reason, error, model, attempts,
-                        created_at, started_at, completed_at
-                    )
-                    SELECT q.id, q.card_id, c.name, c.uploader_user_id, u.username,
-                           q.status, q.decision, q.reason, q.error, q.model, q.attempts,
-                           q.created_at, q.started_at, q.completed_at
-                      FROM ai_review_queue_with_card_fk q
-                      LEFT JOIN character_cards c ON c.id = q.card_id
-                      LEFT JOIN users u ON u.id = c.uploader_user_id;
-                    DROP TABLE ai_review_queue_with_card_fk;
-                `);
-            })();
-            db.pragma('foreign_keys = ON');
-            db.exec('CREATE INDEX IF NOT EXISTS idx_ai_review_queue_status ON ai_review_queue(status, id)');
-        }
-    } catch (e) {
-        db.pragma('foreign_keys = ON');
-        console.warn('[DB] Failed to preserve AI review history migration:', e.message);
-    }
-    for (const column of [
-        'card_name TEXT',
-        'uploader_user_id INTEGER',
-        'uploader_username TEXT',
-        'text_decision TEXT',
-        'text_reason TEXT',
-        'text_error TEXT',
-        'text_model TEXT',
-        'cover_decision TEXT',
-        'cover_reason TEXT',
-        'cover_error TEXT',
-        'cover_model TEXT'
-    ]) {
-        try { db.exec(`ALTER TABLE ai_review_queue ADD COLUMN ${column}`); } catch (e) { /* column exists */ }
-    }
     try { db.exec('ALTER TABLE admin_users ADD COLUMN token_version INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
@@ -529,7 +435,45 @@ function initDatabase() {
     `);
     try { db.exec('ALTER TABLE users ADD COLUMN avatar_updated_at TEXT'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN username_changed_at TEXT'); } catch (e) { /* column exists */ }
+    try { db.exec("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''"); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE users ADD COLUMN follower_email_milestone INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    // In-site notifications, one row per recipient; a user has read everything up to notifications_read_id.
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            actor_user_id INTEGER,
+            card_id TEXT,
+            template_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_notifications_user ON user_notifications(user_id, id);
+    `);
+    try { db.exec('ALTER TABLE users ADD COLUMN notifications_read_id INTEGER DEFAULT 0'); } catch (e) { /* column exists */ }
+    // Heat earned by approved work that has since been deleted; it still counts towards the author's 🍪.
+    try { db.exec('ALTER TABLE users ADD COLUMN newapi_retained_heat REAL DEFAULT 0'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE user_notifications ADD COLUMN tip_id INTEGER'); } catch (e) { /* column exists */ }
+    // Tips in 🍪: taken from the tipper's STA1N balance; once successful they count towards the author's withdrawable 🍪.
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS author_tips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipper_user_id INTEGER NOT NULL,
+            author_user_id INTEGER NOT NULL,
+            newapi_user_id TEXT NOT NULL,
+            cookies REAL NOT NULL,
+            quota INTEGER NOT NULL,
+            quota_before INTEGER,
+            quota_after INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_author_tips_author ON author_tips(author_user_id, status, id);
+        CREATE INDEX IF NOT EXISTS idx_author_tips_tipper ON author_tips(tipper_user_id, id);
+    `);
     try {
         db.exec('ALTER TABLE character_cards ADD COLUMN follow_notified_at TEXT');
         // Cards already out, or edited before, count as announced: followers only hear about work from now on.
@@ -538,6 +482,9 @@ function initDatabase() {
     } catch (e) { /* column exists */ }
     try { db.exec("UPDATE character_cards SET latest_rank_at = COALESCE(latest_rank_at, created_at, updated_at, CURRENT_TIMESTAMP) WHERE latest_rank_at IS NULL"); } catch (e) { /* ignore */ }
     try { db.exec("UPDATE character_cards SET review_status = 'approved' WHERE review_status IS NULL OR review_status = ''"); } catch (e) { /* migration best effort */ }
+    // The AI review is gone: cards it had not reached yet wait for a moderator, and its settings (key included) go too.
+    try { db.exec("UPDATE character_cards SET review_status = 'pending' WHERE review_status = 'ai_pending'"); } catch (e) { /* migration best effort */ }
+    try { db.exec("DELETE FROM settings WHERE key LIKE 'ai_review_%'"); } catch (e) { /* migration best effort */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_review_status ON character_cards(review_status, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_latest_rank ON character_cards(review_status, latest_rank_at DESC, created_at DESC)'); } catch (e) { /* index exists */ }
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_cards_uploader_review ON character_cards(uploader_user_id, review_status)'); } catch (e) { /* index exists */ }
@@ -889,10 +836,7 @@ function initDatabase() {
         announcement_enabled: 'false',
         announcement_title: '网站公告',
         announcement_content: '',
-        announcement_version: '',
-        ai_review_base_url: 'https://cdn.sta1n.cn/v1',
-        ai_review_model: '',
-        ai_review_vision_model: '[AN]gemini-3.5-flash-thinking'
+        announcement_version: ''
     };
     const upsertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     for (const [key, value] of Object.entries(defaultSettings)) {

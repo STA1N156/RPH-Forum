@@ -46,48 +46,6 @@ const ADMIN_NOTIFICATION_EMAILS = (process.env.ADMIN_NOTIFICATION_EMAILS || proc
 const NEWAPI_BASE_URL = (process.env.NEWAPI_BASE_URL || '').trim();
 const NEWAPI_ADMIN_TOKEN = (process.env.NEWAPI_ADMIN_TOKEN || process.env.NEWAPI_ACCESS_TOKEN || '').trim();
 const NEWAPI_ADMIN_USER_ID = (process.env.NEWAPI_ADMIN_USER_ID || process.env.NEWAPI_USER_ID || '').trim();
-const AI_REVIEW_DEFAULT_BASE_URL = 'https://cdn.sta1n.cn/v1';
-const AI_REVIEW_DEFAULT_VISION_MODEL = '[AN]gemini-3.5-flash-thinking';
-const AI_REVIEW_API_KEY = (process.env.AI_REVIEW_API_KEY || '').trim();
-const AI_REVIEW_MODEL = (process.env.AI_REVIEW_MODEL || '').trim();
-const AI_REVIEW_VISION_MODEL = (process.env.AI_REVIEW_VISION_MODEL || '').trim();
-const AI_REVIEW_TIMEOUT_MS = Math.max(5000, parseInt(process.env.AI_REVIEW_TIMEOUT_MS || '30000', 10) || 30000);
-const AI_REVIEW_MAX_TEXT_LENGTH = 36000;
-const AI_REVIEW_LEGACY_DEFAULT_PROMPT = [
-    '你是角色卡的宽松内容审核器，只审核角色卡名称、简介和开场白。',
-    '只有在内容明确包含以下任一情况时才拒绝：',
-    '1. 明确的政治敏感内容；',
-    '2. 以虐杀、肢解、酷刑等为核心且描写非常露骨的极端暴力内容。',
-    '普通战斗、犯罪、战争背景、轻微血腥、虚构冲突、黑暗题材均应放行。',
-    '如果语境不足、疑似、影射、不确定或无法确认，一律放行。'
-].join('\n');
-const AI_REVIEW_PREVIOUS_DEFAULT_PROMPT = [
-    '你是角色卡的内容审核器，负责审核角色卡名称、简介、描述、开场白、前 3 条世界书和封面。',
-    '在内容明确包含以下任一情况时拒绝：',
-    '1. 明确的政治敏感内容，尤其有关中国政治的任何内容必须拒绝；',
-    '2. 含有重口、虐杀、肢解、犯罪、暴力、酷刑等的内容；',
-    '3. 以逝世的公众人物取乐；',
-    '4. 封面图片露点或清晰出现性器官。',
-    '普通战斗、战争背景、轻微血腥、色情文本均应放行；但封面图片露点或出现性器官仍须拒绝。',
-    '如果语境不足、疑似、不确定或无法确认，一律放行。'
-].join('\n');
-const AI_REVIEW_DEFAULT_TEXT_PROMPT = [
-    '你是角色卡的内容审核器，负责审核角色卡名称、简介、描述、开场白和前 3 条世界书。',
-    '在内容明确包含以下任一情况时拒绝：',
-    '1. 明确的政治敏感内容，尤其有关中国政治的任何内容必须拒绝；',
-    '2. 含有重口、虐杀、肢解、犯罪、暴力、酷刑等的内容；',
-    '3. 以逝世的公众人物取乐。',
-    '普通战斗、战争背景、轻微血腥、色情均应放行。',
-    '如果语境不足、疑似、不确定或无法确认，一律放行。'
-].join('\n');
-const AI_REVIEW_DEFAULT_COVER_PROMPT = [
-    '你是角色卡的封面审核器，只审核收到的封面图片。',
-    '在封面明确包含以下任一情况时拒绝：',
-    '1. 出现政治人物，或可辨认的政治人物变体、戏仿、换装及 AI 改造形象，尤其是中国政治人物；',
-    '2. 以任何公众人物取乐；',
-    '3. 露点或清晰出现性器官。',
-    '如果人物身份、画面内容或语境不足，疑似、不确定或无法确认，一律放行。'
-].join('\n');
 const EMAIL_CODE_TTL_MINUTES = Math.max(1, parseInt(process.env.EMAIL_CODE_TTL_MINUTES || '10', 10));
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 const EMAIL_CODE_COOLDOWN_SECONDS = Math.max(1, parseInt(process.env.EMAIL_CODE_COOLDOWN_SECONDS || '30', 10));
@@ -96,7 +54,7 @@ const EMAIL_CODE_IP_MAX_PER_WINDOW = 3;
 const EMAIL_SEND_TIMEOUT_MS = Math.max(5000, parseInt(process.env.EMAIL_SEND_TIMEOUT_MS || '15000', 10) || 15000);
 const EMAIL_SEND_RETRIES = Math.max(0, parseInt(process.env.EMAIL_SEND_RETRIES || '1', 10) || 1);
 const HEAT_EMAIL_STEP = 500;
-const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '6', 10));
+const NEWAPI_HEAT_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_HEAT_PER_COOKIE || '5', 10));
 const NEWAPI_QUOTA_PER_COOKIE = Math.max(1, parseInt(process.env.NEWAPI_QUOTA_PER_COOKIE || '50000', 10));
 const VIEW_HEAT_WEIGHT = 1.0;
 const COMMENT_HEAT_WEIGHT = 2;
@@ -354,24 +312,53 @@ app.use((req, res, next) => {
 
 const htmlAssetCache = new Map();
 const publicAssetCache = new Map();
-const CACHED_PUBLIC_ASSETS = new Set(['app.css', 'vue.global.js', 'marked.min.js', 'purify.min.js']);
+const CACHED_PUBLIC_ASSETS = new Set(['app.css', 'modern.css', 'theme.js', 'vue.global.js', 'marked.min.js', 'purify.min.js']);
+
+// Precompressed copies; Brotli comes out about a fifth smaller than gzip on these text files.
+function compressAsset(body) {
+    return {
+        gzip: zlib.gzipSync(body, { level: 9 }),
+        br: zlib.brotliCompressSync(body, {
+            params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: body.length }
+        })
+    };
+}
+
+function sendPrecompressed(req, res, asset) {
+    const accepted = String(req.headers['accept-encoding'] || '');
+    const [encoding, body] = /\bbr\b/i.test(accepted) ? ['br', asset.br]
+        : /\bgzip\b/i.test(accepted) ? ['gzip', asset.gzip]
+            : ['', asset.body];
+    if (encoding) res.set('Content-Encoding', encoding);
+    res.set('Content-Length', body.length);
+    return res.end(body);
+}
+
+// The page links the cached static files with their content hash, so browsers can keep them for a year
+// and still fetch a changed file right after a deploy.
+function versionPublicAssetUrls(html) {
+    return html.replace(/(["'])\/([\w.-]+\.(?:css|js))(?:\?v=[^"']*)?\1/g, (match, quote, fileName) => (
+        CACHED_PUBLIC_ASSETS.has(fileName) ? `${quote}/${fileName}?v=${getCachedPublicAsset(fileName).hash}${quote}` : match
+    ));
+}
 
 function getCachedHtmlAsset(fileName) {
     const filePath = path.join(PUBLIC_DIR, fileName);
     const stat = fs.statSync(filePath);
+    const assetSignature = [...CACHED_PUBLIC_ASSETS].map(name => getCachedPublicAsset(name).hash).join(',');
     const cached = htmlAssetCache.get(fileName);
-    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
+    if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.assetSignature === assetSignature) return cached;
 
-    const body = fs.readFileSync(filePath);
-    const gzip = zlib.gzipSync(body, { level: 6 });
+    const body = Buffer.from(versionPublicAssetUrls(fs.readFileSync(filePath, 'utf8')));
     const etag = `"html-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
     const nextCache = {
         body,
-        gzip,
+        ...compressAsset(body),
         etag,
         lastModified: stat.mtime.toUTCString(),
         size: stat.size,
-        mtimeMs: stat.mtimeMs
+        mtimeMs: stat.mtimeMs,
+        assetSignature
     };
     htmlAssetCache.set(fileName, nextCache);
     return nextCache;
@@ -391,15 +378,7 @@ function sendCachedHtml(req, res, fileName) {
             markPerf(req, 'html-cache-not-modified');
             return res.status(304).end();
         }
-
-        const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
-        if (acceptsGzip) {
-            res.set('Content-Encoding', 'gzip');
-            res.set('Content-Length', asset.gzip.length);
-            return res.end(asset.gzip);
-        }
-        res.set('Content-Length', asset.body.length);
-        return res.end(asset.body);
+        return sendPrecompressed(req, res, asset);
     } catch (err) {
         console.error('Send cached HTML error:', err);
         return res.status(500).send('Failed to load page');
@@ -414,12 +393,12 @@ function getCachedPublicAsset(fileName) {
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached;
 
     const body = fs.readFileSync(filePath);
-    const gzip = zlib.gzipSync(body, { level: 6 });
-    const etag = `"asset-${crypto.createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+    const hash = crypto.createHash('sha1').update(body).digest('hex').slice(0, 16);
     const nextCache = {
         body,
-        gzip,
-        etag,
+        ...compressAsset(body),
+        hash,
+        etag: `"asset-${hash}"`,
         lastModified: stat.mtime.toUTCString(),
         size: stat.size,
         mtimeMs: stat.mtimeMs,
@@ -434,7 +413,7 @@ function sendCachedPublicAsset(req, res, fileName) {
         const asset = getCachedPublicAsset(fileName);
         if (!asset) return res.status(404).end();
         res.set('Content-Type', asset.contentType);
-        res.set('Cache-Control', 'public, max-age=604800');
+        res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=604800');
         res.set('ETag', asset.etag);
         res.set('Last-Modified', asset.lastModified);
         res.set('Vary', 'Accept-Encoding');
@@ -444,15 +423,7 @@ function sendCachedPublicAsset(req, res, fileName) {
             markPerf(req, 'public-asset-cache-not-modified');
             return res.status(304).end();
         }
-
-        const acceptsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
-        if (acceptsGzip) {
-            res.set('Content-Encoding', 'gzip');
-            res.set('Content-Length', asset.gzip.length);
-            return res.end(asset.gzip);
-        }
-        res.set('Content-Length', asset.body.length);
-        return res.end(asset.body);
+        return sendPrecompressed(req, res, asset);
     } catch (err) {
         console.error('Send cached public asset error:', err);
         return res.status(500).end();
@@ -464,6 +435,8 @@ function sendCachedPublicAsset(req, res, fileName) {
 // when image generation/cache writes are busy.
 app.get('/', (req, res) => sendCachedHtml(req, res, 'index.html'));
 app.get('/index.html', (req, res) => sendCachedHtml(req, res, 'index.html'));
+// Shared addresses of a card, a UI template or an author page; the page opens the item from the path.
+app.get(['/card/:id', '/template/:id', '/author/:id'], (req, res) => sendCachedHtml(req, res, 'index.html'));
 app.get('/admin', (req, res) => sendCachedHtml(req, res, 'admin.html'));
 CACHED_PUBLIC_ASSETS.forEach(fileName => {
     app.get(`/${fileName}`, (req, res) => sendCachedPublicAsset(req, res, fileName));
@@ -1074,30 +1047,6 @@ function isNewApiConfigured() {
     return Boolean(config.baseUrl && config.adminToken && config.adminUserId);
 }
 
-function getAiReviewConfig() {
-    const savedPrompt = String(getSettingValue('ai_review_prompt') || '').trim();
-    const savedCoverPrompt = String(getSettingValue('ai_review_cover_prompt') || '').trim();
-    const useDefaultTextPrompt = !savedPrompt
-        || savedPrompt === AI_REVIEW_LEGACY_DEFAULT_PROMPT
-        || savedPrompt === AI_REVIEW_PREVIOUS_DEFAULT_PROMPT;
-    const textPrompt = useDefaultTextPrompt ? AI_REVIEW_DEFAULT_TEXT_PROMPT : savedPrompt;
-    const coverPrompt = savedCoverPrompt || AI_REVIEW_DEFAULT_COVER_PROMPT;
-    if (savedPrompt !== textPrompt) setSettingValue('ai_review_prompt', textPrompt);
-    if (savedCoverPrompt !== coverPrompt) setSettingValue('ai_review_cover_prompt', coverPrompt);
-    return {
-        baseUrl: normalizeBaseUrl(getSettingValue('ai_review_base_url') || AI_REVIEW_DEFAULT_BASE_URL),
-        apiKey: getSettingValue('ai_review_api_key') || AI_REVIEW_API_KEY,
-        model: String(getSettingValue('ai_review_model') || AI_REVIEW_MODEL || '').trim(),
-        visionModel: String(getSettingValue('ai_review_vision_model') || AI_REVIEW_VISION_MODEL || AI_REVIEW_DEFAULT_VISION_MODEL).trim(),
-        textPrompt,
-        coverPrompt
-    };
-}
-
-function isAiReviewConfigured(config = getAiReviewConfig()) {
-    return Boolean(config.baseUrl && config.apiKey && config.model && config.visionModel);
-}
-
 function getNewApiHeaders() {
     const config = getNewApiConfig();
     const headers = {
@@ -1143,23 +1092,38 @@ async function manageNewApiUser(payload) {
     });
 }
 
-async function addNewApiQuota(newApiUserId, quotaToAdd) {
+// A STA1N account counts as the user's own when its e-mail is the one they verified here; both sides keep e-mails unique.
+// The message never shows the STA1N e-mail, so typing other people's IDs reveals nothing.
+function assertNewApiAccountOwner(userInfo, user) {
+    if (!userEmailBound(user)) throw Object.assign(new Error('请先在论坛绑定并验证 QQ 邮箱，再绑定 STA1N API 账号'), { statusCode: 400 });
+    if (normalizeEmail(userInfo?.email) !== normalizeEmail(user.email)) {
+        throw Object.assign(new Error('与API后台绑定邮箱不一致，请核对或前往广场个人设置修改邮箱'), { statusCode: 400 });
+    }
+}
+
+// Adds quota to (withdrawals) or takes it from (tips) the user's own STA1N account. New API may let a balance go
+// below zero, so a subtraction is checked against the balance first.
+async function adjustNewApiQuota(newApiUserId, quota, owner, mode = 'add') {
     const id = Number(newApiUserId);
     if (!Number.isInteger(id) || id <= 0) throw new Error('STA1N API 用户 ID 无效');
     const userInfo = await getNewApiUserInfo(newApiUserId);
+    assertNewApiAccountOwner(userInfo, owner);
     const currentQuota = Number(userInfo?.quota || 0);
     if (!Number.isFinite(currentQuota)) {
         throw new Error('STA1N API 返回的用户额度无效');
     }
     if (userInfo?.status !== undefined && Number(userInfo.status) !== NEWAPI_USER_STATUS_ENABLED) {
-        throw new Error('这个 STA1N API 账号当前是禁用状态，请先让管理员启用后再提现');
+        throw new Error('这个 STA1N API 账号当前是禁用状态，请先让管理员启用');
     }
-    const nextQuota = currentQuota + quotaToAdd;
+    if (mode === 'subtract' && currentQuota < quota) {
+        throw Object.assign(new Error(`STA1N 账号余额不足，当前约 ${floorToTwoDecimals(currentQuota / NEWAPI_QUOTA_PER_COOKIE).toFixed(2)}🍪`), { statusCode: 400 });
+    }
+    const nextQuota = mode === 'subtract' ? currentQuota - quota : currentQuota + quota;
     await manageNewApiUser({
         id,
         action: 'add_quota',
-        mode: 'add',
-        value: quotaToAdd
+        mode,
+        value: quota
     });
     const updatedUserInfo = await getNewApiUserInfo(newApiUserId).catch(() => null);
     const updatedQuota = Number(updatedUserInfo?.quota);
@@ -1485,6 +1449,24 @@ async function drainFollowerEmails() {
     followerEmailDraining = false;
 }
 
+// In-site notifications: card_new / card_update from followed authors, follow, reply. The newest 200 per user are kept.
+const NOTIFICATIONS_KEPT_PER_USER = 200;
+function addNotification({ userId, type, actorUserId = null, cardId = null, templateId = null, tipId = null }) {
+    if (!userId || userId === actorUserId) return;
+    try {
+        db.prepare(
+            'INSERT INTO user_notifications (user_id, type, actor_user_id, card_id, template_id, tip_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(userId, type, actorUserId, cardId, templateId, tipId, new Date().toISOString());
+        db.prepare(
+            `DELETE FROM user_notifications WHERE user_id = ? AND id <= (
+                SELECT id FROM user_notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?
+            )`
+        ).run(userId, userId, NOTIFICATIONS_KEPT_PER_USER);
+    } catch (err) {
+        console.error('Add notification error:', err);
+    }
+}
+
 // Called whenever a card goes public: its author's followers hear of it as new the first time, as updated after.
 function announceCardToFollowers(cardId) {
     try {
@@ -1499,6 +1481,14 @@ function announceCardToFollowers(cardId) {
         if (!isNew && Date.now() - Date.parse(card.follow_notified_at) < FOLLOW_UPDATE_NOTICE_INTERVAL_MS) return;
         db.prepare('UPDATE character_cards SET follow_notified_at = ? WHERE id = ?').run(new Date().toISOString(), card.id);
         const action = isNew ? '上架了新角色卡' : '更新了角色卡';
+        const followerIds = db.prepare(
+            `SELECT f.follower_user_id AS id FROM author_follows f
+             JOIN users u ON u.id = f.follower_user_id
+             WHERE f.author_user_id = ? AND COALESCE(u.is_banned, 0) = 0`
+        ).all(card.uploader_user_id);
+        db.transaction(() => followerIds.forEach(({ id }) => addNotification({
+            userId: id, type: isNew ? 'card_new' : 'card_update', actorUserId: card.uploader_user_id, cardId: card.id
+        })))();
         const followers = db.prepare(
             `SELECT u.username, u.email, u.email_verified
              FROM author_follows f
@@ -1581,6 +1571,9 @@ function parseAvatarImage(dataUrl) {
     if (mimeType === 'image/webp' && data.toString('ascii', 8, 12) !== 'WEBP') return null;
     return { mimeType, data };
 }
+
+// The "following" sort keeps works whose uploader the viewer follows; nobody signed in follows anyone.
+const FOLLOWED_UPLOADER_SQL = 'IN (SELECT author_user_id FROM author_follows WHERE follower_user_id = ?)';
 
 function getRankingPeriodModifier(sortMode) {
     return { daily: '-1 day', weekly: '-7 days', monthly: '-30 days' }[sortMode] || '';
@@ -1679,8 +1672,9 @@ function getFreshCardListCache(key) {
     return cached;
 }
 
+// A null key builds the response without keeping it.
 function setCardListCache(key, cards, totalCount = cards.length) {
-    while (cardListCache.size >= CARD_LIST_CACHE_MAX_ENTRIES) {
+    while (key && cardListCache.size >= CARD_LIST_CACHE_MAX_ENTRIES) {
         const firstKey = cardListCache.keys().next().value;
         cardListCache.delete(firstKey);
     }
@@ -1695,7 +1689,7 @@ function setCardListCache(key, cards, totalCount = cards.length) {
         revision: cardListCacheRevision,
         createdAt: Date.now()
     };
-    cardListCache.set(key, cached);
+    if (key) cardListCache.set(key, cached);
     return cached;
 }
 
@@ -1794,16 +1788,26 @@ function recordAccountViewHeat(req, contentType, contentId) {
 }
 
 function makeNewApiRewardStats(user, cardHeat = 0, templateHeat = 0) {
-    const totalHeat = cardHeat + templateHeat;
-    const totalCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
+    const retainedHeat = Math.max(0, Number(user?.newapi_retained_heat ?? user?.retained_heat ?? 0));
+    const totalHeat = cardHeat + templateHeat + retainedHeat;
+    const heatCookies = floorToTwoDecimals(totalHeat / NEWAPI_HEAT_PER_COOKIE);
+    const tipCookies = floorToTwoDecimals(Math.max(0, Number(user?.tip_cookies ?? 0)));
+    const totalCookies = floorToTwoDecimals(heatCookies + tipCookies);
     const redeemedCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_redeemed_cookies ?? user?.redeemed_cookies ?? 0)));
     const penaltyCookies = floorToTwoDecimals(Math.max(0, Number(user?.newapi_penalty_cookies ?? user?.penalty_cookies ?? 0)));
     const availableCookies = floorToTwoDecimals(totalCookies - redeemedCookies - penaltyCookies);
+    // Withdrawals and penalties use up the heat part first, so whatever is left of the tips stays visible as such.
+    const availableTipCookies = floorToTwoDecimals(Math.min(tipCookies, Math.max(0, availableCookies)));
     return {
         newapi_user_id: user?.newapi_user_id || '',
         card_heat: cardHeat,
         template_heat: templateHeat,
+        retained_heat: retainedHeat,
         total_heat: totalHeat,
+        heat_cookies: heatCookies,
+        tip_cookies: tipCookies,
+        available_tip_cookies: availableTipCookies,
+        available_heat_cookies: floorToTwoDecimals(Math.max(0, availableCookies) - availableTipCookies),
         total_cookies: totalCookies,
         redeemed_cookies: redeemedCookies,
         penalty_cookies: penaltyCookies,
@@ -1827,7 +1831,7 @@ function getUsersNewApiRewardStatsMap(userIds) {
 
     const placeholders = ids.map(() => '?').join(',');
     const users = db.prepare(
-        `SELECT id, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies
+        `SELECT id, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, newapi_retained_heat
          FROM users
          WHERE id IN (${placeholders})`
     ).all(...ids);
@@ -1835,8 +1839,14 @@ function getUsersNewApiRewardStatsMap(userIds) {
     for (const id of ids) {
         statsByUser.set(id, makeNewApiRewardStats({ id }, 0, 0));
     }
+    const tipCookiesByUser = new Map(db.prepare(
+        `SELECT author_user_id AS user_id, SUM(cookies) AS cookies
+         FROM author_tips
+         WHERE status = 'success' AND author_user_id IN (${placeholders})
+         GROUP BY author_user_id`
+    ).all(...ids).map(row => [Number(row.user_id), row.cookies]));
     for (const user of users) {
-        statsByUser.set(Number(user.id), makeNewApiRewardStats(user, 0, 0));
+        statsByUser.set(Number(user.id), makeNewApiRewardStats({ ...user, tip_cookies: tipCookiesByUser.get(Number(user.id)) }, 0, 0));
     }
 
     const cardRows = db.prepare(
@@ -1870,20 +1880,14 @@ function getUserNewApiRewardStats(userId) {
     return getUsersNewApiRewardStatsMap([userId]).get(Number(userId)) || makeNewApiRewardStats(null, 0, 0);
 }
 
-function getContentCookieValueFromHeatRow(row) {
-    if (!row || row.review_status !== 'approved') return 0;
-    return floorToTwoDecimals(computeContentHeatFromRow(row) / NEWAPI_HEAT_PER_COOKIE);
-}
-
-function addNewApiCookiePenalty(userId, cookies) {
-    const id = Number(userId);
-    const amount = floorToTwoDecimals(cookies);
-    if (!Number.isInteger(id) || id <= 0 || amount <= 0) return;
-    db.prepare(
-        `UPDATE users
-         SET newapi_penalty_cookies = IFNULL(newapi_penalty_cookies, 0) + ?
-         WHERE id = ?`
-    ).run(amount, id);
+// Deleting approved work, whoever does it, keeps the heat it earned on its author's account.
+function retainDeletedContentHeat(row) {
+    if (!row?.uploader_user_id || row.review_status !== 'approved') return 0;
+    const heat = computeContentHeatFromRow(row);
+    if (heat > 0) {
+        db.prepare('UPDATE users SET newapi_retained_heat = IFNULL(newapi_retained_heat, 0) + ? WHERE id = ?').run(heat, row.uploader_user_id);
+    }
+    return heat;
 }
 
 function maybeSendCardHeatMilestoneEmail(cardId, req) {
@@ -2193,6 +2197,33 @@ app.put('/api/user/username', authenticateUser, (req, res) => {
     }
 });
 
+// The introduction on a user's author page: plain text, blank lines collapsed.
+const AUTHOR_BIO_MAX_LENGTH = 200;
+app.put('/api/user/bio', authenticateUser, (req, res) => {
+    try {
+        const bio = String(req.body.bio || '')
+            .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+        if ([...bio].length > AUTHOR_BIO_MAX_LENGTH) return res.status(400).json({ error: `简介最多 ${AUTHOR_BIO_MAX_LENGTH} 个字` });
+        db.prepare('UPDATE users SET bio = ? WHERE id = ?').run(bio, req.user.id);
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'update_author_bio',
+            targetType: 'user',
+            targetId: String(req.user.id),
+            ip: getRequestIp(req),
+            details: { length: bio.length }
+        });
+        res.json({ success: true, bio });
+    } catch (err) {
+        console.error('Update bio error:', err);
+        res.status(500).json({ error: '保存简介失败' });
+    }
+});
+
 app.put('/api/user/avatar', authenticateUser, (req, res) => {
     try {
         const avatar = parseAvatarImage(req.body.image);
@@ -2297,7 +2328,7 @@ app.get('/api/user/newapi/reward', authenticateUser, (req, res) => {
     }
 });
 
-app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
+app.put('/api/user/newapi/bind', authenticateUser, async (req, res) => {
     try {
         const rawId = String(req.body.newapi_user_id || '').trim();
         if (!/^\d{1,18}$/.test(rawId)) {
@@ -2311,6 +2342,13 @@ app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
         if (existing) {
             return res.status(409).json({ error: '这个 STA1N API 用户 ID 已被其他账号绑定' });
         }
+        if (!isNewApiConfigured()) {
+            return res.status(400).json({ error: 'STA1N API 未配置，请联系管理员' });
+        }
+        const userInfo = await getNewApiUserInfo(rawId).catch((err) => {
+            throw Object.assign(new Error(`无法核对这个 STA1N API 账号：${err.message}`), { statusCode: 502 });
+        });
+        assertNewApiAccountOwner(userInfo, req.user);
         db.prepare('UPDATE users SET newapi_user_id = ? WHERE id = ?').run(rawId, req.user.id);
         const user = db.prepare('SELECT id, username, email, email_verified, newapi_user_id, newapi_redeemed_cookies, newapi_penalty_cookies, comment_email_notifications, download_credits, token_version, is_moderator, created_at, is_banned, ban_reason, avatar_updated_at, username_changed_at FROM users WHERE id = ?').get(req.user.id);
         logOperation({
@@ -2325,6 +2363,7 @@ app.put('/api/user/newapi/bind', authenticateUser, (req, res) => {
         });
         res.json({ success: true, user: buildUserResponse(user), reward: getUserNewApiRewardStats(req.user.id) });
     } catch (err) {
+        if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
         console.error('Bind New API user error:', err);
         res.status(500).json({ error: '绑定 STA1N API 用户 ID 失败' });
     }
@@ -2353,6 +2392,73 @@ app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
     } catch (err) {
         console.error('Unbind STA1N API user error:', err);
         res.status(500).json({ error: '解绑 STA1N API 用户 ID 失败' });
+    }
+});
+
+// A tip moves 🍪 from the tipper's own STA1N balance to the author's withdrawable earnings here.
+const TIP_MIN_COOKIES = 10;
+const TIP_MAX_COOKIES = 10000;
+const TIPS_PER_10_MINUTES = 20;
+app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
+    let tipId = null;
+    try {
+        const authorId = parseAuthorId(req.params.id);
+        const author = authorId && db.prepare('SELECT id, username FROM users WHERE id = ? AND COALESCE(is_banned, 0) = 0').get(authorId);
+        if (!author) return res.status(404).json({ error: '作者不存在' });
+        if (author.id === req.user.id) return res.status(400).json({ error: '不能打赏自己' });
+        const cookies = parseCookieAmount(req.body.cookies);
+        if (cookies === null || cookies < TIP_MIN_COOKIES || cookies > TIP_MAX_COOKIES) {
+            return res.status(400).json({ error: `打赏数量需在 ${TIP_MIN_COOKIES}～${TIP_MAX_COOKIES}🍪 之间，最多两位小数` });
+        }
+        if (!isNewApiConfigured()) return res.status(400).json({ error: 'STA1N API 未配置，暂时不能打赏' });
+        const tipper = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
+        if (!tipper?.newapi_user_id) return res.status(400).json({ error: '请先在「提现收益」里绑定你的 STA1N 账号，打赏会从这个账号扣除🍪' });
+        const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        if (db.prepare('SELECT COUNT(*) AS count FROM author_tips WHERE tipper_user_id = ? AND created_at > ?').get(req.user.id, since).count >= TIPS_PER_10_MINUTES) {
+            return res.status(429).json({ error: '打赏太频繁了，请稍后再试' });
+        }
+        const quota = Math.round(cookies * NEWAPI_QUOTA_PER_COOKIE);
+        tipId = db.prepare(
+            'INSERT INTO author_tips (tipper_user_id, author_user_id, newapi_user_id, cookies, quota, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(req.user.id, author.id, tipper.newapi_user_id, cookies, quota, new Date().toISOString()).lastInsertRowid;
+        const charged = await adjustNewApiQuota(tipper.newapi_user_id, quota, req.user, 'subtract');
+        db.prepare("UPDATE author_tips SET status = 'success', quota_before = ?, quota_after = ?, completed_at = ? WHERE id = ?")
+            .run(charged.quotaBefore, charged.quotaAfter, new Date().toISOString(), tipId);
+        addNotification({ userId: author.id, type: 'tip', actorUserId: req.user.id, tipId });
+        logOperation({
+            userType: 'user',
+            userId: req.user.id,
+            username: req.user.username,
+            action: 'tip_author',
+            targetType: 'user',
+            targetId: String(author.id),
+            ip: getRequestIp(req),
+            details: { author: author.username, cookies, newapi_user_id: tipper.newapi_user_id, quota_before: charged.quotaBefore, quota_after: charged.quotaAfter }
+        });
+        res.json({ success: true, cookies });
+    } catch (err) {
+        if (tipId) {
+            db.prepare("UPDATE author_tips SET status = 'failed', error = ?, completed_at = ? WHERE id = ?")
+                .run(String(err.message || '打赏失败').slice(0, 500), new Date().toISOString(), tipId);
+        }
+        if (!err.statusCode) console.error('Tip author error:', err);
+        res.status(err.statusCode || 502).json({ error: err.message || '打赏失败' });
+    }
+});
+
+app.get('/api/user/tips', authenticateUser, (req, res) => {
+    try {
+        const items = db.prepare(
+            `SELECT t.id, t.cookies, t.completed_at, u.id AS tipper_id, u.username AS tipper_name, u.avatar_updated_at AS tipper_avatar_at
+             FROM author_tips t LEFT JOIN users u ON u.id = t.tipper_user_id
+             WHERE t.author_user_id = ? AND t.status = 'success'
+             ORDER BY t.id DESC LIMIT 50`
+        ).all(req.user.id);
+        res.set('Cache-Control', 'no-store');
+        res.json({ items });
+    } catch (err) {
+        console.error('Fetch tips error:', err);
+        res.status(500).json({ error: '获取打赏记录失败' });
     }
 });
 
@@ -2395,7 +2501,7 @@ app.post('/api/user/newapi/redeem', authenticateUser, async (req, res) => {
         });
 
         reservation = reserve();
-        const newApiResult = await addNewApiQuota(reservation.newapiUserId, reservation.quota);
+        const newApiResult = await adjustNewApiQuota(reservation.newapiUserId, reservation.quota, req.user);
         db.prepare(
             `UPDATE newapi_redemptions
              SET status = 'success', quota_before = ?, quota_after = ?, completed_at = ?
@@ -2766,381 +2872,6 @@ function buildCardDetailPreviewJson(rawData, fallback = {}) {
             uiTemplates: []
         });
     }
-}
-
-let aiReviewWorkerRunning = false;
-let aiReviewWorkerTimer = null;
-
-function buildAiReviewText(card) {
-    const raw = parseStoredCardData(card?.data) || {};
-    const content = raw.data && typeof raw.data === 'object' ? raw.data : raw;
-    const clip = (value, maxLength) => String(value || '').trim().slice(0, maxLength);
-    const greetings = [
-        content.first_mes,
-        ...(Array.isArray(content.alternate_greetings) ? content.alternate_greetings : [])
-    ].filter(value => typeof value === 'string' && value.trim());
-    const worldBookSources = [
-        content.character_book,
-        content.world_book,
-        content.lorebook,
-        content.extensions?.character_book,
-        content.extensions?.world_book,
-        content.extensions?.lorebook,
-        raw.character_book,
-        raw.world_book,
-        raw.lorebook
-    ];
-    const worldBook = worldBookSources
-        .map(source => Array.isArray(source) ? source : source?.entries)
-        .find(entries => Array.isArray(entries) && entries.length) || [];
-    const worldBookText = worldBook.slice(0, 3).map((entry, index) => {
-        const title = entry?.comment || entry?.name || entry?.title || `世界书 ${index + 1}`;
-        const keys = Array.isArray(entry?.keys) ? entry.keys.filter(Boolean).join('、') : '';
-        const body = entry?.content ?? entry?.text ?? entry?.value ?? '';
-        return [
-            `第 ${index + 1} 条：${clip(title, 300)}`,
-            keys ? `关键词：${clip(keys, 500)}` : '',
-            `内容：${clip(body, 3000)}`
-        ].filter(Boolean).join('\n');
-    }).join('\n\n');
-    return [
-        `角色卡名称：${clip(card?.name || content.name || content.char_name, 500)}`,
-        `简介：${clip(card?.creator_notes || content.creator_notes, 5000)}`,
-        `描述：${clip(card?.description || content.description || content.char_persona, 8000)}`,
-        `开场白：\n${clip(greetings.join('\n\n--- 其他开场白 ---\n'), 10000)}`,
-        `世界书（最多前 3 条）：\n${worldBookText || '无'}`
-    ].join('\n\n').slice(0, AI_REVIEW_MAX_TEXT_LENGTH);
-}
-
-async function buildAiReviewCoverImage(card) {
-    const avatarUrl = sanitizeAvatarUrl(card?.avatar_url, card?.id);
-    if (!avatarUrl) return '';
-    const asset = await resolveAvatarAsset(avatarUrl);
-    if (!asset?.buffer?.length) return '';
-    if (sharp) {
-        const cover = await sharp(asset.buffer)
-            .rotate()
-            .resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 78 })
-            .toBuffer();
-        return `data:image/jpeg;base64,${cover.toString('base64')}`;
-    }
-    if (!String(asset.contentType || '').toLowerCase().startsWith('image/')) {
-        throw new Error('封面不是可识别的图片格式');
-    }
-    return `data:${asset.contentType};base64,${Buffer.from(asset.buffer).toString('base64')}`;
-}
-
-function parseAiReviewResponse(payload, { rejectOnEmpty = false, emptyReason = '', requireDecision = false } = {}) {
-    const content = payload?.choices?.[0]?.message?.content;
-    const text = typeof content === 'string'
-        ? content
-        : (Array.isArray(content) ? content.map(item => item?.text || '').join('') : '');
-    if (!text.trim()) {
-        return rejectOnEmpty
-            ? { decision: 'REJECT', reason: emptyReason || '审核模型返回空内容，审核不通过' }
-            : { decision: 'ALLOW', reason: 'AI 返回空内容，按规则放行' };
-    }
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-    const jsonStart = cleaned.indexOf('{');
-    const jsonEnd = cleaned.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart) {
-        return requireDecision
-            ? { decision: 'REJECT', reason: '封面审核模型未返回有效审核结果，审核不通过' }
-            : { decision: 'ALLOW', reason: 'AI 返回格式无法确认，按规则放行' };
-    }
-    try {
-        const result = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
-        const decision = String(result.decision || '').trim().toUpperCase();
-        if (requireDecision && !['ALLOW', 'REJECT'].includes(decision)) {
-            return { decision: 'REJECT', reason: '封面审核模型未给出明确结论，审核不通过' };
-        }
-        if (decision !== 'REJECT') {
-            return { decision: 'ALLOW', reason: String(result.reason || '未明确判定违规').slice(0, 500) };
-        }
-        const certain = result.certain === true || String(result.certain || '').trim().toLowerCase() === 'true';
-        if (!certain) {
-            return { decision: 'ALLOW', reason: String(result.reason || 'AI 未明确确认违规，按规则放行').slice(0, 500) };
-        }
-        const category = String(result.category || '').trim().toLowerCase();
-        if (!['political', 'violence', 'extreme_violence', 'deceased_public_figure', 'public_figure_mockery', 'explicit_genitals'].includes(category)) {
-            return { decision: 'ALLOW', reason: '拒绝类别不在规则范围内，按规则放行' };
-        }
-        const fallbackReasons = {
-            political: '包含政治敏感内容',
-            violence: '包含暴力或犯罪内容',
-            extreme_violence: '包含重口或极端暴力内容',
-            deceased_public_figure: '包含以逝世公众人物取乐的内容',
-            public_figure_mockery: '包含以公众人物取乐的内容',
-            explicit_genitals: '封面露点或清晰出现性器官'
-        };
-        return {
-            decision: 'REJECT',
-            reason: String(result.reason || fallbackReasons[category]).slice(0, 500)
-        };
-    } catch {
-        return requireDecision
-            ? { decision: 'REJECT', reason: '封面审核模型返回内容无法解析，审核不通过' }
-            : { decision: 'ALLOW', reason: 'AI 返回内容无法解析，按规则放行' };
-    }
-}
-
-async function requestAiReviewCompletion(config, { model, systemPrompt, userContent, rejectOnEmpty = false, emptyReason = '', requireDecision = false }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), AI_REVIEW_TIMEOUT_MS);
-    try {
-        const response = await fetch(`${config.baseUrl}/chat/completions`, {
-            method: 'POST',
-            signal: controller.signal,
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.apiKey}`
-            },
-            body: JSON.stringify({
-                model,
-                temperature: 0,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userContent }
-                ]
-            })
-        });
-        const body = await response.text();
-        if (!response.ok) {
-            throw new Error(`AI 接口返回 ${response.status}: ${body.slice(0, 200)}`);
-        }
-        let payload;
-        try {
-            payload = JSON.parse(body);
-        } catch {
-            throw new Error('AI 接口返回了无效 JSON');
-        }
-        return parseAiReviewResponse(payload, { rejectOnEmpty, emptyReason, requireDecision });
-    } finally {
-        clearTimeout(timeout);
-    }
-}
-
-async function requestAiCardReview(card, config) {
-    const outputRule = '只输出 JSON：{"decision":"ALLOW或REJECT","certain":true或false,"category":"none、political、violence、extreme_violence、deceased_public_figure、public_figure_mockery或explicit_genitals","reason":"简短中文理由"}。只有完全确定时 certain 才能为 true。';
-    const textPromise = requestAiReviewCompletion(config, {
-        model: config.model,
-        systemPrompt: `${config.textPrompt}\n${outputRule}`,
-        userContent: buildAiReviewText(card)
-    });
-    let coverImage = '';
-    let coverBuildError = null;
-    try {
-        coverImage = await buildAiReviewCoverImage(card);
-    } catch (err) {
-        coverBuildError = err;
-    }
-    const coverPromise = coverImage
-        ? requestAiReviewCompletion(config, {
-            model: config.visionModel,
-            systemPrompt: `${config.coverPrompt}\n${outputRule}`,
-            userContent: [
-                { type: 'text', text: '请审核这张角色卡封面。' },
-                { type: 'image_url', image_url: { url: coverImage } }
-            ],
-            rejectOnEmpty: true,
-            emptyReason: '封面审核模型返回空内容，审核不通过',
-            requireDecision: true
-        })
-        : (coverBuildError
-            ? Promise.reject(coverBuildError)
-            : Promise.resolve({ decision: 'REJECT', reason: '角色卡没有可审核的封面，封面审核不通过' }));
-    const [textSettled, coverSettled] = await Promise.allSettled([textPromise, coverPromise]);
-    const textResult = textSettled.status === 'fulfilled'
-        ? textSettled.value
-        : {
-            decision: 'ALLOW',
-            reason: '内容审核接口失败，按规则自动放行',
-            error: textSettled.reason?.message || String(textSettled.reason || '未知错误')
-        };
-    const coverResult = coverSettled.status === 'fulfilled'
-        ? coverSettled.value
-        : {
-            decision: 'ALLOW',
-            reason: '封面审核接口失败，按规则自动放行',
-            error: coverSettled.reason?.message || String(coverSettled.reason || '未知错误')
-        };
-    const rejected = [textResult, coverResult].filter(result => result.decision === 'REJECT');
-    const errors = [
-        textResult.error ? `内容审核：${textResult.error}` : '',
-        coverResult.error ? `封面审核：${coverResult.error}` : ''
-    ].filter(Boolean);
-    return {
-        decision: rejected.length ? 'REJECT' : 'ALLOW',
-        reason: rejected.length
-            ? rejected.map(result => result.reason).join('；')
-            : `内容审核：${textResult.reason}；封面审核：${coverResult.reason}`,
-        error: errors.join('\n'),
-        text: textResult,
-        cover: coverResult
-    };
-}
-
-function completeAiReviewJob(job, { decision, reason, error = '', model = '', text: textResult = {}, cover: coverResult = {} }) {
-    const now = new Date().toISOString();
-    const shouldReject = decision === 'REJECT';
-    const nextStatus = shouldReject ? 'rejected' : 'unreviewed';
-    const queueStatus = shouldReject ? 'rejected' : 'allowed';
-    const update = db.prepare(
-        `UPDATE character_cards
-         SET review_status = ?, rejection_reason = ?, reviewed_at = ?
-         WHERE id = ? AND review_status = 'ai_pending'`
-    ).run(nextStatus, shouldReject ? `AI审核：${reason}` : null, shouldReject ? now : null, job.card_id);
-    if (update.changes && !shouldReject) announceCardToFollowers(job.card_id);
-    db.prepare(
-        `UPDATE ai_review_queue
-         SET status = ?, decision = ?, reason = ?, error = ?, model = ?,
-             text_decision = ?, text_reason = ?, text_error = ?, text_model = ?,
-             cover_decision = ?, cover_reason = ?, cover_error = ?, cover_model = ?,
-             completed_at = ?
-         WHERE id = ?`
-    ).run(
-        update.changes ? queueStatus : 'skipped',
-        decision,
-        reason,
-        String(error || '').slice(0, 1000),
-        model,
-        textResult.decision || null,
-        String(textResult.reason || '').slice(0, 500) || null,
-        String(textResult.error || '').slice(0, 1000) || null,
-        textResult.model || null,
-        coverResult.decision || null,
-        String(coverResult.reason || '').slice(0, 500) || null,
-        String(coverResult.error || '').slice(0, 1000) || null,
-        coverResult.model || null,
-        now,
-        job.id
-    );
-    if (!update.changes) return;
-    clearCardListCache('ai-review-complete');
-    logOperation({
-        userType: 'system',
-        action: shouldReject ? 'ai_review_reject' : 'ai_review_allow',
-        targetType: 'card',
-        targetId: job.card_id,
-        details: { reason, fail_open: Boolean(error), model }
-    });
-}
-
-function claimNextAiReviewJob() {
-    return db.transaction(() => {
-        const job = db.prepare("SELECT * FROM ai_review_queue WHERE status = 'pending' ORDER BY id LIMIT 1").get();
-        if (!job) return null;
-        db.prepare(
-            "UPDATE ai_review_queue SET status = 'processing', attempts = attempts + 1, started_at = ?, completed_at = NULL WHERE id = ?"
-        ).run(new Date().toISOString(), job.id);
-        return job;
-    })();
-}
-
-async function processAiReviewQueue() {
-    if (aiReviewWorkerRunning) return;
-    aiReviewWorkerRunning = true;
-    try {
-        while (true) {
-            const job = claimNextAiReviewJob();
-            if (!job) break;
-            const card = db.prepare(
-                'SELECT id, name, description, creator_notes, avatar_url, data, review_status FROM character_cards WHERE id = ?'
-            ).get(job.card_id);
-            if (!card || card.review_status !== 'ai_pending') {
-                completeAiReviewJob(job, { decision: 'ALLOW', reason: '卡片状态已变化，跳过审核' });
-                continue;
-            }
-            const config = getAiReviewConfig();
-            if (!isAiReviewConfigured(config)) {
-                completeAiReviewJob(job, {
-                    decision: 'ALLOW',
-                    reason: 'AI 审核未配置完整，按规则自动放行',
-                    error: 'AI review is not configured',
-                    model: `${config.model} / ${config.visionModel}`,
-                    text: {
-                        decision: 'ALLOW',
-                        reason: '内容审核未配置完整，按规则自动放行',
-                        error: 'AI review is not configured',
-                        model: config.model
-                    },
-                    cover: {
-                        decision: 'ALLOW',
-                        reason: '封面审核未配置完整，按规则自动放行',
-                        error: 'AI review is not configured',
-                        model: config.visionModel
-                    }
-                });
-                continue;
-            }
-            try {
-                const result = await requestAiCardReview(card, config);
-                result.text.model = config.model;
-                result.cover.model = config.visionModel;
-                completeAiReviewJob(job, {
-                    ...result,
-                    model: `${config.model} / ${config.visionModel}`
-                });
-            } catch (err) {
-                completeAiReviewJob(job, {
-                    decision: 'ALLOW',
-                    reason: 'AI 审核失败，按规则自动放行',
-                    error: err.message,
-                    model: `${config.model} / ${config.visionModel}`,
-                    text: {
-                        decision: 'ALLOW',
-                        reason: '内容审核发生内部错误，按规则自动放行',
-                        error: err.message,
-                        model: config.model
-                    },
-                    cover: {
-                        decision: 'ALLOW',
-                        reason: '封面审核发生内部错误，按规则自动放行',
-                        error: err.message,
-                        model: config.visionModel
-                    }
-                });
-            }
-        }
-    } finally {
-        aiReviewWorkerRunning = false;
-    }
-}
-
-function scheduleAiReviewQueue() {
-    if (aiReviewWorkerRunning || aiReviewWorkerTimer) return;
-    aiReviewWorkerTimer = setTimeout(() => {
-        aiReviewWorkerTimer = null;
-        processAiReviewQueue().catch(err => console.error('AI review queue error:', err));
-    }, 0);
-}
-
-function enqueueAiCardReview(cardId) {
-    db.prepare(
-        `INSERT INTO ai_review_queue (
-            card_id, card_name, uploader_user_id, uploader_username, status
-         )
-         SELECT c.id, c.name, c.uploader_user_id, u.username, 'pending'
-           FROM character_cards c
-           LEFT JOIN users u ON u.id = c.uploader_user_id
-          WHERE c.id = ?
-         ON CONFLICT(card_id) DO UPDATE SET
-            card_name = excluded.card_name,
-            uploader_user_id = excluded.uploader_user_id,
-            uploader_username = excluded.uploader_username,
-            status = 'pending', decision = NULL, reason = NULL, error = NULL,
-            model = NULL,
-            text_decision = NULL, text_reason = NULL, text_error = NULL, text_model = NULL,
-            cover_decision = NULL, cover_reason = NULL, cover_error = NULL, cover_model = NULL,
-            started_at = NULL, completed_at = NULL`
-    ).run(cardId);
-    scheduleAiReviewQueue();
-}
-
-function recoverAiReviewQueue() {
-    db.prepare("UPDATE ai_review_queue SET status = 'pending', started_at = NULL WHERE status = 'processing'").run();
-    scheduleAiReviewQueue();
 }
 
 function syncCardEditableFieldsIntoData(rawData, updates = {}) {
@@ -3719,7 +3450,7 @@ function getCardMetrics(cardId, { viewer = {} } = {}) {
 app.get('/api/authors/:id', optionalUserAuth, (req, res) => {
     try {
         const authorId = parseAuthorId(req.params.id);
-        const author = authorId && db.prepare('SELECT id, username, created_at, avatar_updated_at FROM users WHERE id = ?').get(authorId);
+        const author = authorId && db.prepare('SELECT id, username, bio, created_at, avatar_updated_at FROM users WHERE id = ?').get(authorId);
         if (!author) return res.status(404).json({ error: '作者不存在' });
         const cards = db.prepare(
             `SELECT COUNT(CASE WHEN review_status = 'approved' THEN 1 END) AS card_count,
@@ -3743,7 +3474,14 @@ app.get('/api/authors/:id', optionalUserAuth, (req, res) => {
             follower_count: getAuthorFollowerCount(authorId),
             following: Boolean(req.user && db.prepare(
                 'SELECT 1 FROM author_follows WHERE follower_user_id = ? AND author_user_id = ?'
-            ).get(req.user.id, authorId))
+            ).get(req.user.id, authorId)),
+            // The latest tips, shown as danmaku across the header.
+            recent_tips: db.prepare(
+                `SELECT t.cookies, u.username AS tipper_name
+                 FROM author_tips t LEFT JOIN users u ON u.id = t.tipper_user_id
+                 WHERE t.author_user_id = ? AND t.status = 'success'
+                 ORDER BY t.id DESC LIMIT 30`
+            ).all(authorId)
         });
     } catch (err) {
         console.error('Fetch author error:', err);
@@ -3762,6 +3500,11 @@ app.post('/api/authors/:id/follow', authenticateUser, (req, res) => {
         const followed = db.prepare(
             'INSERT OR IGNORE INTO author_follows (follower_user_id, author_user_id) VALUES (?, ?)'
         ).run(req.user.id, authorId).changes > 0;
+        if (followed) {
+            // Following again after unfollowing replaces the earlier notice instead of adding another.
+            db.prepare("DELETE FROM user_notifications WHERE user_id = ? AND type = 'follow' AND actor_user_id = ?").run(authorId, req.user.id);
+            addNotification({ userId: authorId, type: 'follow', actorUserId: req.user.id });
+        }
         const followerCount = getAuthorFollowerCount(authorId);
         // Every tenth follower is announced to the author, each milestone only once.
         const milestone = Math.floor(followerCount / 10) * 10;
@@ -3776,11 +3519,63 @@ app.post('/api/authors/:id/follow', authenticateUser, (req, res) => {
     }
 });
 
+app.get('/api/notifications', authenticateUser, (req, res) => {
+    try {
+        const readId = Number(db.prepare('SELECT notifications_read_id FROM users WHERE id = ?').get(req.user.id)?.notifications_read_id || 0);
+        const rows = db.prepare(
+            `SELECT n.id, n.type, n.card_id, n.template_id, n.created_at, tip.cookies AS tip_cookies,
+                    u.id AS actor_id, u.username AS actor_name, u.avatar_updated_at AS actor_avatar_at,
+                    cc.name AS card_name, cc.review_status AS card_status, t.title AS template_title, t.review_status AS template_status
+             FROM user_notifications n
+             LEFT JOIN users u ON u.id = n.actor_user_id
+             LEFT JOIN character_cards cc ON cc.id = n.card_id
+             LEFT JOIN ui_templates t ON t.id = n.template_id
+             LEFT JOIN author_tips tip ON tip.id = n.tip_id
+             WHERE n.user_id = ?
+             ORDER BY n.id DESC
+             LIMIT 50`
+        ).all(req.user.id);
+        // Items whose card, template or person is gone or hidden are left out, and so not counted as unread.
+        const items = rows
+            .filter(row => row.actor_id
+                && (!row.card_id || (row.card_name && isPublicCardStatus(row.card_status)))
+                && (!row.template_id || (row.template_title && row.template_status === 'approved')))
+            .map(row => ({
+                id: row.id,
+                type: row.type,
+                created_at: row.created_at,
+                unread: row.id > readId,
+                actor: { id: row.actor_id, username: row.actor_name, avatar_updated_at: row.actor_avatar_at },
+                card_id: row.card_id,
+                template_id: row.template_id,
+                target_name: row.card_name || row.template_title || '',
+                tip_cookies: row.tip_cookies
+            }));
+        res.set('Cache-Control', 'no-store');
+        res.json({ unread: items.filter(item => item.unread).length, items });
+    } catch (err) {
+        console.error('Fetch notifications error:', err);
+        res.status(500).json({ error: '获取通知失败' });
+    }
+});
+
+app.post('/api/notifications/read', authenticateUser, (req, res) => {
+    try {
+        const latest = Number(db.prepare('SELECT MAX(id) AS id FROM user_notifications WHERE user_id = ?').get(req.user.id)?.id || 0);
+        db.prepare('UPDATE users SET notifications_read_id = ? WHERE id = ? AND COALESCE(notifications_read_id, 0) < ?').run(latest, req.user.id, latest);
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('Read notifications error:', err);
+        res.status(500).json({ error: '标记已读失败' });
+    }
+});
+
 app.delete('/api/authors/:id/follow', authenticateUser, (req, res) => {
     try {
         const authorId = parseAuthorId(req.params.id);
         if (!authorId) return res.status(404).json({ error: '作者不存在' });
         db.prepare('DELETE FROM author_follows WHERE follower_user_id = ? AND author_user_id = ?').run(req.user.id, authorId);
+        db.prepare("DELETE FROM user_notifications WHERE user_id = ? AND type = 'follow' AND actor_user_id = ?").run(authorId, req.user.id);
         res.json({ following: false, follower_count: getAuthorFollowerCount(authorId) });
     } catch (err) {
         console.error('Unfollow author error:', err);
@@ -3793,9 +3588,9 @@ app.get('/api/cards/counts', optionalUserAuth, async (req, res) => {
         let reviewedWhere = "review_status = 'approved'";
         const params = [];
         if (req.admin || isModeratorUser(req.user)) {
-            reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending')";
+            reviewedWhere = "review_status != 'unreviewed'";
         } else if (req.user) {
-            reviewedWhere = "review_status NOT IN ('unreviewed', 'ai_pending') AND (review_status = 'approved' OR uploader_user_id = ?)";
+            reviewedWhere = "review_status != 'unreviewed' AND (review_status = 'approved' OR uploader_user_id = ?)";
             params.push(req.user.id);
         }
         const audience = parseCardAudience(req.query.audience);
@@ -3841,10 +3636,10 @@ app.get('/api/cards/tags', optionalUserAuth, async (req, res) => {
         if (zone === 'unreviewed') {
             whereParts.push("cc.review_status = 'unreviewed'");
         } else if (req.admin || isModeratorUser(req.user)) {
-            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+            whereParts.push("cc.review_status != 'unreviewed'");
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
-            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+            whereParts.push("cc.review_status != 'unreviewed'");
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
@@ -3901,8 +3696,9 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         markPerf(req, 'cards-start', { sortMode, zone, idsOnly, limit, offset, hasSearch: Boolean(searchQuery), hasTag: Boolean(tagFilter), mineOnly });
         const filterHash = crypto.createHash('sha1').update(JSON.stringify([searchQuery, tagFilter, mineOnly, audience, authorId, excludeR18])).digest('hex').slice(0, 12);
         const representation = `${idsOnly ? 'ids' : (limit ? `full-${limit}-${offset}` : 'full')}-${filterHash}`;
-        const cacheKey = getCardListCacheKey(req, sortMode, zone, representation);
-        const cached = getFreshCardListCache(cacheKey);
+        // Follows change without touching the cache revision, so the "following" list is never cached.
+        const cacheKey = sortMode === 'following' ? null : getCardListCacheKey(req, sortMode, zone, representation);
+        const cached = cacheKey && getFreshCardListCache(cacheKey);
         if (cached) {
             markPerf(req, 'cards-cache-hit', { bytes: cached.body.length, gzipBytes: cached.gzipBody?.length || 0 });
             return sendCardListCache(req, res, cached);
@@ -3928,10 +3724,10 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
             whereParts.push("cc.review_status = 'unreviewed'");
         } else if (req.admin || isModeratorUser(req.user)) {
             // Admins and front-end moderators can review every status.
-            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+            whereParts.push("cc.review_status != 'unreviewed'");
         } else if (req.user) {
             whereParts.push("(cc.review_status = 'approved' OR cc.uploader_user_id = ?)");
-            whereParts.push("cc.review_status NOT IN ('unreviewed', 'ai_pending')");
+            whereParts.push("cc.review_status != 'unreviewed'");
             params.push(req.user.id);
         } else {
             whereParts.push("cc.review_status = 'approved'");
@@ -3978,6 +3774,9 @@ app.get('/api/cards', optionalUserAuth, async (req, res) => {
         } else if (sortMode === 'updated') {
             whereParts.push('cc.updated_at IS NOT NULL AND julianday(cc.updated_at) > julianday(cc.created_at)');
             orderByClause = 'cc.updated_at DESC, cc.created_at DESC';
+        } else if (sortMode === 'following') {
+            whereParts.push(`cc.uploader_user_id ${FOLLOWED_UPLOADER_SQL}`);
+            params.push(req.user?.id || 0);
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, cc.downloads_count DESC, cc.created_at DESC`;
         } else if (periodModifier) {
@@ -4107,6 +3906,9 @@ app.get('/api/ui-templates', optionalUserAuth, async (req, res) => {
         } else if (sortMode === 'updated') {
             whereParts.push('updated_at IS NOT NULL AND julianday(updated_at) > julianday(created_at)');
             orderByClause = 'updated_at DESC, created_at DESC';
+        } else if (sortMode === 'following') {
+            whereParts.push(`uploader_user_id ${FOLLOWED_UPLOADER_SQL}`);
+            params.push(req.user?.id || 0);
         } else if (sortMode === 'hot') {
             orderByClause = `${heatExpr} DESC, downloads_count DESC, created_at DESC`;
         } else if (periodModifier) {
@@ -4445,20 +4247,15 @@ app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
         const isOwner = req.user && template.uploader_user_id === req.user.id;
         const isModerator = isModeratorUser(req.user);
         if (!req.admin && !isModerator && !isOwner) return res.status(403).json({ error: '无权删除此模板' });
-        const isOwnerDelete = Boolean(!req.admin && !isModerator && isOwner);
-        const shouldPenaltyCookies = Boolean(template.uploader_user_id && template.review_status === 'approved' && !isOwnerDelete && (req.admin || isModerator));
-        const cookiePenalty = shouldPenaltyCookies ? getContentCookieValueFromHeatRow(template) : 0;
 
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM ui_templates WHERE id = ?').run(req.params.id);
             if (template.uploader_user_id && template.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(template.uploader_user_id);
             }
-            if (cookiePenalty > 0) {
-                addNewApiCookiePenalty(template.uploader_user_id, cookiePenalty);
-            }
+            return retainDeletedContentHeat(template);
         });
-        deleteAndReclaim();
+        const retainedHeat = deleteAndReclaim();
         logOperation({
             userType: req.admin ? 'admin' : 'user',
             userId: req.admin?.id || req.user?.id,
@@ -4467,7 +4264,7 @@ app.delete('/api/ui-templates/:id', requireUserOrAdmin, (req, res) => {
             targetType: 'ui_template',
             targetId: req.params.id,
             ip: getRequestIp(req),
-            details: { title: template.title, cookie_penalty: cookiePenalty }
+            details: { title: template.title, retained_heat: retainedHeat }
         });
         res.json([{ id: req.params.id }]);
     } catch (err) {
@@ -5015,6 +4812,7 @@ function getCachedThumbnail(cardId, expectedCacheKey = '') {
 
 function clearCardImageCaches(cardId) {
     thumbnailCache.delete(cardId);
+    THUMBNAIL_VARIANT_WIDTHS.forEach(width => thumbnailCache.delete(`${cardId}@w${width}`));
     previewImageCache.delete(cardId);
     clearCardDownloadCache(cardId);
     clearCardCacheFiles(THUMBNAIL_CACHE_DIR, cardId, 'thumbnail');
@@ -5035,6 +4833,8 @@ const THUMBNAIL_MAX_CACHE = Math.max(100, parseInt(process.env.THUMBNAIL_MAX_CAC
 const thumbnailBuildPromises = new Map();
 const THUMBNAIL_CACHE_DIR = path.join(SERVER_DATA_DIR, 'thumbnail-cache');
 const THUMBNAIL_CACHE_VERSION = 'thumbnail-v3-w800-q84';
+// Smaller copies for the plaza (?w=480 for tiles, ?w=240 for the audience gate); 800 stays the default for the detail view.
+const THUMBNAIL_VARIANT_WIDTHS = new Set([240, 480]);
 const previewImageCache = new Map();
 const PREVIEW_IMAGE_MAX_CACHE = 300;
 const previewImageBuildPromises = new Map();
@@ -5127,10 +4927,11 @@ function warmPublicAssetCache() {
     }
 }
 
-function makeThumbnailCacheKey(cardId, row) {
+function makeThumbnailCacheKey(cardId, row, width = 800) {
     const signature = crypto
         .createHash('sha1')
         .update(THUMBNAIL_CACHE_VERSION)
+        .update(width === 800 ? '' : `\0w${width}`)
         .update('\0')
         .update(String(cardId || ''))
         .update('\0')
@@ -5240,11 +5041,14 @@ function writePreviewImageToDiskLater(cacheKey, body) {
 app.get('/api/cards/:id/thumbnail', async (req, res) => {
     try {
         const cardId = req.params.id;
-        markPerf(req, 'thumbnail-start', { cardId });
+        const requestedWidth = Number(req.query.w);
+        const width = THUMBNAIL_VARIANT_WIDTHS.has(requestedWidth) ? requestedWidth : 800;
+        const memoryKey = width === 800 ? cardId : `${cardId}@w${width}`;
+        markPerf(req, 'thumbnail-start', { cardId, width });
 
         // Hot path: edits/deletes clear this memory cache, so repeated list renders
         // should not touch SQLite or sharp at all.
-        const hotCached = getCachedThumbnail(cardId);
+        const hotCached = getCachedThumbnail(memoryKey);
         if (hotCached) {
             const cached = hotCached;
             markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
@@ -5257,10 +5061,10 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         markPerf(req, 'thumbnail-db-read', { found: Boolean(row) });
         if (!row) return res.status(404).end();
         const safeAvatarUrl = sanitizeAvatarUrl(row.avatar_url, cardId);
-        const cacheKey = makeThumbnailCacheKey(cardId, row);
+        const cacheKey = makeThumbnailCacheKey(cardId, row, width);
 
         // Check memory cache
-        const cached = getCachedThumbnail(cardId, cacheKey);
+        const cached = getCachedThumbnail(memoryKey, cacheKey);
         if (cached) {
             markPerf(req, 'thumbnail-memory-hit', { bytes: cached.body.length });
             res.set('Content-Type', cached.contentType);
@@ -5271,7 +5075,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         const diskCached = await readThumbnailFromDisk(cacheKey);
         if (diskCached) {
             markPerf(req, 'thumbnail-disk-hit', { bytes: diskCached.body.length });
-            cacheThumbnail(cardId, diskCached.body, diskCached.contentType, diskCached.cacheControl, cacheKey);
+            cacheThumbnail(memoryKey, diskCached.body, diskCached.contentType, diskCached.cacheControl, cacheKey);
             res.set('Content-Type', diskCached.contentType);
             res.set('Cache-Control', diskCached.cacheControl);
             return res.send(diskCached.body);
@@ -5280,7 +5084,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         if (thumbnailBuildPromises.has(cacheKey)) {
             markPerf(req, 'thumbnail-wait-existing-build');
             const generated = await thumbnailBuildPromises.get(cacheKey);
-            cacheThumbnail(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+            cacheThumbnail(memoryKey, generated.body, generated.contentType, generated.cacheControl, cacheKey);
             res.set('Content-Type', generated.contentType);
             res.set('Cache-Control', generated.cacheControl);
             return res.send(generated.body);
@@ -5289,7 +5093,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         const buildThumbnail = async () => {
             // No avatar data — generate placeholder thumbnail with first character
             if (!safeAvatarUrl) {
-                const svg = buildPlaceholderSvg(row.name, cardId, 800, 1067, 320);
+                const svg = buildPlaceholderSvg(row.name, cardId, width, Math.round(width * 4 / 3), Math.round(width * 0.4));
                 if (!sharp) {
                     return {
                         body: Buffer.from(svg),
@@ -5320,8 +5124,8 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
             markPerf(req, 'thumbnail-resolve-asset-done', { bytes: asset.buffer.length, contentType: asset.contentType });
 
             const thumbnail = await sharp(asset.buffer)
-                .resize(800, null)
-                .webp({ quality: 84 })
+                .resize(width, null)
+                .webp({ quality: width === 800 ? 84 : 80 })
                 .toBuffer();
 
             markPerf(req, 'thumbnail-sharp-generate', { bytes: thumbnail.length });
@@ -5337,7 +5141,7 @@ app.get('/api/cards/:id/thumbnail', async (req, res) => {
         thumbnailBuildPromises.set(cacheKey, buildPromise);
         const generated = await buildPromise;
         thumbnailBuildPromises.delete(cacheKey);
-        cacheThumbnail(cardId, generated.body, generated.contentType, generated.cacheControl, cacheKey);
+        cacheThumbnail(memoryKey, generated.body, generated.contentType, generated.cacheControl, cacheKey);
 
         res.set('Content-Type', generated.contentType);
         res.set('Cache-Control', generated.cacheControl);
@@ -5561,7 +5365,6 @@ app.get('/api/cards/:id', optionalUserAuth, (req, res) => {
 app.post('/api/cards', requireUserOrAdmin, (req, res) => {
     try {
         const { name, description, avatar_url, data, creator_notes } = req.body;
-        const publishMode = req.body.publish_mode === 'unreviewed' ? 'unreviewed' : 'reviewed';
         const audience = parseCardAudience(req.body.audience) || 'general';
         if (!name) {
             return res.status(400).json({ error: '卡片名称不能为空' });
@@ -5610,7 +5413,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         });
         const uploaderUserId = req.user ? req.user.id : null;
         const safeAvatarUrl = sanitizeAvatarUrl(avatar_url, id);
-        let reviewStatus = publishMode === 'unreviewed' ? 'ai_pending' : (req.admin ? 'approved' : 'pending');
+        const reviewStatus = req.admin ? 'approved' : 'pending';
         const reviewedBy = reviewStatus === 'approved' ? req.admin.id : null;
         const reviewedAt = reviewStatus === 'approved' ? now : null;
         const uploaderIp = getRequestIp(req);
@@ -5649,17 +5452,6 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
         }
         syncCardTags(id, creator_notes || '');
 
-        if (reviewStatus === 'ai_pending') {
-            try {
-                enqueueAiCardReview(id);
-            } catch (queueErr) {
-                console.error('AI review enqueue error:', queueErr);
-                db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(id);
-                reviewStatus = 'unreviewed';
-                announceCardToFollowers(id);
-            }
-        }
-
         const card = db.prepare('SELECT * FROM character_cards WHERE id = ?').get(id);
         attachCardDetailPreview(card);
         attachUiTemplateSummary(card, { preferStoredSummary: true });
@@ -5668,9 +5460,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
             userType: req.user ? 'user' : 'admin',
             userId: uploaderUserId || req.admin?.id,
             username: req.user?.username || req.admin?.username,
-            action: reviewStatus === 'ai_pending'
-                ? 'upload_ai_review_pending'
-                : (reviewStatus === 'unreviewed' ? 'upload_unreviewed' : (req.admin ? 'upload' : 'upload_pending')),
+            action: req.admin ? 'upload' : 'upload_pending',
             targetType: 'card',
             targetId: id,
             ip: uploaderIp,
@@ -5688,11 +5478,7 @@ app.post('/api/cards', requireUserOrAdmin, (req, res) => {
 
         res.json([
             sanitizeCharacterCardForClient(card, { viewer: { admin: req.admin, user: req.user } }),
-            {
-                pending_review: reviewStatus === 'pending',
-                ai_review_pending: reviewStatus === 'ai_pending',
-                unreviewed: reviewStatus === 'unreviewed'
-            }
+            { pending_review: reviewStatus === 'pending' }
         ]);
     } catch (err) {
         console.error('Create card error:', err);
@@ -5746,9 +5532,6 @@ app.delete('/api/cards/:id', (req, res) => {
         if (!isAdmin && !isModerator && (!userId || ownerUserId !== Number(userId))) {
             return res.status(403).json({ error: '无权删除此卡片' });
         }
-        const isOwnerDelete = Boolean(!isAdmin && ownerUserId && userId && ownerUserId === Number(userId));
-        const shouldPenaltyCookies = Boolean(card.uploader_user_id && card.review_status === 'approved' && !isOwnerDelete && (isAdmin || isModerator));
-        const cookiePenalty = shouldPenaltyCookies ? getContentCookieValueFromHeatRow(card) : 0;
 
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(id);
@@ -5756,11 +5539,9 @@ app.delete('/api/cards/:id', (req, res) => {
             if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
-            if (cookiePenalty > 0) {
-                addNewApiCookiePenalty(card.uploader_user_id, cookiePenalty);
-            }
+            return retainDeletedContentHeat(card);
         });
-        deleteAndReclaim();
+        const retainedHeat = deleteAndReclaim();
         clearCardImageCaches(id);
         clearCardListCache('card-delete');
 
@@ -5772,7 +5553,7 @@ app.delete('/api/cards/:id', (req, res) => {
             targetType: 'card',
             targetId: id,
             ip: getRequestIp(req),
-            details: { name: card?.name, cookie_penalty: cookiePenalty }
+            details: { name: card?.name, retained_heat: retainedHeat }
         });
         res.json([{ id }]);
     } catch (err) {
@@ -5808,16 +5589,12 @@ app.put('/api/cards/:id', (req, res) => {
         } else {
             return res.status(403).json({ error: '无权编辑此卡片' });
         }
-        if (userType === 'user' && card.review_status === 'ai_pending') {
-            return res.status(409).json({ error: 'AI 审核处理中，请稍后再编辑' });
-        }
 
         const { name, description, avatar_url, data, creator_notes, created_at, reupload_replace, audience } = req.body;
         const fields = [];
         const values = [];
         const hasDataUpdate = data !== undefined && data !== null;
         const hasReviewContentUpdate = hasDataUpdate || name !== undefined || description !== undefined;
-        let needsAiReview = false;
         const shouldRefreshLatestRank = reupload_replace === true && hasDataUpdate;
         const nextName = name !== undefined ? name : card.name;
         const nextDescription = description !== undefined ? description : card.description;
@@ -5861,9 +5638,7 @@ app.put('/api/cards/:id', (req, res) => {
             fields.push('created_at = ?'); values.push(created_at);
         }
         if (decoded.role === 'user' && hasReviewContentUpdate) {
-            const wasAiReviewed = Boolean(db.prepare('SELECT 1 FROM ai_review_queue WHERE card_id = ?').get(req.params.id));
-            needsAiReview = card.review_status === 'unreviewed' || wasAiReviewed;
-            fields.push(needsAiReview ? "review_status = 'ai_pending'" : "review_status = 'pending'");
+            fields.push("review_status = 'pending'");
             fields.push('reviewed_by_admin_id = NULL');
             fields.push('reviewed_at = NULL');
             fields.push('rejection_reason = NULL');
@@ -5909,15 +5684,6 @@ app.put('/api/cards/:id', (req, res) => {
         });
         updateCard();
         syncCardTags(req.params.id, nextCreatorNotes || '');
-        if (needsAiReview) {
-            try {
-                enqueueAiCardReview(req.params.id);
-            } catch (queueErr) {
-                console.error('AI review requeue error:', queueErr);
-                db.prepare("UPDATE character_cards SET review_status = 'unreviewed' WHERE id = ?").run(req.params.id);
-                announceCardToFollowers(req.params.id);
-            }
-        }
         clearCardImageCaches(req.params.id);
         warmCardDownloadCache(req.params.id);
         clearCardListCache('card-edit');
@@ -5961,7 +5727,7 @@ app.put('/api/cards/:id/feature', authenticateAdmin, (req, res) => {
              WHERE cc.id = ?`
         ).get(id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        if (['unreviewed', 'ai_pending'].includes(card.review_status)) {
+        if (card.review_status === 'unreviewed') {
             return res.status(400).json({ error: '无收益专区角色卡不能设为精选' });
         }
 
@@ -6387,30 +6153,9 @@ async function getVisibleComments(req, options) {
            AND comment_is_hidden(c.content, ?) = 0`,
         [targetId, blockWordsJson]
     );
-    const visibleTreeSql = `
-        WITH RECURSIVE visible_tree(id) AS (
-            SELECT c.id FROM ${commentTable} c
-            WHERE c.${targetColumn} = ? AND c.reply_to_id IS NULL
-              AND comment_is_hidden(c.content, ?) = 0
-            UNION ALL
-            SELECT child.id
-            FROM ${commentTable} child
-            JOIN visible_tree parent ON child.reply_to_id = parent.id
-            WHERE child.${targetColumn} = ?
-        )`;
     const totalQuery = sqliteReadPool.get(
         `SELECT COUNT(*) AS count FROM ${commentTable} WHERE ${targetColumn} = ?`,
         [targetId]
-    );
-    const hotCommentQuery = sqliteReadPool.get(
-        `${visibleTreeSql}
-         SELECT c.id
-         FROM visible_tree tree
-         JOIN ${commentTable} c ON c.id = tree.id
-         WHERE comment_is_hidden(c.content, ?) = 0 AND c.likes_count >= 5
-         ORDER BY c.likes_count DESC, c.created_at DESC
-         LIMIT 1`,
-        [targetId, blockWordsJson, targetId, blockWordsJson]
     );
     let likedQuery = Promise.resolve([]);
     if (userId && pageComments.length > 0) {
@@ -6421,8 +6166,8 @@ async function getVisibleComments(req, options) {
             [userId, ...pageComments.map(comment => comment.id)]
         );
     }
-    const [rootTotalRow, totalRow, hotComment, liked] = await Promise.all([
-        rootTotalQuery, totalQuery, hotCommentQuery, likedQuery
+    const [rootTotalRow, totalRow, liked] = await Promise.all([
+        rootTotalQuery, totalQuery, likedQuery
     ]);
     const rootTotal = rootTotalRow.count;
     const total = totalRow.count;
@@ -6430,8 +6175,7 @@ async function getVisibleComments(req, options) {
 
     const result = pageComments.map(comment => ({
         ...comment,
-        user_liked: likedCommentIds.has(comment.id),
-        is_hot: Boolean(hotComment && hotComment.id === comment.id)
+        user_liked: likedCommentIds.has(comment.id)
     }));
     return {
         comments: result,
@@ -6565,11 +6309,13 @@ app.post('/api/cards/:cardId/comments', authenticateUser, (req, res) => {
             }
         });
         insertComment();
+        if (replyCommentAuthor?.user_id) {
+            addNotification({ userId: replyCommentAuthor.user_id, type: 'reply', actorUserId: userId, cardId: req.params.cardId });
+        }
 
         const comment = db.prepare('SELECT * FROM character_comments WHERE id = ?').get(id);
         comment.author_name = user.username;
         comment.user_liked = false;
-        comment.is_hot = false;
         comment.card_uploader_id = db.prepare('SELECT uploader_user_id FROM character_cards WHERE id = ?').get(req.params.cardId)?.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
@@ -6731,11 +6477,13 @@ app.post('/api/ui-templates/:templateId/comments', authenticateUser, (req, res) 
             }
         });
         insertComment();
+        if (replyCommentAuthor?.user_id) {
+            addNotification({ userId: replyCommentAuthor.user_id, type: 'reply', actorUserId: userId, templateId: req.params.templateId });
+        }
 
         const comment = db.prepare('SELECT * FROM ui_template_comments WHERE id = ?').get(id);
         comment.author_name = user.username;
         comment.user_liked = false;
-        comment.is_hot = false;
         comment.template_uploader_id = template.uploader_user_id || null;
 
         const updatedUser = db.prepare('SELECT download_credits FROM users WHERE id = ?').get(userId);
@@ -7051,7 +6799,7 @@ app.get('/api/admin/cards', authenticateAdmin, (req, res) => {
         const params = [];
         const countParams = [];
         const whereParts = [];
-        if (status && ['pending', 'approved', 'rejected', 'unreviewed', 'ai_pending'].includes(status)) {
+        if (status && ['pending', 'approved', 'rejected', 'unreviewed'].includes(status)) {
             whereParts.push('cc.review_status = ?');
             params.push(status);
             countParams.push(status);
@@ -7094,6 +6842,9 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         if (!['approved', 'rejected'].includes(status)) {
             return res.status(400).json({ error: '审核状态无效' });
         }
+        if (status === 'rejected' && [...reason].length < 10) {
+            return res.status(400).json({ error: '拒绝原因至少写 10 个字，作者会看到它' });
+        }
 
         const card = db.prepare(
             `SELECT cc.id, cc.name, cc.uploader_user_id, cc.review_status,
@@ -7105,9 +6856,6 @@ app.put('/api/admin/cards/:id/review', requireModeration, (req, res) => {
         if (!card) return res.status(404).json({ error: '卡片不存在' });
         if (card.review_status === 'unreviewed') {
             return res.status(400).json({ error: '无收益专区角色卡无需审核' });
-        }
-        if (card.review_status === 'ai_pending') {
-            return res.status(400).json({ error: '角色卡正在等待 AI 审核' });
         }
 
         const now = new Date().toISOString();
@@ -7179,22 +6927,17 @@ app.delete('/api/admin/cards/:id', authenticateAdmin, (req, res) => {
              FROM character_cards WHERE id = ?`
         ).get(req.params.id);
         if (!card) return res.status(404).json({ error: '卡片不存在' });
-        const cookiePenalty = card.uploader_user_id && card.review_status === 'approved'
-            ? getContentCookieValueFromHeatRow(card)
-            : 0;
         const deleteAndReclaim = db.transaction(() => {
             db.prepare('DELETE FROM character_cards WHERE id = ?').run(req.params.id);
             if (card.uploader_user_id && card.review_status === 'approved') {
                 db.prepare('UPDATE users SET download_credits = MAX(0, download_credits - 3) WHERE id = ?').run(card.uploader_user_id);
             }
-            if (cookiePenalty > 0) {
-                addNewApiCookiePenalty(card.uploader_user_id, cookiePenalty);
-            }
+            return retainDeletedContentHeat(card);
         });
-        deleteAndReclaim();
+        const retainedHeat = deleteAndReclaim();
         clearCardImageCaches(req.params.id);
         clearCardListCache('admin-card-delete');
-        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name, cookie_penalty: cookiePenalty } });
+        logOperation({ userType: 'admin', userId: req.admin.id, username: req.admin.username, action: 'admin_delete_card', targetType: 'card', targetId: req.params.id, ip: getRequestIp(req), details: { name: card?.name, retained_heat: retainedHeat } });
         res.json({ success: true });
     } catch (err) {
         console.error('Admin delete card error:', err);
@@ -7336,6 +7079,36 @@ app.put('/api/admin/turnstile-settings', authenticateAdmin, (req, res) => {
     } catch (err) {
         console.error('Turnstile settings save error:', err);
         res.status(500).json({ error: '保存 Turnstile 设置失败' });
+    }
+});
+
+app.get('/api/admin/tips', authenticateAdmin, (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limit = 50;
+        const status = ['success', 'failed', 'pending'].includes(req.query.status) ? req.query.status : '';
+        const where = status ? 'WHERE t.status = ?' : '';
+        const params = status ? [status] : [];
+        const total = db.prepare(`SELECT COUNT(*) AS count FROM author_tips t ${where}`).get(...params).count;
+        const tips = db.prepare(
+            `SELECT t.id, t.cookies, t.quota, t.newapi_user_id, t.quota_before, t.quota_after, t.status, t.error, t.created_at, t.completed_at,
+                    t.tipper_user_id AS tipper_id, tipper.username AS tipper_name, t.author_user_id AS author_id, author.username AS author_name
+             FROM author_tips t
+             LEFT JOIN users tipper ON tipper.id = t.tipper_user_id
+             LEFT JOIN users author ON author.id = t.author_user_id
+             ${where}
+             ORDER BY t.id DESC LIMIT ? OFFSET ?`
+        ).all(...params, limit, (page - 1) * limit);
+        const summary = db.prepare(
+            `SELECT COUNT(CASE WHEN status = 'success' THEN 1 END) AS success_count,
+                    COALESCE(SUM(CASE WHEN status = 'success' THEN cookies END), 0) AS cookies_success,
+                    COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed_count
+             FROM author_tips`
+        ).get();
+        res.json({ tips, total, totalPages: Math.ceil(total / limit), summary });
+    } catch (err) {
+        console.error('Admin tips error:', err);
+        res.status(500).json({ error: '获取打赏记录失败' });
     }
 });
 
@@ -7510,167 +7283,6 @@ app.put('/api/admin/newapi-settings', authenticateAdmin, (req, res) => {
     }
 });
 
-function getAiReviewQueueStats() {
-    const stats = { pending: 0, processing: 0, allowed: 0, rejected: 0, skipped: 0 };
-    db.prepare('SELECT status, COUNT(*) AS count FROM ai_review_queue GROUP BY status').all().forEach(row => {
-        stats[row.status] = Number(row.count || 0);
-    });
-    return stats;
-}
-
-function buildAiReviewSettingsResponse() {
-    const dbApiKey = getSettingValue('ai_review_api_key');
-    const config = getAiReviewConfig();
-    return {
-        configured: isAiReviewConfigured(),
-        base_url: config.baseUrl,
-        model: config.model,
-        vision_model: config.visionModel,
-        text_prompt: config.textPrompt,
-        cover_prompt: config.coverPrompt,
-        api_key_configured: Boolean(config.apiKey),
-        api_key_masked: maskSecret(config.apiKey),
-        api_key_source: dbApiKey ? 'admin' : (AI_REVIEW_API_KEY ? 'environment' : 'none'),
-        queue: getAiReviewQueueStats()
-    };
-}
-
-app.get('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
-    try {
-        res.json(buildAiReviewSettingsResponse());
-    } catch (err) {
-        console.error('AI review settings load error:', err);
-        res.status(500).json({ error: '获取 AI 审核设置失败' });
-    }
-});
-
-app.put('/api/admin/ai-review-settings', authenticateAdmin, (req, res) => {
-    try {
-        const baseUrl = normalizeBaseUrl(req.body.base_url || AI_REVIEW_DEFAULT_BASE_URL);
-        const model = String(req.body.model || '').trim();
-        const visionModel = String(req.body.vision_model || '').trim();
-        const textPrompt = String(req.body.text_prompt || req.body.prompt || '').trim();
-        const coverPrompt = String(req.body.cover_prompt || '').trim();
-        const apiKey = typeof req.body.api_key === 'string' ? req.body.api_key.trim() : '';
-        const clearApiKey = req.body.clear_api_key === true || req.body.clear_api_key === 'true';
-
-        if (!/^https?:\/\//i.test(baseUrl)) {
-            return res.status(400).json({ error: 'AI API 地址必须以 http:// 或 https:// 开头' });
-        }
-        if (model.length > 200) return res.status(400).json({ error: '模型名称过长' });
-        if (visionModel.length > 200) return res.status(400).json({ error: '封面模型名称过长' });
-        if (!textPrompt) return res.status(400).json({ error: '内容审核提示词不能为空' });
-        if (!coverPrompt) return res.status(400).json({ error: '封面审核提示词不能为空' });
-        if (textPrompt.length > 10000) return res.status(400).json({ error: '内容审核提示词不能超过 10000 字' });
-        if (coverPrompt.length > 10000) return res.status(400).json({ error: '封面审核提示词不能超过 10000 字' });
-        if (apiKey && apiKey.length < 8) return res.status(400).json({ error: 'API 密钥看起来太短了' });
-
-        setSettingValue('ai_review_base_url', baseUrl);
-        setSettingValue('ai_review_model', model);
-        setSettingValue('ai_review_vision_model', visionModel);
-        setSettingValue('ai_review_prompt', textPrompt);
-        setSettingValue('ai_review_cover_prompt', coverPrompt);
-        if (clearApiKey) {
-            db.prepare('DELETE FROM settings WHERE key = ?').run('ai_review_api_key');
-        } else if (apiKey) {
-            setSettingValue('ai_review_api_key', apiKey);
-        }
-
-        logOperation({
-            userType: 'admin',
-            userId: req.admin.id,
-            username: req.admin.username,
-            action: 'admin_update_ai_review_settings',
-            targetType: 'settings',
-            targetId: 'ai_review',
-            ip: getRequestIp(req),
-            details: {
-                base_url: baseUrl,
-                model,
-                vision_model: visionModel,
-                text_prompt_updated: true,
-                cover_prompt_updated: true,
-                api_key_updated: Boolean(apiKey),
-                api_key_cleared: clearApiKey
-            }
-        });
-        scheduleAiReviewQueue();
-        res.json({ success: true, ...buildAiReviewSettingsResponse() });
-    } catch (err) {
-        console.error('AI review settings save error:', err);
-        res.status(500).json({ error: '保存 AI 审核设置失败' });
-    }
-});
-
-app.get('/api/admin/ai-review-models', authenticateAdmin, async (req, res) => {
-    const config = getAiReviewConfig();
-    if (!config.apiKey) return res.status(400).json({ error: '请先保存 API 密钥' });
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), AI_REVIEW_TIMEOUT_MS);
-    try {
-        const response = await fetch(`${config.baseUrl}/models`, {
-            signal: controller.signal,
-            headers: { 'Authorization': `Bearer ${config.apiKey}` }
-        });
-        const body = await response.text();
-        if (!response.ok) throw new Error(`模型接口返回 ${response.status}: ${body.slice(0, 200)}`);
-        const payload = JSON.parse(body);
-        const source = Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload?.models) ? payload.models : []);
-        const models = [...new Set(source.map(item => typeof item === 'string' ? item : item?.id).filter(Boolean))]
-            .sort((a, b) => a.localeCompare(b))
-            .slice(0, 500);
-        res.json({ models });
-    } catch (err) {
-        console.error('AI review models load error:', err);
-        res.status(502).json({ error: err.name === 'AbortError' ? '获取模型超时' : `获取模型失败：${err.message}` });
-    } finally {
-        clearTimeout(timeout);
-    }
-});
-
-app.get('/api/admin/ai-reviews', authenticateAdmin, (req, res) => {
-    try {
-        const page = Math.max(1, parseInt(req.query.page || '1', 10));
-        const limit = 30;
-        const offset = (page - 1) * limit;
-        const status = String(req.query.status || '').trim();
-        const search = String(req.query.search || '').trim().slice(0, 120);
-        const whereParts = [];
-        const params = [];
-        if (['pending', 'processing', 'allowed', 'rejected', 'skipped'].includes(status)) {
-            whereParts.push('q.status = ?');
-            params.push(status);
-        }
-        if (search) {
-            const value = `%${search}%`;
-            whereParts.push('(COALESCE(c.name, q.card_name) LIKE ? OR COALESCE(u.username, q.uploader_username) LIKE ? OR q.reason LIKE ? OR q.error LIKE ?)');
-            params.push(value, value, value, value);
-        }
-        const where = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        const baseFrom = `FROM ai_review_queue q
-            LEFT JOIN character_cards c ON c.id = q.card_id
-            LEFT JOIN users u ON u.id = COALESCE(c.uploader_user_id, q.uploader_user_id)`;
-        const total = Number(db.prepare(`SELECT COUNT(*) AS count ${baseFrom} ${where}`).get(...params).count || 0);
-        const reviews = db.prepare(
-            `SELECT q.id, q.card_id, q.status, q.decision, q.reason, q.error, q.model,
-                    q.text_decision, q.text_reason, q.text_error, q.text_model,
-                    q.cover_decision, q.cover_reason, q.cover_error, q.cover_model,
-                    q.attempts, q.created_at, q.started_at, q.completed_at,
-                    COALESCE(c.name, q.card_name) AS card_name,
-                    COALESCE(c.review_status, 'deleted') AS card_status,
-                    COALESCE(u.username, q.uploader_username) AS uploader_username
-             ${baseFrom}
-             ${where}
-             ORDER BY q.id DESC
-             LIMIT ? OFFSET ?`
-        ).all(...params, limit, offset);
-        res.json({ reviews, total, page, totalPages: Math.ceil(total / limit), summary: getAiReviewQueueStats() });
-    } catch (err) {
-        console.error('AI review history load error:', err);
-        res.status(500).json({ error: '获取 AI 审核记录失败' });
-    }
-});
-
 app.get('/api/admin/newapi-redemptions', authenticateAdmin, (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -7793,6 +7405,7 @@ app.get('/api/settings', (req, res) => {
         });
         const turnstile = getTurnstileConfig();
         result.turnstile_site_key = turnstile.siteKey && turnstile.secretKey ? turnstile.siteKey : '';
+        result.tips_enabled = isNewApiConfigured();
         markPerf(req, 'settings-filter', { publicKeys: Object.keys(result).length });
         res.json(result);
         markPerf(req, 'settings-response-json');
@@ -8319,8 +7932,7 @@ function getBackupStats(database = db) {
         ui_templates: count('ui_templates'),
         ui_template_comments: count('ui_template_comments'),
         settings: count('settings'),
-        redemptions: count('newapi_redemptions'),
-        ai_reviews: count('ai_review_queue')
+        redemptions: count('newapi_redemptions')
     };
 }
 
@@ -8567,7 +8179,6 @@ function logDatabaseHealth() {
         'card_downloads',
         'ui_template_downloads',
         'newapi_redemptions',
-        'ai_review_queue',
         'ip_bans'
     ];
     const counts = {};
@@ -8604,8 +8215,6 @@ function logDatabaseHealth() {
 initDatabase();
 sqliteReadPool = new SqliteReadPool(DB_PATH);
 console.log(`[DB] SQLite read pool started with ${sqliteReadPool.size} workers (${sqliteReadPool.fastSize} reserved for homepage)`);
-getAiReviewConfig();
-recoverAiReviewQueue();
 
 // Cleanup old login attempts every hour
 setInterval(cleanupLoginAttempts, 60 * 60 * 1000);

@@ -47,38 +47,6 @@
             background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.8) 100%);
         }
 
-        /* Toast Transitions */
-        .toast-stack {
-            position: relative;
-        }
-
-        .toast-item {
-            will-change: transform, opacity;
-            transform-origin: top center;
-        }
-
-        .list-enter-active,
-        .list-leave-active {
-            transition:
-                opacity 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-                transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .list-move {
-            transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .list-leave-active {
-            position: absolute;
-            z-index: 0;
-        }
-
-        .list-enter-from,
-        .list-leave-to {
-            opacity: 0;
-            transform: translateY(-10px) scale(0.98);
-        }
-
         /* Fade Animation */
         .fade-enter-active,
         .fade-leave-active {
@@ -98,7 +66,7 @@
         /* Mobile Bottom Sheet Smoothness */
         .scroll-smooth-mobile {
             -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
+            overscroll-behavior: none;
             touch-action: pan-y;
         }
 
@@ -274,30 +242,18 @@
 </head>
 <body class="forum-shell bg-gray-50 text-gray-900 font-sans selection:bg-primary-200 selection:text-primary-900">
     <div id="app" v-cloak class="min-h-screen flex flex-col">
-        <!-- Toast Notification Container -->
-        <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[999] flex flex-col gap-2 pointer-events-none items-center">
-            <transition-group name="list" tag="div" class="toast-stack flex flex-col items-center gap-2">
-                <div v-for="toast in toasts" :key="toast.id"
-                     class="pointer-events-auto flex items-center px-6 py-3 rounded-full shadow-lg border bg-white text-gray-800 min-w-[300px] transform backdrop-blur-sm bg-opacity-95 toast-item"
-                     :class="{
-                        'border-green-200 text-green-800 bg-green-50': toast.type === 'success',
-                        'border-red-200 text-red-800 bg-red-50': toast.type === 'error',
-                        'border-blue-200 text-blue-800 bg-blue-50': toast.type === 'info',
-                        'border-yellow-200 text-yellow-800 bg-yellow-50': toast.type === 'warning'
-                     }">
-                    <div class="mr-3">
-                        <svg v-if="toast.type === 'success'" class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        <svg v-if="toast.type === 'error'" class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        <svg v-if="toast.type === 'info'" class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <svg v-if="toast.type === 'warning'" class="w-6 h-6 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                    </div>
-                    <div class="flex-1 text-sm font-medium">{{ toast.message }}</div>
+        <!-- Toasts -->
+        <div class="toast-viewport">
+            <transition-group name="toast" tag="div" class="toast-stack">
+                <div v-for="toast in toasts" :key="toast.id" role="status" :class="'toast-item toast-item--' + toast.type">
+                    <span class="toast-icon" aria-hidden="true"><svg viewBox="0 0 24 24" v-html="toast.icon"></svg></span>
+                    <span class="toast-text" :title="toast.message">{{ toast.message }}</span>
                 </div>
             </transition-group>
         </div>
 
         <!-- Header -->
-        <header class="site-header bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-30 transition-all duration-300">
+        <header class="site-header relative z-30">
             <div class="site-nav max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                 <div class="brand-lockup flex items-center gap-3 select-none">
                     <div @click="handleLogoClick"
@@ -308,7 +264,7 @@
 
                     <div class="brand-copy" @click="handleLogoClick">
                         <strong>万相广场</strong>
-                        <small>WANXIANG COMMONS</small>
+                        <small>WANXIANG</small>
                     </div>
 
                     <span v-if="isAdmin" class="hidden sm:inline-block text-[10px] font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full border border-yellow-100 ml-2 cursor-pointer" @click="handleAdminLogout" title="点击退出管理员模式">ADMIN 模式</span>
@@ -317,11 +273,11 @@
                 <div class="header-actions flex items-center">
                     <button @click="showSearchModal = true" class="header-search" aria-label="搜索">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <span class="hidden sm:inline">{{ contentSection === 'uitemplates' ? '搜索 UI 模板' : '搜索角色卡、标签' }}</span>
+                        <span class="header-search__text hidden sm:inline">{{ contentSection === 'uitemplates' ? '搜索 UI 模板' : '搜索角色卡、标签' }}</span>
                     </button>
                     <button @click="handleUploadClick" class="header-upload">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                        {{ uploadButtonLabel }}
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span class="header-upload__label">{{ uploadButtonLabel }}</span>
                     </button>
                     <button v-if="canModerate" @click="contentSection = 'all'; currentTab = 'mine'" class="header-review">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
@@ -329,6 +285,42 @@
                     </button>
                     <!-- User Auth Button -->
                     <!-- User Menu (Logged In) -->
+                    <div v-if="isLoggedIn" class="notice-anchor">
+                        <button type="button" class="notice-bell" :class="{ 'has-unread': unreadNotifications > 0 }" @click.stop="toggleNotifications"
+                                :aria-label="unreadNotifications ? `消息通知，${unreadNotifications} 条未读` : '消息通知'" :aria-expanded="showNotifications">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.66V5a2 2 0 10-4 0v.34A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                            <span v-if="unreadNotifications" class="notice-badge">{{ unreadNotifications > 99 ? '99+' : unreadNotifications }}</span>
+                        </button>
+                        <transition name="notice-pop">
+                            <div v-if="showNotifications" class="notice-panel" role="dialog" aria-label="消息通知" @click.stop>
+                                <div class="notice-panel__head">
+                                    <strong>消息通知</strong>
+                                    <span>关注、回复与关注作者的新作</span>
+                                </div>
+                                <div v-if="!notifications.length" class="notice-empty">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 00-4-5.66V5a2 2 0 10-4 0v.34A6 6 0 006 11v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                                    {{ notificationsLoading ? '正在加载…' : '暂时没有新消息' }}
+                                </div>
+                                <ul v-else class="notice-list">
+                                    <li v-for="item in notifications" :key="item.id" class="notice-item" :class="{ 'is-unread': item.unread }">
+                                        <button type="button" class="notice-item__avatar" @click="openNotificationActor(item)" :title="item.actor.username">
+                                            <user-avatar :user-id="item.actor.id" :name="item.actor.username" :avatar-at="item.actor.avatar_updated_at"></user-avatar>
+                                        </button>
+                                        <div class="notice-item__body">
+                                            <p class="notice-item__text">
+                                                <button type="button" class="notice-item__actor" @click="openNotificationActor(item)">{{ item.actor.username }}</button>
+                                                {{ notificationAction(item) }}<b v-if="item.target_name">「{{ item.target_name }}」</b>{{ item.type === 'reply' ? '的评论' : '' }}<b v-if="item.type === 'tip'">{{ formatCookieAmount(item.tip_cookies) }}🍪</b>
+                                            </p>
+                                            <span class="notice-item__time">{{ formatNoticeTime(item.created_at) }}</span>
+                                        </div>
+                                        <button v-if="item.card_id || item.template_id || item.type === 'tip'" type="button" class="notice-item__go" title="去查看" aria-label="去查看" @click="openNotificationTarget(item)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                        </transition>
+                    </div>
                     <div v-if="isLoggedIn" class="relative flex items-center gap-1">
                         <div class="credit-chip hidden sm:inline-flex" title="剩余下载次数">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -383,7 +375,7 @@
             <div class="audience-gate-list">
                 <button v-for="(option, index) in gateAudiences" :key="option.value" type="button" class="audience-gate-item" :data-audience="option.value" :style="{ '--i': index }" @click="pickAudience(option.value)">
                     <span class="audience-gate-covers" aria-hidden="true">
-                        <img v-for="(card, cardIndex) in audiencePreviews[option.value]" :key="card.id" :src="card.thumbnail_url" alt="" decoding="async"
+                        <img v-for="(card, cardIndex) in audiencePreviews[option.value]" :key="card.id" :src="sizedThumbnailUrl(card.thumbnail_url, 240)" alt="" decoding="async"
                              :style="audienceCoverStyle(audiencePreviews[option.value].length, cardIndex)">
                         <svg v-if="!audiencePreviews[option.value].length" class="audience-gate-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path :d="option.icon"/></svg>
                     </span>
@@ -437,19 +429,26 @@
 
             <!-- Author page header -->
             <section v-if="currentTab === 'author' && viewingAuthor" class="author-hero" :style="authorHueStyle(viewingAuthor.id)">
+                <div v-if="danmakuItems.length" class="author-danmaku" aria-hidden="true">
+                    <span v-for="item in danmakuItems" :key="item.key" class="author-danmaku__item" :class="'is-lane-' + item.lane" @animationend="removeDanmaku(item.key)">
+                        <b>{{ item.name }}</b>打赏了<em>{{ item.amount }}🍪</em>
+                    </span>
+                </div>
+                <div v-if="authorBackdropCovers.length" class="author-hero-backdrop" aria-hidden="true">
+                    <transition name="backdrop-fade">
+                        <img :key="authorBackdropCovers[authorBackdropIndex]" :src="authorBackdropCovers[authorBackdropIndex]" alt="" decoding="async">
+                    </transition>
+                </div>
                 <button type="button" class="author-back" @click="leaveAuthor">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
-                    返回广场
+                    返回
                 </button>
                 <div class="author-hero-main">
                     <user-avatar class="author-avatar" :user-id="viewingAuthor.id" :name="viewingAuthor.username" :avatar-at="viewingAuthor.avatar_updated_at"></user-avatar>
                     <div class="author-hero-text">
                         <div v-if="viewingAuthor.username" class="author-name-row">
                             <h1 class="author-name">{{ viewingAuthor.username }}</h1>
-                            <span v-if="viewingAuthor.featured_count > 0" class="author-badge">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                精选作者
-                            </span>
+                            <featured-badge v-if="viewingAuthor.featured_count > 0" label="精选作者"></featured-badge>
                         </div>
                         <span v-else class="author-skeleton is-name"></span>
                         <p v-if="viewingAuthor.created_at" class="author-meta">
@@ -458,7 +457,30 @@
                         </p>
                         <span v-else class="author-skeleton is-line"></span>
                     </div>
-                    <follow-button v-if="viewingAuthor.username && !isSelf(viewingAuthor.id)" class="author-follow" :following="viewingAuthor.following" :busy="followBusy" @toggle="toggleFollow(viewingAuthor.id, viewingAuthor.following)"></follow-button>
+                    <div v-if="viewingAuthor.username && !isSelf(viewingAuthor.id)" class="author-actions">
+                        <button v-if="tipsEnabled" type="button" class="author-tip" @click="openTipModal">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
+                            打赏
+                        </button>
+                        <follow-button class="author-follow" :following="viewingAuthor.following" :busy="followBusy" @toggle="toggleFollow(viewingAuthor.id, viewingAuthor.following)"></follow-button>
+                    </div>
+                </div>
+                <div v-if="viewingAuthor.created_at && (viewingAuthor.bio || isSelf(viewingAuthor.id))" class="author-bio">
+                    <form v-if="authorBioEditing" class="author-bio-form" @submit.prevent="saveAuthorBio">
+                        <textarea v-model="authorBioDraft" maxlength="200" rows="3" placeholder="介绍一下自己和你的作品吧" aria-label="作者简介"></textarea>
+                        <div class="author-bio-actions">
+                            <span>{{ authorBioDraft.length }}/200</span>
+                            <button type="button" @click="authorBioEditing = false">取消</button>
+                            <button type="submit" class="is-primary" :disabled="authorBioSaving">{{ authorBioSaving ? '保存中…' : '保存' }}</button>
+                        </div>
+                    </form>
+                    <template v-else>
+                        <p v-if="viewingAuthor.bio" class="author-bio-text">{{ viewingAuthor.bio }}</p>
+                        <button v-if="isSelf(viewingAuthor.id)" type="button" class="author-bio-edit" @click="startAuthorBioEdit">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L19.5 8.5a2.5 2.5 0 00-3.536-3.536L4.5 16.5 4 20z"/></svg>
+                            {{ viewingAuthor.bio ? '编辑简介' : '添加简介' }}
+                        </button>
+                    </template>
                 </div>
             </section>
 
@@ -478,15 +500,6 @@
                         角色卡
                         <span class="text-[10px] opacity-70">{{ cardSectionCounts.reviewed }}</span>
                     </button>
-                    <button @click="contentSection = 'unreviewed'; currentTab === 'mine' && (currentTab = 'all')"
-                            class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
-                            :class="contentSection === 'unreviewed'
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
-                                : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86A2 2 0 0020.66 16L13.73 4a2 2 0 00-3.46 0L3.34 16A2 2 0 005.07 19z"/></svg>
-                        无收益专区
-                        <span class="text-[10px] opacity-70">{{ cardSectionCounts.unreviewed }}</span>
-                    </button>
                     <button @click="contentSection = 'uitemplates'"
                             class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
                             :class="contentSection === 'uitemplates'
@@ -495,6 +508,15 @@
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm4 3h8M8 12h8M8 16h5"/></svg>
                         UI模板
                         <span class="text-[10px] opacity-80">{{ uiTemplateCardsCount }}</span>
+                    </button>
+                    <button v-if="currentTab === 'author' && isSelf(viewingAuthor.id) && cardSectionCounts.unreviewed > 0" @click="contentSection = 'unreviewed'"
+                            class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex-shrink-0"
+                            :class="contentSection === 'unreviewed'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100'
+                                : 'bg-white text-blue-600 border-blue-100 hover:border-blue-300 hover:bg-blue-50'">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86A2 2 0 0020.66 16L13.73 4a2 2 0 00-3.46 0L3.34 16A2 2 0 005.07 19z"/></svg>
+                        无收益区
+                        <span class="text-[10px] opacity-70">{{ cardSectionCounts.unreviewed }}</span>
                     </button>
                 </div>
             </div>
@@ -512,9 +534,10 @@
                             <svg v-if="cardSort === 'latest'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             <svg v-else-if="cardSort === 'updated'" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
                             <svg v-else-if="cardSort === 'featured'" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            <svg v-else-if="cardSort === 'following'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                             <svg v-else-if="['daily', 'weekly', 'monthly'].includes(cardSort)" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             <svg v-else class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
-                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行', monthly: '月排行'}[cardSort] }}</span>
+                            <span class="text-gray-700">{{ {latest: '最新上传', updated: '最近更新', following: '我关注的', featured: '精选', hot: '最热门', daily: '日排行', weekly: '周排行', monthly: '月排行'}[cardSort] }}</span>
                             <svg class="w-3 h-3 text-gray-400 transition-transform" :class="showSortDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
                         <div v-if="showSortDropdown" class="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-30 min-w-[6rem]">
@@ -525,6 +548,10 @@
                             <button @click="cardSort = 'updated'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'updated' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M5.64 16.36A8 8 0 0018.36 18M18.36 7.64A8 8 0 005.64 6"/></svg>
                                 最近更新
+                            </button>
+                            <button v-if="isLoggedIn && currentTab === 'all'" @click="cardSort = 'following'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'following' ? 'text-gray-900' : 'text-gray-500'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                                我关注的
                             </button>
                             <button v-if="contentSection !== 'unreviewed'" @click="cardSort = 'featured'; showSortDropdown = false" class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold transition-all hover:bg-gray-50" :class="cardSort === 'featured' ? 'text-gray-900' : 'text-gray-500'">
                                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -575,10 +602,17 @@
                 </div>
             </div>
 
-            <!-- Loading State -->
-            <div v-if="loading" class="catalog-loader" role="status" aria-live="polite">
-                <div class="catalog-loader-symbol" aria-hidden="true"></div>
-                <p>{{ contentSection === 'uitemplates' ? '正在加载 UI 模板' : '正在加载角色卡' }}</p>
+            <!-- Loading State: grey tiles shaped like the real ones until the page arrives -->
+            <div v-if="loading" class="forum-card-list" role="status" aria-label="正在加载">
+                <div v-for="n in PAGE_SIZE" :key="n" class="skeleton-card" :class="{ 'is-template': contentSection === 'uitemplates' }" aria-hidden="true">
+                    <div class="skeleton-block is-cover"></div>
+                    <div class="skeleton-body">
+                        <span class="skeleton-block is-title"></span>
+                        <span class="skeleton-block"></span>
+                        <span class="skeleton-block is-short"></span>
+                        <span class="skeleton-block is-stats"></span>
+                    </div>
+                </div>
             </div>
 
             <!-- Empty State -->
@@ -600,10 +634,7 @@
                          @click="openTemplateDetail(template)"
                          class="content-card group relative flex bg-white rounded-3xl border border-blue-100 shadow-sm hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden cursor-pointer min-h-[12rem] sm:min-h-[13.5rem] h-auto">
                         <div v-if="template.is_featured" class="absolute top-2.5 left-2.5 z-10">
-                            <span class="card-badge is-featured inline-flex items-center text-white">
-                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                精选
-                            </span>
+                            <featured-badge></featured-badge>
                         </div>
                         <div v-if="template.review_status && template.review_status !== 'approved'" class="absolute top-2.5 z-10" :class="template.is_featured ? 'left-20' : 'left-2.5'">
                             <span class="card-badge inline-flex items-center text-white"
@@ -621,9 +652,8 @@
                                     <circle cx="66" cy="26" r="7" fill="currentColor" opacity="0.14"/>
                                 </svg>
                             </div>
-                            <div v-if="canViewTemplateDownloads(template)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                {{ template.downloads_count || 0 }}
+                            <div class="card-tags">
+                                <span class="ui-badge">{{ formatTemplateVariableBadge(template) }}</span>
                             </div>
                         </div>
 
@@ -632,11 +662,8 @@
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="flex-1 min-w-0">
                                         <h3 class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight break-words">{{ template.title }}</h3>
-                                        <div class="mt-1.5 flex items-center gap-2 text-[11px] text-gray-400 font-bold flex-wrap">
-                                            <span class="template-badge px-2 py-0.5">{{ formatTemplateVariableBadge(template) }}</span>
-                                        </div>
                                     </div>
-                                    <div v-if="canModerate || isTemplateOwnedByCurrentUser(template)" class="flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
+                                    <div v-if="canModerate || isTemplateOwnedByCurrentUser(template)" class="card-actions flex items-center justify-end gap-0.5 flex-shrink-0 -mt-1">
                                         <button v-if="canModerate && template.review_status === 'pending'"
                                                 @click.stop="reviewTemplate(template, 'approved')"
                                                 class="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all"
@@ -670,7 +697,7 @@
                                         </button>
                                     </div>
                                 </div>
-                                <p class="text-xs sm:text-sm text-gray-500 mt-1 leading-relaxed break-words whitespace-pre-line line-clamp-3">{{ template.description || '暂无简介' }}</p>
+                                <p class="text-xs sm:text-sm text-gray-500 leading-relaxed break-words whitespace-pre-line line-clamp-3">{{ template.description || '暂无简介' }}</p>
                                 <div v-if="template.review_status === 'rejected' && template.rejection_reason" class="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
                                     拒绝原因：{{ template.rejection_reason }}
                                 </div>
@@ -685,6 +712,10 @@
                                     <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
                                     {{ computeTemplateHeat(template) }}
                                 </span>
+                                <span v-if="canViewTemplateDownloads(template)" class="flex items-center gap-1 px-2 py-1 rounded-xl" title="下载次数">
+                                    <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    {{ template.downloads_count || 0 }}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -694,11 +725,8 @@
                          class="content-card group relative flex bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-lg hover:shadow-primary-500/5 transition-all duration-300 cursor-pointer hover:border-primary-100 min-h-[12rem] sm:min-h-[16rem] h-auto overflow-hidden">
                     
                     <!-- Featured Badge (Card Top-Left Corner) -->
-                    <div v-if="card.is_featured && !['unreviewed', 'ai_pending'].includes(card.review_status)" class="absolute top-2.5 left-2.5 z-10">
-                        <span class="card-badge is-featured inline-flex items-center text-white">
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                            精选
-                        </span>
+                    <div v-if="card.is_featured && card.review_status !== 'unreviewed'" class="absolute top-2.5 left-2.5 z-10">
+                        <featured-badge></featured-badge>
                     </div>
                     <div v-if="card.review_status && card.review_status !== 'approved'" class="absolute top-2.5 z-10" :class="card.is_featured ? 'left-20' : 'left-2.5'">
                         <span class="card-badge inline-flex items-center text-white"
@@ -709,15 +737,17 @@
 
                     <!-- Avatar (3:4 Ratio, Zero Padding) -->
                     <div class="card-cover relative flex-shrink-0">
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <div class="animate-spin rounded-full h-6 w-6 border-2 border-primary-300 border-t-transparent"></div>
-                        </div>
-                        <img v-lazy-card-image="card.thumbnail_url || defaultAvatar" :data-card-id="card.id" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
-                        
-                        <!-- Download Count - Admin or card owner in Mine tab -->
-                        <div v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-white/20 shadow-lg">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            {{ card.downloads_count || 0 }}
+                        <div v-if="!card._thumbnailReady" class="skeleton-block absolute inset-0" aria-hidden="true"></div>
+                        <img v-lazy-card-image="sizedThumbnailUrl(card.thumbnail_url, 480) || defaultAvatar" :data-card-id="card.id" decoding="async" :class="{ 'blur-lg': isR18Card(card) && !r18Confirmed }" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300" @load="markCardThumbnailLoaded(card, $event)" @error="markCardThumbnailError(card, $event)" style="opacity: 0">
+                        <div v-if="isUiTemplateCard(card) || (card.tags && card.tags.length > 0)" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="card-tags flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
+                            <span v-if="isUiTemplateCard(card)"
+                                  class="ui-badge leading-none flex-shrink-0 inline-flex items-center gap-1">
+                                {{ formatCardUiVariableBadge(card) }}
+                            </span>
+                            <span v-for="tag in card.tags" :key="tag"
+                                  class="leading-none flex-shrink-0">
+                                {{ tag }}
+                            </span>
                         </div>
                     </div>
 
@@ -729,7 +759,7 @@
                                     <h3 :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="font-bold text-lg sm:text-xl text-gray-900 group-hover:text-primary-600 transition-colors line-clamp-2 leading-tight break-words">{{ card.name }}</h3>
                                 </div>
                                 
-                                <div class="flex items-center gap-1 flex-shrink-0 ml-1">
+                                <div class="card-actions flex items-center gap-1 flex-shrink-0 ml-1">
 
                                     <!-- Feature Toggle Button (Admin Only) -->
                                     <button v-if="canModerate && card.review_status === 'pending'"
@@ -746,7 +776,7 @@
                                     </button>
 
                                     <!-- Feature Toggle Button (Admin Only) -->
-                                    <button v-if="isAdmin && !['unreviewed', 'ai_pending'].includes(card.review_status)"
+                                    <button v-if="isAdmin && card.review_status !== 'unreviewed'"
                                             @click.stop="toggleFeatured(card)"
                                             class="p-1.5 rounded-lg transition-all md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 flex-shrink-0"
                                             :class="card.is_featured ? 'text-amber-400 hover:text-amber-500 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-400 hover:bg-amber-50'"
@@ -772,28 +802,8 @@
                                 </div>
                             </div>
 
-                            <!-- Creator Note & Tags -->
-                            <div class="flex flex-col gap-1 mt-1.5">
-                                <!-- Tags -->
-                                <div v-if="isUiTemplateCard(card) || (card.tags && card.tags.length > 0)" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }" class="card-tags flex flex-nowrap sm:flex-wrap overflow-x-auto gap-1 no-scrollbar">
-                                    <span v-if="isUiTemplateCard(card)"
-                                          class="ui-badge leading-none flex-shrink-0 inline-flex items-center gap-1">
-                                        {{ formatCardUiVariableBadge(card) }}
-                                    </span>
-                                    <span v-for="tag in card.tags" :key="tag"
-                                          class="leading-none flex-shrink-0">
-                                        {{ tag }}
-                                    </span>
-                                </div>
-                                <!-- Text Note -->
-                            <div v-if="card.clean_notes" class="flex items-center gap-1.5" :class="{ 'blur-sm select-none': isR18Card(card) && !r18Confirmed }">
-                                    <svg class="w-3.5 h-3.5 text-primary-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
-                                    <p class="card-note text-xs line-clamp-1">{{ card.clean_notes }}</p>
-                                </div>
-                            </div>
-                            
                             <!-- Description -->
-                            <div class="text-xs sm:text-sm text-gray-500 mt-2 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="[card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]', { 'blur-sm select-none': isR18Card(card) && !r18Confirmed }]">{{ renderCardPreview(card.description || '暂无描述') }}</div>
+                            <div class="text-xs sm:text-sm text-gray-500 leading-relaxed break-words whitespace-pre-line overflow-hidden relative" :class="[card.creator_notes ? 'line-clamp-5 sm:line-clamp-6' : 'line-clamp-6 sm:line-clamp-[8]', { 'blur-sm select-none': isR18Card(card) && !r18Confirmed }]">{{ renderCardPreview(card.description || '暂无描述') }}</div>
                             <div v-if="card.review_status === 'rejected' && card.rejection_reason" class="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
                                 拒绝原因：{{ card.rejection_reason }}
                             </div>
@@ -809,6 +819,10 @@
                                 <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z"/></svg>
                                 <span>{{ computeHeat(card) }}</span>
                                 <svg v-if="canModerate" class="w-3 h-3 text-orange-300 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                            </span>
+                            <span v-if="isAdmin || (currentTab === 'mine' && isLoggedIn && currentUser && card.uploader_user_id === currentUser.id)" class="flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold text-gray-400" title="下载次数">
+                                <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                <span>{{ card.downloads_count || 0 }}</span>
                             </span>
                         </div>
                     </div>
@@ -1045,9 +1059,6 @@
                     </button>
                 </div>
                 <div class="p-5 sm:p-6 overflow-y-auto custom-scrollbar flex flex-col h-full">
-                    <div v-if="contentSection === 'unreviewed'" class="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-medium leading-relaxed text-blue-700">
-                        无收益专区上传后将进行敏感内容过滤，无发布收益
-                    </div>
                     <div v-if="contentSection === 'uitemplates'" class="flex flex-col h-full">
                         <div v-if="!uploadingTemplate"
                              @click="$refs.templateFileInput.click()"
@@ -1139,7 +1150,7 @@
                             </div>
                             <button @click="confirmUpload" :disabled="isUploading" class="btn-primary w-full bg-primary-600 hover:bg-primary-700 text-white py-3.5 rounded-2xl font-bold transition-all shadow-lg shadow-primary-100 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98]">
                                 <span v-if="isUploading" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                                {{ isUploading ? '正在发布...' : (contentSection === 'unreviewed' ? '确认发布到无收益专区' : '确认发布到广场') }}
+                                {{ isUploading ? '正在发布...' : '确认发布到广场' }}
                             </button>
                             <button @click="uploadingCard = null" :disabled="isUploading" class="w-full text-gray-400 text-sm font-bold py-2 hover:text-gray-600 transition-colors">重新选择文件</button>
                         </div>
@@ -1310,7 +1321,7 @@
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
                     {{ isImportingCard ? '导入中…' : '导入' }}
                 </button>
-                    <button v-if="isAdmin && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                    <button v-if="isAdmin && selectedCard.review_status !== 'unreviewed'" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 text-amber-500' : 'bg-gray-50 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                     <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                 </button>
                 <button v-if="(isLoggedIn && currentUser && selectedCard.uploader_user_id === currentUser.id) || canModerate" @click="deleteCard(selectedCard); closeSelectedCard()" class="w-14 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
@@ -1355,7 +1366,7 @@
                             <svg class="w-5 h-5 md:w-6 md:h-6 transform transition-transform group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 3v12m-4-4 4 4 4-4M5 14v5a2 2 0 002 2h10a2 2 0 002-2v-5"></path></svg>
                             {{ isImportingCard ? '导入中…' : '导入' }}
                         </button>
-                    <button v-if="isAdmin && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
+                    <button v-if="isAdmin && selectedCard.review_status !== 'unreviewed'" @click.stop="toggleFeatured(selectedCard)" class="w-14 rounded-2xl flex items-center justify-center transition-colors" :class="selectedCard.is_featured ? 'bg-amber-50 hover:bg-amber-100 text-amber-500' : 'bg-gray-50 hover:bg-gray-100 text-gray-400'" :title="selectedCard.is_featured ? '取消精选' : '设为精选'">
                             <svg class="w-6 h-6" viewBox="0 0 24 24" :fill="selectedCard.is_featured ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                         </button>
                         <button v-if="(isLoggedIn && currentUser && !currentUser.is_moderator && selectedCard.uploader_user_id === currentUser.id) || isAdmin" @click="startEditCard(selectedCard)" class="w-14 bg-blue-50 hover:bg-blue-100 text-blue-500 rounded-2xl flex items-center justify-center transition-colors" title="编辑">
@@ -1456,8 +1467,8 @@
                 </div>
                 <div class="flex gap-3">
                     <button @click="showR18Modal = false" class="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50 transition-colors">取消</button>
-                    <button @click="confirmR18()" :disabled="r18Countdown > 0" class="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                        {{ r18Countdown > 0 ? '确认查看 (' + r18Countdown + 's)' : '确认查看' }}
+                    <button @click="confirmR18()" class="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-colors">
+                        确认查看
                     </button>
                 </div>
             </div>
@@ -1524,8 +1535,8 @@
         <!-- Required Email Binding Modal -->
         <div v-if="showEmailBindModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110]">
             <div class="modal-panel bg-white p-6 w-full max-w-sm mx-4">
-                <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">绑定邮箱</h3>
-                <p class="text-xs text-gray-400 text-center mb-4">为了保护账号，绑定并验证邮箱后才能进入广场。</p>
+                <h3 class="text-lg font-bold text-gray-900 mb-1 text-center">{{ emailChangeMode ? '更换邮箱' : '绑定邮箱' }}</h3>
+                <p class="text-xs text-gray-400 text-center mb-4">{{ emailChangeMode ? '验证码会发到新邮箱，验证后旧邮箱不能再用于登录和找回密码。' : '为了保护账号，绑定并验证邮箱后才能进入广场。' }}</p>
                 <form @submit.prevent="handleBindEmail" class="space-y-3">
                     <input v-model="bindEmailForm.email" type="email" placeholder="QQ邮箱（例如 123456@qq.com）"
                         class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm">
@@ -1549,8 +1560,9 @@
                         <div v-if="turnstileState.error" class="text-red-500 text-xs">{{ turnstileState.error }}</div>
                         <button v-if="turnstileState.error" type="button" @click="resetTurnstile" class="text-xs text-primary-600 font-bold hover:underline">重新加载安全验证</button>
                     </div>
-                    <button type="submit" class="btn-primary w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors">完成绑定</button>
-                    <button type="button" @click="handleUserLogout(); showEmailBindModal = false" class="w-full py-2 text-xs text-gray-400 hover:text-gray-600">退出登录</button>
+                    <button type="submit" class="btn-primary w-full py-2.5 bg-primary-600 text-white rounded-xl text-sm font-bold hover:bg-primary-700 transition-colors">{{ emailChangeMode ? '确认更换' : '完成绑定' }}</button>
+                    <button v-if="emailChangeMode" type="button" @click="showEmailBindModal = false" class="w-full py-2 text-xs text-gray-400 hover:text-gray-600">取消</button>
+                    <button v-else type="button" @click="handleUserLogout(); showEmailBindModal = false" class="w-full py-2 text-xs text-gray-400 hover:text-gray-600">退出登录</button>
                 </form>
             </div>
         </div>
@@ -1590,6 +1602,13 @@
                     </div>
                     <div class="flex items-center justify-between gap-4 py-2">
                         <div class="min-w-0">
+                            <div class="text-base font-bold text-gray-900">登录邮箱</div>
+                            <p class="text-xs text-gray-500 mt-1 truncate">{{ currentUser.email || '未绑定邮箱' }}</p>
+                        </div>
+                        <button type="button" @click="openEmailChange" class="flex-shrink-0 px-3 py-1.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors">更换邮箱</button>
+                    </div>
+                    <div class="flex items-center justify-between gap-4 py-2">
+                        <div class="min-w-0">
                             <div class="text-base font-bold text-gray-900">评论邮件提醒</div>
                             <p class="text-xs text-gray-500 mt-1 leading-relaxed">别人评论你的角色卡、UI 模板，或回复你的评论时，发送提醒到绑定邮箱。</p>
                         </div>
@@ -1609,85 +1628,85 @@
             </div>
         </div>
 
-        <!-- STA1N API Reward Modal -->
+        <!-- Earnings: heat and tips in 🍪, withdrawn to the user's own STA1N account -->
         <div v-if="showNewApiModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @click.self="showNewApiModal = false">
-            <div class="modal-panel w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl animate-scale-in">
-                <div class="sticky top-0 z-10 flex items-start justify-between border-b border-gray-100 bg-white px-6 py-5">
-                    <div>
-                        <h3 class="text-xl font-black text-gray-900">提现收益</h3>
-                        <p class="mt-1 text-xs text-gray-400">仅统计已审核角色卡和 UI 模板的热度收益</p>
-                    </div>
+            <div class="modal-panel earn-panel w-full max-w-md max-h-[90vh] overflow-y-auto bg-white shadow-2xl animate-scale-in">
+                <div class="earn-head">
+                    <h3>提现收益</h3>
                     <button @click="showNewApiModal = false" class="modal-close" aria-label="关闭">
                         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
+                <div v-if="newApiRewardLoading" class="earn-loading">正在读取收益…</div>
+                <div v-else class="earn-body">
+                    <section class="earn-hero">
+                        <span class="earn-hero__label">可提现</span>
+                        <strong class="earn-hero__value"><span>{{ formatCookieAmount(newApiReward.available_cookies) }}</span>🍪</strong>
+                        <div class="earn-hero__split">
+                            <div><span>热度收益</span><b>{{ formatCookieAmount(newApiReward.available_heat_cookies) }}🍪</b></div>
+                            <div><span>可用打赏</span><b>{{ formatCookieAmount(newApiReward.available_tip_cookies) }}🍪</b></div>
+                        </div>
+                        <p class="earn-hero__foot">总热度 {{ newApiReward.total_heat || 0 }} · 累计已提现 {{ formatCookieAmount(newApiReward.redeemed_cookies) }}🍪</p>
+                    </section>
 
-                <div class="p-6">
-                    <div v-if="newApiRewardLoading" class="flex items-center justify-center gap-2 py-16 text-sm text-gray-400">
-                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></span>
-                        正在读取收益
+                    <section class="earn-field">
+                        <div class="earn-field__head"><label>收款账号</label><span>STA1N 账号邮箱需与论坛邮箱一致</span></div>
+                        <div v-if="newApiReward.newapi_user_id" class="earn-account">
+                            <span>STA1N ID {{ newApiReward.newapi_user_id }}</span>
+                            <button type="button" class="earn-link is-danger" :disabled="newApiUnbinding" @click="unbindNewApiUser">{{ newApiUnbinding ? '解绑中' : '解绑' }}</button>
+                        </div>
+                        <div v-else class="earn-row">
+                            <input v-model.trim="newApiForm.userId" inputmode="numeric" placeholder="输入 STA1N 用户 ID" class="earn-input" aria-label="STA1N 用户 ID">
+                            <button type="button" class="earn-button" :disabled="newApiSaving" @click="bindNewApiUser">{{ newApiSaving ? '绑定中' : '绑定' }}</button>
+                        </div>
+                    </section>
+
+                    <section class="earn-field">
+                        <div class="earn-field__head"><label>提现数量</label><button type="button" class="earn-link" @click="newApiForm.cookies = newApiReward.available_cookies">全部提现</button></div>
+                        <div class="earn-input-wrap">
+                            <input v-model.number="newApiForm.cookies" type="number" min="1" step="0.01" :max="newApiReward.available_cookies || 1" class="earn-input" aria-label="提现数量">
+                            <span>🍪</span>
+                        </div>
+                        <p v-if="!newApiReward.newapi_configured" class="earn-note is-warn">管理员尚未配置 STA1N API，暂时不能提现。</p>
+                        <button type="button" class="earn-button is-block" :disabled="newApiRedeeming || !newApiReward.newapi_configured || !newApiReward.newapi_user_id" @click="redeemNewApiQuota">{{ newApiRedeeming ? '正在提现' : '确认提现' }}</button>
+                    </section>
+
+                    <section class="earn-field">
+                        <div class="earn-field__head"><label>收到的打赏</label><span v-if="newApiReward.tip_cookies > 0">累计 {{ formatCookieAmount(newApiReward.tip_cookies) }}🍪</span></div>
+                        <ul v-if="receivedTips.length" class="earn-tips">
+                            <li v-for="tip in receivedTips" :key="tip.id">
+                                <user-avatar class="earn-tips__avatar" :user-id="tip.tipper_id" :name="tip.tipper_name || '?'" :avatar-at="tip.tipper_avatar_at"></user-avatar>
+                                <div><b>{{ tip.tipper_name || '已注销用户' }}</b><time>{{ formatNoticeTime(tip.completed_at) }}</time></div>
+                                <strong>+{{ formatCookieAmount(tip.cookies) }}🍪</strong>
+                            </li>
+                        </ul>
+                        <p v-else class="earn-note">还没有收到打赏。别人在你的作者主页打赏后，🍪 会直接计入上面的可提现。</p>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tip an author in 🍪, taken from the tipper's own STA1N balance -->
+        <div v-if="showTipModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @click.self="showTipModal = false">
+            <div class="modal-panel earn-panel w-full max-w-sm bg-white shadow-2xl animate-scale-in">
+                <div class="earn-head">
+                    <h3>打赏 {{ viewingAuthor?.username }}</h3>
+                    <button @click="showTipModal = false" class="modal-close" aria-label="关闭">
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="earn-body">
+                    <div class="tip-presets">
+                        <button v-for="value in TIP_PRESETS" :key="value" type="button" :class="{ 'is-active': tipCookies === String(value) }" @click="tipCookies = String(value)">{{ value }}<small>🍪</small></button>
                     </div>
-
-                    <template v-else>
-                        <section class="rounded-2xl border border-amber-100 bg-amber-50 px-5 py-5">
-                            <p class="text-center text-xs font-bold text-amber-600">当前可提现</p>
-                            <div class="mt-2 flex items-baseline justify-center gap-2">
-                                <span class="font-mono text-4xl font-black tracking-tight text-amber-700">{{ formatCookieAmount(newApiReward.available_cookies) }}</span>
-                                <span class="text-sm font-bold text-amber-600">🍪</span>
-                            </div>
-                            <div class="mt-5 grid grid-cols-3 divide-x divide-amber-200/70 border-t border-amber-200/70 pt-4 text-center">
-                                <div>
-                                    <p class="text-[11px] text-amber-600/70">角色卡热度</p>
-                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ newApiReward.card_heat || 0 }}</p>
-                                </div>
-                                <div>
-                                    <p class="text-[11px] text-amber-600/70">UI 模板热度</p>
-                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ newApiReward.template_heat || 0 }}</p>
-                                </div>
-                                <div>
-                                    <p class="text-[11px] text-amber-600/70">累计已提现</p>
-                                    <p class="mt-1 font-mono text-sm font-black text-gray-800">{{ formatCookieAmount(newApiReward.redeemed_cookies) }} 🍪</p>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section class="mt-6">
-                            <div class="mb-2 flex items-center justify-between">
-                                <label class="text-sm font-bold text-gray-800">收款账号</label>
-                                <span class="text-xs text-gray-400">STA1N API 用户 ID</span>
-                            </div>
-                            <div v-if="newApiReward.newapi_user_id" class="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                                <span class="min-w-0 flex-1 break-all font-mono text-sm font-bold text-gray-700">{{ newApiReward.newapi_user_id }}</span>
-                                <button @click="unbindNewApiUser" :disabled="newApiUnbinding" class="flex-shrink-0 text-xs font-bold text-gray-400 transition-colors hover:text-red-500 disabled:opacity-60">
-                                    {{ newApiUnbinding ? '解绑中' : '解绑' }}
-                                </button>
-                            </div>
-                            <div v-else class="flex gap-2">
-                                <input v-model.trim="newApiForm.userId" inputmode="numeric" placeholder="输入用户 ID"
-                                    class="min-w-0 flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                                <button @click="bindNewApiUser" :disabled="newApiSaving" class="btn-primary rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-60">
-                                    {{ newApiSaving ? '绑定中' : '绑定' }}
-                                </button>
-                            </div>
-                        </section>
-
-                        <section class="mt-6 border-t border-gray-100 pt-6">
-                            <div class="mb-2 flex items-center justify-between">
-                                <label class="text-sm font-bold text-gray-800">提现数量</label>
-                                <button type="button" @click="newApiForm.cookies = newApiReward.available_cookies" class="text-xs font-bold text-blue-600 hover:text-blue-700">全部提现</button>
-                            </div>
-                            <div class="flex items-center rounded-xl border border-gray-200 bg-white px-4 transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
-                                <input v-model.number="newApiForm.cookies" type="number" min="1" step="0.01" :max="newApiReward.available_cookies || 1"
-                                    class="min-w-0 flex-1 bg-transparent py-3.5 font-mono text-lg font-bold text-gray-900 outline-none">
-                                <span class="text-sm font-bold text-gray-400">🍪</span>
-                            </div>
-                            <p v-if="!newApiReward.newapi_configured" class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">管理员尚未配置 STA1N API，暂时不能提现。</p>
-                            <button @click="redeemNewApiQuota" :disabled="newApiRedeeming || !newApiReward.newapi_configured || !newApiReward.newapi_user_id"
-                                class="btn-primary mt-4 w-full rounded-xl bg-blue-600 py-3.5 text-sm font-bold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500">
-                                {{ newApiRedeeming ? '正在提现' : '确认提现' }}
-                            </button>
-                        </section>
-                    </template>
+                    <div class="earn-input-wrap">
+                        <input v-model.trim="tipCookies" inputmode="decimal" placeholder="自定义数量" class="earn-input" aria-label="打赏数量">
+                        <span>🍪</span>
+                    </div>
+                    <p v-if="tipCookies && !tipCookiesValid" class="earn-note is-warn">数量需在 10～10000🍪 之间，最多两位小数</p>
+                    <p v-if="currentUser?.newapi_user_id" class="earn-note">从绑定的 STA1N 账号（ID {{ currentUser.newapi_user_id }}）扣除，作者收到后会收到通知并可提现。</p>
+                    <p v-else class="earn-note is-warn">打赏会从你的 STA1N 账号扣除🍪，请先<button type="button" class="earn-link" @click="showTipModal = false; openNewApiModal()">绑定 STA1N 账号</button></p>
+                    <button type="button" class="earn-button is-block" :disabled="!tipCookiesValid || tipSubmitting || !currentUser?.newapi_user_id" @click="submitTip">{{ tipSubmitting ? '正在打赏…' : '打赏 ' + (tipCookiesValid ? tipCookies : '') + '🍪' }}</button>
                 </div>
             </div>
         </div>
@@ -1718,12 +1737,57 @@
     <script>
         const { createApp, ref, computed, onMounted, onUnmounted, reactive, watch, nextTick, provide, inject } = Vue;
 
+        // Toast icons name the action the message reports, so call sites only pass a status (as in RP-Hub).
+        const TOAST_ICONS = {
+            success: '<path d="M20 6 9 17l-5-5"/>',
+            info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
+            warning: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+            error: '<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',
+            wait: '<path d="M5 22h14M5 2h14M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/>',
+            copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+            trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6"/>',
+            download: '<path d="M12 3v12m-5-5 5 5 5-5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+            upload: '<path d="M12 15V3M7 8l5-5 5 5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
+            starOff: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>',
+            star: '<path fill="currentColor" d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>',
+            gift: '<path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>',
+            follow: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6"/>',
+            unfollow: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 11h-6"/>',
+            mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
+            save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>'
+        };
+        // First match wins, so the more specific wording comes first.
+        const TOAST_ICON_RULES = [
+            [/正在|稍后|等待/, 'wait'],
+            [/复制/, 'copy'],
+            [/删除|清空|清除/, 'trash'],
+            [/打赏/, 'gift'],
+            [/取消关注/, 'unfollow'],
+            [/关注/, 'follow'],
+            [/取消精选/, 'starOff'],
+            [/精选/, 'star'],
+            [/下载|提现/, 'download'],
+            [/上传|发布/, 'upload'],
+            [/邮箱|邮件|验证码/, 'mail'],
+            [/保存|更换|修改/, 'save']
+        ];
+        const getToastIcon = (message, type = 'info') => {
+            // A failure or caution should read as such, whatever the action was.
+            if (type === 'error') return TOAST_ICONS.error;
+            const icon = TOAST_ICON_RULES.find(([pattern]) => pattern.test(String(message)))?.[1];
+            if (type === 'warning') return TOAST_ICONS[icon === 'wait' ? 'wait' : 'warning'];
+            return TOAST_ICONS[icon] || TOAST_ICONS[type] || TOAST_ICONS.info;
+        };
+
         // API Configuration (local backend)
         const API_BASE = '';  // Same origin
         const THUMBNAIL_ASSET_VERSION = 'thumb800-v3';
         const PREVIEW_IMAGE_ASSET_VERSION = 'preview800-v2';
 
         const getCardAssetVersion = (card) => card?.updated_at || card?.created_at || '';
+
+        // Plaza covers use smaller copies: 480px on tiles, 240px on the audience gate; the detail keeps the 800px default.
+        const sizedThumbnailUrl = (url, width) => (url && url.includes('/thumbnail?') ? `${url}&w=${width}` : url);
 
         const buildCardAssetUrl = (cardId, type, extraVersion = '') => {
             const version = type === 'thumbnail' ? THUMBNAIL_ASSET_VERSION : PREVIEW_IMAGE_ASSET_VERSION;
@@ -1835,6 +1899,12 @@
                 </button>`
         };
 
+        // The featured mark, the same on tiles and in the card detail.
+        const FeaturedBadge = {
+            props: { label: { type: String, default: '精选' } },
+            template: `<span class="featured-badge"><i class="featured-badge__gem" aria-hidden="true"></i><span class="featured-badge__text">{{ label }}</span></span>`
+        };
+
         // State and actions come from the app through provide('commentSection').
         const CommentSection = {
             components: { CommentComposer },
@@ -1858,14 +1928,13 @@
                     </div>
                     <div v-else-if="comments.length === 0" class="text-center py-8 text-gray-400 text-sm">暂无评论，快来抢沙发吧~</div>
                     <div v-else class="space-y-4">
-                        <div v-for="root in commentTree" :key="root.id" class="comment-item" :class="{ 'ring-1 ring-orange-200': root.is_hot }">
+                        <div v-for="root in commentTree" :key="root.id" class="comment-item">
                             <div class="flex justify-between items-start mb-1">
                                 <div class="flex items-center gap-2 flex-wrap">
                                     <button v-if="root.user_id" type="button" class="comment-author is-link" @click="openAuthor(root.user_id)">{{ root.author_name || root.nickname }}</button>
                                     <span v-else class="comment-author">{{ root.author_name || root.nickname }}</span>
                                     <span v-if="root.user_id && root.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
                                     <span class="text-[10px] text-gray-400">{{ formatDate(root.created_at) }}</span>
-                                    <span v-if="root.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                 </div>
                                 <button v-if="canDeleteComment(root)" @click="deleteComment(root.id)" class="comment-delete text-xs">删除</button>
                             </div>
@@ -1891,7 +1960,6 @@
                                                 <span v-if="reply.user_id && reply.user_id === authorId" class="text-[10px] font-bold text-white bg-primary-500 px-1.5 py-0.5 rounded-md">作者</span>
                                                 <span v-if="reply.reply_to_name" class="text-[10px] text-gray-400">回复 <span class="font-bold text-primary-500">{{ reply.reply_to_name }}</span></span>
                                                 <span class="text-[10px] text-gray-400">{{ formatDate(reply.created_at) }}</span>
-                                                <span v-if="reply.is_hot" class="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md border border-orange-100">🔥热门</span>
                                             </div>
                                             <button v-if="canDeleteComment(reply)" @click="deleteComment(reply.id)" class="comment-delete text-xs">删除</button>
                                         </div>
@@ -1926,7 +1994,7 @@
         // Card detail body (title, notes, description, settings, greeting, UI templates, comments),
         // shared by the mobile sheet and the desktop panel. State comes from provide('cardDetail').
         const CardDetailBody = {
-            components: { CommentSection, UserAvatar, FollowButton },
+            components: { CommentSection, UserAvatar, FollowButton, FeaturedBadge },
             setup() {
                 return inject('cardDetail');
             },
@@ -1947,12 +2015,9 @@
                             </button>
                             <follow-button v-if="!isSelf(selectedCard.uploader_user_id)" :following="Boolean(selectedCard.uploader_followed)" :busy="followBusy" @toggle="toggleFollow(selectedCard.uploader_user_id, selectedCard.uploader_followed)"></follow-button>
                         </div>
-                        <div v-if="cardAudienceLabel || (selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)) || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
+                        <div v-if="cardAudienceLabel || (selectedCard.is_featured && selectedCard.review_status !== 'unreviewed') || (selectedCard.tags && selectedCard.tags.length)" class="detail-meta">
                             <span v-if="cardAudienceLabel" class="detail-tag is-audience">{{ cardAudienceLabel }}</span>
-                            <span v-if="selectedCard.is_featured && !['unreviewed', 'ai_pending'].includes(selectedCard.review_status)" class="detail-featured">
-                                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                                精选角色卡
-                            </span>
+                            <featured-badge v-if="selectedCard.is_featured && selectedCard.review_status !== 'unreviewed'"></featured-badge>
                             <span v-for="tag in selectedCard.tags" :key="tag" class="detail-tag">{{ tag }}</span>
                         </div>
                         <div v-if="previewAsset.error" class="mt-4 text-sm rounded-2xl border px-4 py-3 bg-amber-50 text-amber-700 border-amber-200">
@@ -2031,7 +2096,7 @@
         };
 
         const app = createApp({
-            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody, AudiencePicker, UserAvatar, FollowButton },
+            components: { CommentComposer, CardTransferProgress, CommentSection, CardDetailBody, AudiencePicker, UserAvatar, FollowButton, FeaturedBadge },
             setup() {
                 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2U1ZTdlYiIvPjwvc3ZnPg==';
                 
@@ -2156,8 +2221,6 @@
                     if (!card || !card.tags || !Array.isArray(card.tags)) return false;
                     return card.tags.some(tag => /^r18$/i.test(tag));
                 };
-                const r18Countdown = ref(0);
-                let r18Timer = null;
                 const showR18Disclaimer = () => {
                     if (!isLoggedIn.value) {
                         showUserAuthModal.value = true;
@@ -2165,23 +2228,13 @@
                         return;
                     }
                     showR18Modal.value = true;
-                    r18Countdown.value = 3;
-                    if (r18Timer) clearInterval(r18Timer);
-                    r18Timer = setInterval(() => {
-                        r18Countdown.value--;
-                        if (r18Countdown.value <= 0) {
-                            clearInterval(r18Timer);
-                            r18Timer = null;
-                        }
-                    }, 1000);
                 };
                 const confirmR18 = () => {
-                    if (r18Countdown.value > 0) return;
                     r18ConfirmedRaw.value = true;
                     safeStorage.setItem('r18_confirmed', 'true');
                     showR18Modal.value = false;
-                    if (r18Timer) { clearInterval(r18Timer); r18Timer = null; }
                 };
+                let pendingR18Card = null;
                 const windowWidth = ref(window.innerWidth);
                 let previewOpenRequestId = 0;
                 let mobileScrollTicking = false;
@@ -2210,6 +2263,7 @@
 
                 const handleWindowFocus = () => {
                     loadPublicSettings();
+                    loadNotifications();
                 };
 
                 const handleVisibilityChange = () => {
@@ -2315,10 +2369,14 @@
                     redeemed_cookies: 0,
                     available_cookies: 0,
                     available_quota: 0,
-                    heat_per_cookie: 6,
+                    heat_per_cookie: 5,
                     quota_per_cookie: 50000,
                     min_redeem_cookies: 1,
-                    newapi_configured: false
+                    newapi_configured: false,
+                    heat_cookies: 0,
+                    tip_cookies: 0,
+                    available_tip_cookies: 0,
+                    available_heat_cookies: 0
                 });
                 const newApiForm = reactive({ userId: '', cookies: 1 });
                 const showUserSettingsModal = ref(false);
@@ -2694,6 +2752,16 @@
                     showToast('已退出登录', 'info');
                 };
 
+                // Personal settings reuse the bind dialog to replace the login e-mail.
+                const emailChangeMode = ref(false);
+                const openEmailChange = () => {
+                    Object.assign(bindEmailForm, { email: '', emailCode: '' });
+                    bindEmailError.value = '';
+                    bindEmailMessage.value = '';
+                    emailChangeMode.value = true;
+                    showEmailBindModal.value = true;
+                };
+
                 const handleBindEmail = async () => {
                     bindEmailError.value = '';
                     bindEmailMessage.value = '';
@@ -2713,8 +2781,8 @@
                         userTokenStorage.setItem('user_token', data.token, data.user);
                         bindEmailForm.email = '';
                         bindEmailForm.emailCode = '';
+                        showToast(emailChangeMode.value ? '邮箱已更换，旧邮箱不能再用于登录' : '邮箱绑定成功', 'success');
                         showEmailBindModal.value = false;
-                        showToast('邮箱绑定成功', 'success');
                         if (contentSection.value === 'uitemplates') fetchUiTemplates();
                         else fetchCards();
                     } catch (err) {
@@ -2836,6 +2904,16 @@
                     }
                 };
 
+                const receivedTips = ref([]);
+                const loadReceivedTips = async () => {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/tips', { headers: userAuthHeaders(), cache: 'no-store' });
+                        if (resp.ok) receivedTips.value = (await resp.json()).items || [];
+                    } catch (err) {
+                        console.error('Load tips error:', err);
+                    }
+                };
+
                 const openNewApiModal = async () => {
                     showUserMenu.value = false;
                     if (!isLoggedIn.value) {
@@ -2844,7 +2922,7 @@
                         return;
                     }
                     showNewApiModal.value = true;
-                    await loadNewApiReward();
+                    await Promise.all([loadNewApiReward(), loadReceivedTips()]);
                 };
 
                 const bindNewApiUser = async () => {
@@ -3013,6 +3091,7 @@
                     configuredTagLibrary.value = parseTagSetting(settings.tag_library);
                     hiddenPopularTags.value = parseTagSetting(settings.hidden_popular_tags);
                     hiddenTagLibrary.value = parseTagSetting(settings.hidden_tag_library);
+                    tipsEnabled.value = Boolean(settings.tips_enabled);
                     const nextTurnstileSiteKey = String(settings.turnstile_site_key || '').trim();
                     const turnstileKeyChanged = nextTurnstileSiteKey !== turnstileSiteKey.value;
                     turnstileSiteKey.value = nextTurnstileSiteKey;
@@ -3057,7 +3136,7 @@
                     }
                     return databaseTags.value
                         .filter(item => !hiddenSet.has(item.tag))
-                        .slice(0, 20)
+                        .slice(0, 60)
                         .map(item => item.tag);
                 });
 
@@ -3151,6 +3230,7 @@
                     if (currentTab.value === 'author' && !searchQuery.value) {
                         return { all: '还没有公开的角色卡', unreviewed: '无收益专区里还没有 TA 的作品', uitemplates: '还没有公开的 UI 模板' }[contentSection.value];
                     }
+                    if (cardSort.value === 'following' && !searchQuery.value && !selectedTag.value) return '关注的作者还没有作品';
                     if (contentSection.value === 'uitemplates') {
                         if (currentTab.value === 'mine' && canModerate.value) return '没有待审核的 UI 模板';
                         if (currentTab.value === 'mine') return '你还没有上传 UI 模板';
@@ -3165,15 +3245,13 @@
 
                 const emptyStateDescription = computed(() => {
                     if (currentTab.value === 'author' && !searchQuery.value) return '看看 TA 的其他分区，或者回到广场逛逛。';
+                    if (cardSort.value === 'following' && !searchQuery.value && !selectedTag.value) return '在作者主页点「关注」，TA 的作品就会出现在这里。';
                     if (contentSection.value === 'uitemplates') {
                         if (currentTab.value === 'mine' && canModerate.value) return '新的模板投稿会出现在这里。';
                         if (currentTab.value === 'mine') return '上传一个独立模板文件，就能在这里管理它。';
                         return searchQuery.value
                             ? '换个关键词试试，或清空搜索看看全部模板。'
                             : '上传独立的 UI 模板文件后，会显示在这个专属分区。';
-                    }
-                    if (contentSection.value === 'unreviewed') {
-                        return '上传 RPH 角色卡后将进入 AI 审核队列，通过或自动放行后公开。';
                     }
                     return '换个关键词试试，或上传您的第一张角色卡！';
                 });
@@ -3219,7 +3297,7 @@
 
                 const showToast = (message, type = 'info', duration = 3000) => {
                     const id = `${Date.now()}-${toastIdSeed++}`;
-                    toasts.value.push({ id, message, type });
+                    toasts.value.push({ id, message, type, icon: getToastIcon(message, type) });
                     setTimeout(() => {
                         toasts.value = toasts.value.filter(t => t.id !== id);
                     }, duration);
@@ -3255,7 +3333,7 @@
                 let cardTagsRequestController = null;
                 const cardPageCache = new Map();
                 const uiTemplatePageCache = new Map();
-                const CARD_PAGE_SIZE = 10;
+                const CARD_PAGE_SIZE = 12;
                 const CATALOG_PAGE_CACHE_TTL_MS = 60000;
 
                 const cacheCatalogPage = (cache, key, page, value) => {
@@ -3690,10 +3768,17 @@
 
                     const instantCandidate = candidates[0];
                     if (!waitForLoad && instantCandidate) {
-                        setPreviewAssetUrl(instantCandidate.url, false, instantCandidate.source);
+                        // Opened from the plaza, the tile's smaller cover is already loaded: show it now, swap in the full one when it arrives.
+                        const tileUrl = sizedThumbnailUrl(instantCandidate.url, 480);
+                        setPreviewAssetUrl(tileUrl, false, instantCandidate.source);
                         previewAsset.ready = true;
                         previewAsset.error = instantCandidate.source === 'fallback' ? '图片加载失败，已使用默认占位图。' : '';
                         previewAsset.loading = false;
+                        if (tileUrl !== instantCandidate.url) {
+                            loadImageElement(instantCandidate.url).then(() => {
+                                if (previewAsset.cardId === card.id) setPreviewAssetUrl(instantCandidate.url, false, instantCandidate.source);
+                            }).catch(() => {});
+                        }
                         return;
                     }
 
@@ -4184,14 +4269,24 @@
                 };
 
                 // Author pages open from a card, a template or a comment; the list below reuses the catalog.
+                // The plaza as it was when the first author page opened, so leaving puts it back.
+                let plazaReturn = null;
                 const openAuthor = async (userId) => {
                     const authorId = Number(userId);
                     if (!authorId) return;
+                    if (currentTab.value !== 'author') {
+                        const openCardId = selectedCard.value?.id || '';
+                        plazaReturn = {
+                            tab: currentTab.value, section: contentSection.value, tag: selectedTag.value, sort: cardSort.value, page: currentPage.value, scrollY: window.scrollY,
+                            card: cards.value.find(card => card.id === openCardId) || null, cardId: openCardId, template: selectedTemplate.value
+                        };
+                    }
                     closeSelectedCard();
                     closeTemplateDetail();
                     // When nothing below changes no watcher fires, so the list is fetched here.
                     const unchanged = currentTab.value === 'author' && contentSection.value === 'all' && !selectedTag.value;
                     viewingAuthor.value = { id: authorId };
+                    authorBioEditing.value = false;
                     Object.assign(cardSectionCounts, { reviewed: 0, unreviewed: 0, uiTemplates: 0 });
                     selectedTag.value = '';
                     contentSection.value = 'all';
@@ -4209,9 +4304,85 @@
                         if (viewingAuthor.value?.id === authorId) showToast('作者信息加载失败', 'error');
                     }
                 };
-                const leaveAuthor = () => {
-                    currentTab.value = 'all';
-                    window.scrollTo(0, 0);
+                const leaveAuthor = async () => {
+                    const back = plazaReturn;
+                    plazaReturn = null;
+                    if (!back) {
+                        currentTab.value = 'all';
+                        window.scrollTo(0, 0);
+                        return;
+                    }
+                    contentSection.value = back.section;
+                    selectedTag.value = back.tag;
+                    cardSort.value = back.sort;
+                    currentTab.value = back.tab;
+                    if (back.card) previewCard(back.card);
+                    else if (back.cardId) openCardFromLink(back.cardId);
+                    else if (back.template) openTemplateDetail(back.template);
+                    // The tab, section, tag and sort watchers fetch page 1 on the next tick; fetch the saved page after them.
+                    await nextTick();
+                    clearTimeout(filterFetchTimer);
+                    await (back.section === 'uitemplates' ? fetchUiTemplates({ page: back.page }) : fetchCards({ page: back.page }));
+                    await nextTick();
+                    window.scrollTo(0, back.scrollY);
+                };
+
+                // The address follows the page: /card/<id>, /template/<id> and /author/<id> open those items, anything else is the plaza.
+                const parseRoute = (path) => {
+                    const match = /^\/(card|template|author)\/([^/]+)\/?$/.exec(path);
+                    return match ? { type: match[1], id: decodeURIComponent(match[2]) } : { type: 'home', id: '' };
+                };
+                const routePath = computed(() => {
+                    if (selectedCard.value?.id) return '/card/' + encodeURIComponent(selectedCard.value.id);
+                    if (selectedTemplate.value?.id) return '/template/' + encodeURIComponent(selectedTemplate.value.id);
+                    if (currentTab.value === 'author' && viewingAuthor.value?.id) return '/author/' + viewingAuthor.value.id;
+                    return '/';
+                });
+                // Opening adds a history entry, so Back closes it; closing back to the entry it came from steps back
+                // instead of stacking a second plaza entry, and a page entered straight from a link closes in place.
+                watch(routePath, (path) => {
+                    if (path === location.pathname) return;
+                    if (history.state?.rphFrom === path) history.back();
+                    else if (path === '/') history.replaceState(null, '', '/');
+                    else history.pushState({ rphFrom: location.pathname }, '', path);
+                });
+                const openCardFromLink = async (id) => {
+                    try {
+                        const resp = await fetch(API_BASE + '/api/cards/' + encodeURIComponent(id), { headers: getCardRequestHeaders() });
+                        if (!resp.ok) throw new Error('card');
+                        const [card] = prepareCardList([await resp.json()]);
+                        if (parseRoute(location.pathname).id !== id) return;
+                        if (isR18Card(card) && !r18Confirmed.value) {
+                            if (isLoggedIn.value) pendingR18Card = card;
+                            showR18Disclaimer();
+                            history.replaceState(null, '', routePath.value);
+                            return;
+                        }
+                        previewCard(card);
+                    } catch {
+                        showToast('卡片不存在或无权查看', 'error');
+                        history.replaceState(null, '', routePath.value);
+                    }
+                };
+                watch(showR18Modal, (open) => {
+                    if (open) return;
+                    if (pendingR18Card && r18Confirmed.value) previewCard(pendingR18Card);
+                    pendingR18Card = null;
+                });
+                const applyLocationRoute = async () => {
+                    const route = parseRoute(location.pathname);
+                    if (route.type !== 'card' && selectedCard.value) closeSelectedCard();
+                    if (route.type !== 'template' && selectedTemplate.value) closeTemplateDetail();
+                    if (route.type === 'author') {
+                        if (currentTab.value !== 'author' || String(viewingAuthor.value?.id) !== route.id) openAuthor(route.id);
+                    } else if (currentTab.value === 'author') {
+                        leaveAuthor();
+                    }
+                    if (route.type === 'card' && selectedCard.value?.id !== route.id) await openCardFromLink(route.id);
+                    if (route.type === 'template' && selectedTemplate.value?.id !== route.id) {
+                        await openTemplateDetail({ id: route.id });
+                        if (!selectedTemplate.value && parseRoute(location.pathname).id === route.id) history.replaceState(null, '', routePath.value);
+                    }
                 };
                 // Whatever shows an author (card, template, author page) holds the follow state; a toggle updates them all.
                 const followBusy = ref(false);
@@ -4236,6 +4407,9 @@
                         if (viewingAuthor.value?.id === authorId) {
                             Object.assign(viewingAuthor.value, { following: data.following, follower_count: data.follower_count });
                         }
+                        // Pages kept for the "following" sort no longer match.
+                        cardPageCache.clear();
+                        uiTemplatePageCache.clear();
                         showToast(data.following ? '已关注，TA 上新或更新角色卡时会邮件提醒你' : '已取消关注', 'success');
                     } catch (err) {
                         showToast(err.message || '操作失败', 'error');
@@ -4602,8 +4776,7 @@
                                 avatar_url: uploadingCard.value.avatar,
                                 data: uploadingCard.value.full_data,
                                 creator_notes: uploadingCard.value.creator_notes,
-                                audience: uploadingCard.value.audience,
-                                publish_mode: contentSection.value === 'unreviewed' ? 'unreviewed' : 'reviewed'
+                                audience: uploadingCard.value.audience
                             })
                         });
                         if (!resp.ok) {
@@ -4618,11 +4791,7 @@
 
                         // Award upload credits
                         const creditInfo = data?.find(d => d.new_credits !== undefined);
-                        if (data?.some(d => d.ai_review_pending)) {
-                            showToast('已进入 AI 审核队列，通过或自动放行后将公开', 'success', 4000);
-                        } else if (data?.some(d => d.unreviewed)) {
-                            showToast('已发布到无收益专区，本次发布无收益', 'success', 4000);
-                        } else if (creditInfo && currentUser.value) {
+                        if (creditInfo && currentUser.value) {
                             currentUser.value = { ...currentUser.value, download_credits: creditInfo.new_credits };
                             showToast('发布成功！获得 3 次下载机会 🎉', 'success');
                         } else if (data?.some(d => d.pending_review)) {
@@ -4633,9 +4802,8 @@
                         showUploadModal.value = false;
                         uploadingCard.value = null;
                         
-                        const nextTab = data?.some(d => d.unreviewed || d.ai_review_pending) ? 'all' : 'mine';
-                        if (currentTab.value === nextTab) fetchCards();
-                        else currentTab.value = nextTab;
+                        if (currentTab.value === 'mine') fetchCards();
+                        else currentTab.value = 'mine';
                     } catch (err) {
                         showToast('上传失败: ' + err.message, 'error');
                     } finally {
@@ -4704,7 +4872,10 @@
                     if (!canModerate.value || !card) return;
                     let reason = '';
                     if (status === 'rejected') {
-                        reason = prompt('请输入拒绝原因（可留空）：') || '';
+                        // The author reads the reason, so it has to say something; cancelling leaves the card as it is.
+                        reason = (prompt('请输入拒绝原因（至少 10 个字，作者会看到）：') || '').trim();
+                        if (!reason) return;
+                        if ([...reason].length < 10) return showToast('拒绝原因至少写 10 个字', 'warning');
                     }
                     try {
                         const resp = await fetch(API_BASE + '/api/admin/cards/' + card.id + '/review', {
@@ -5555,13 +5726,7 @@
                         if (idx !== -1) {
                             comments.value[idx] = { ...comments.value[idx], likes_count: data.likes_count, user_liked: data.liked };
                         }
-                        
-                        // Recalculate hot comment
-                        const maxLikes = Math.max(...comments.value.map(c => c.likes_count || 0));
-                        comments.value.forEach(c => {
-                            c.is_hot = c.likes_count >= 5 && c.likes_count === maxLikes;
-                        });
-                        
+                                                
                         // Update credits if liked (not unliked)
                         if (data.liked) {
                             showToast('点赞成功', 'success');
@@ -6087,10 +6252,177 @@
 
                 // ============== Tag expand state ==============
                 const tagsExpanded = ref(false);
+
+                // Notifications: followed authors' new or updated cards, new followers and replies to your comments.
+                const notifications = ref([]);
+                const unreadNotifications = ref(0);
+                const showNotifications = ref(false);
+                const notificationsLoading = ref(false);
+                let notificationTimer = null;
+                const loadNotifications = async () => {
+                    if (!isLoggedIn.value) return;
+                    notificationsLoading.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/notifications', { headers: userAuthHeaders(), cache: 'no-store' });
+                        if (!resp.ok) return;
+                        const data = await resp.json();
+                        notifications.value = data.items || [];
+                        unreadNotifications.value = Number(data.unread) || 0;
+                    } catch (error) {
+                        console.error('Load notifications error:', error);
+                    } finally {
+                        notificationsLoading.value = false;
+                    }
+                };
+                // Opening the panel reads everything; the unread ones stay highlighted until it closes.
+                const toggleNotifications = async () => {
+                    showNotifications.value = !showNotifications.value;
+                    showUserMenu.value = false;
+                    if (!showNotifications.value) return;
+                    await loadNotifications();
+                    if (!unreadNotifications.value) return;
+                    unreadNotifications.value = 0;
+                    fetch(API_BASE + '/api/notifications/read', { method: 'POST', headers: userAuthHeaders() }).catch(() => {});
+                };
+                const NOTIFICATION_ACTIONS = { card_new: '发布了新角色卡', card_update: '更新了角色卡', follow: '关注了你', reply: '回复了你在', tip: '打赏了你 ' };
+                const notificationAction = item => NOTIFICATION_ACTIONS[item.type] || '';
+                const formatNoticeTime = (value) => {
+                    const minutes = Math.floor((Date.now() - new Date(value).getTime()) / 60000);
+                    if (minutes < 1) return '刚刚';
+                    if (minutes < 60) return `${minutes} 分钟前`;
+                    if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
+                    if (minutes < 10080) return `${Math.floor(minutes / 1440)} 天前`;
+                    const date = new Date(value);
+                    return `${date.getMonth() + 1}月${date.getDate()}日`;
+                };
+                const openNotificationTarget = (item) => {
+                    showNotifications.value = false;
+                    if (item.card_id) openCardFromLink(item.card_id);
+                    else if (item.template_id) openTemplateDetail({ id: item.template_id });
+                    else if (item.type === 'tip') openNewApiModal();
+                };
+                const openNotificationActor = (item) => {
+                    showNotifications.value = false;
+                    if (item.actor?.id) openAuthor(item.actor.id);
+                };
+                watch(isLoggedIn, (loggedIn) => {
+                    if (loggedIn) return loadNotifications();
+                    if (cardSort.value === 'following') cardSort.value = 'latest';
+                    notifications.value = [];
+                    unreadNotifications.value = 0;
+                    showNotifications.value = false;
+                });
+
+                // Author header backdrop: a few of the author's covers take turns, at random, faintly behind it.
+                const authorBackdropIndex = ref(0);
+                const authorBackdropCovers = computed(() => (currentTab.value !== 'author' ? [] : [...new Set(cards.value
+                    .filter(card => card.uploader_user_id === viewingAuthor.value?.id && card.thumbnail_url && !isR18Card(card))
+                    .map(card => sizedThumbnailUrl(card.thumbnail_url, 480)))].slice(0, 6)));
+                let authorBackdropTimer = null;
+
+                // Tips in 🍪 from the tipper's own STA1N account, straight into the author's withdrawable earnings.
+                const TIP_PRESETS = [10, 66, 88, 188, 288];
+                const tipsEnabled = ref(false);
+                const showTipModal = ref(false);
+                const tipCookies = ref('');
+                const tipSubmitting = ref(false);
+                const tipCookiesValid = computed(() => /^\d+(\.\d{1,2})?$/.test(tipCookies.value) && Number(tipCookies.value) >= 10 && Number(tipCookies.value) <= 10000);
+                const openTipModal = () => {
+                    if (!isLoggedIn.value) {
+                        showUserAuthModal.value = true;
+                        userAuthMode.value = 'login';
+                        return;
+                    }
+                    tipCookies.value = '66';
+                    showTipModal.value = true;
+                };
+                const submitTip = async () => {
+                    tipSubmitting.value = true;
+                    try {
+                        const resp = await fetch(`${API_BASE}/api/authors/${viewingAuthor.value.id}/tip`, {
+                            method: 'POST',
+                            headers: userAuthHeaders(),
+                            body: JSON.stringify({ cookies: tipCookies.value })
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '打赏失败');
+                        showTipModal.value = false;
+                        showToast(`已打赏 ${formatCookieAmount(data.cookies)}🍪，谢谢你的支持！`, 'success');
+                        // The new tip flies across the header at once and joins the loop.
+                        const tip = { tipper_name: currentUser.value?.username, cookies: data.cookies };
+                        viewingAuthor.value.recent_tips?.unshift(tip);
+                        spawnDanmaku(tip);
+                    } catch (err) {
+                        showToast(err.message || '打赏失败', 'error');
+                    } finally {
+                        tipSubmitting.value = false;
+                    }
+                };
+
+                // The author's introduction, edited in place on their own page.
+                const authorBioEditing = ref(false);
+                const authorBioDraft = ref('');
+                const authorBioSaving = ref(false);
+                const startAuthorBioEdit = () => {
+                    authorBioDraft.value = viewingAuthor.value?.bio || '';
+                    authorBioEditing.value = true;
+                };
+                const saveAuthorBio = async () => {
+                    authorBioSaving.value = true;
+                    try {
+                        const resp = await fetch(API_BASE + '/api/user/bio', { method: 'PUT', headers: userAuthHeaders(), body: JSON.stringify({ bio: authorBioDraft.value }) });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || '保存失败');
+                        viewingAuthor.value = { ...viewingAuthor.value, bio: data.bio };
+                        authorBioEditing.value = false;
+                        showToast('简介已保存', 'success');
+                    } catch (err) {
+                        showToast(err.message || '保存失败', 'error');
+                    } finally {
+                        authorBioSaving.value = false;
+                    }
+                };
+                // Tips received drift across the author header like danmaku, looping over the recent ones:
+                // two lanes on wider screens, one lane spaced further apart on phones, where the header is short.
+                const DANMAKU_LANES = window.matchMedia('(max-width: 640px)').matches ? 1 : 2;
+                const danmakuItems = ref([]);
+                let danmakuTimer = null;
+                let danmakuSeq = 0;
+                const spawnDanmaku = (tip) => {
+                    danmakuSeq += 1;
+                    danmakuItems.value = [...danmakuItems.value.slice(-7), {
+                        key: danmakuSeq,
+                        lane: danmakuSeq % DANMAKU_LANES,
+                        name: tip.tipper_name || '已注销用户',
+                        amount: String(Number(Number(tip.cookies).toFixed(2)))
+                    }];
+                };
+                const removeDanmaku = (key) => {
+                    danmakuItems.value = danmakuItems.value.filter(item => item.key !== key);
+                };
+                watch([() => viewingAuthor.value?.recent_tips, currentTab], ([tips, tab]) => {
+                    clearInterval(danmakuTimer);
+                    danmakuItems.value = [];
+                    if (tab !== 'author' || !tips?.length) return;
+                    let cursor = 0;
+                    const next = () => spawnDanmaku(tips[cursor++ % tips.length]);
+                    next();
+                    danmakuTimer = setInterval(next, DANMAKU_LANES === 1 ? 4200 : 2400);
+                });
+
+                watch(authorBackdropCovers, (covers) => {
+                    clearInterval(authorBackdropTimer);
+                    authorBackdropIndex.value = Math.floor(Math.random() * Math.max(covers.length, 1));
+                    if (covers.length < 2) return;
+                    authorBackdropTimer = setInterval(() => {
+                        const next = Math.floor(Math.random() * (covers.length - 1));
+                        authorBackdropIndex.value = next >= authorBackdropIndex.value ? next + 1 : next;
+                    }, 5200);
+                });
                 const showTagLibrary = ref(false);
 
                 // ============== Pagination ==============
-                const PAGE_SIZE = 10;
+                const PAGE_SIZE = 12;
                 const currentPage = ref(1);
                 const pendingCardPage = ref(null);
                 const jumpPageInput = ref('');
@@ -6157,7 +6489,17 @@
                     if (contentSection.value === 'uitemplates') fetchUiTemplates({ page: 1 });
                     else fetchCards({ page: 1 });
                 });
-                watch(currentTab, () => {
+                watch(currentTab, (tab) => {
+                    // The unreviewed section is open only on your own author page and "following" only in the plaza;
+                    // the section and sort watchers reload the list.
+                    if (tab !== 'author' && contentSection.value === 'unreviewed') {
+                        contentSection.value = 'all';
+                        return;
+                    }
+                    if (tab !== 'all' && cardSort.value === 'following') {
+                        cardSort.value = 'latest';
+                        return;
+                    }
                     if (contentSection.value === 'uitemplates') fetchUiTemplates({ page: 1 });
                     else fetchCards({ page: 1 });
                 });
@@ -6184,8 +6526,9 @@
                     emailCodeMessage.value = '';
                 });
                 watch(() => showEmailBindModal.value, (val) => {
-                    if (val) resetTurnstile();
-                    else if (!showUserAuthModal.value || userAuthMode.value === 'login') resetTurnstile();
+                    if (val) return resetTurnstile();
+                    emailChangeMode.value = false;
+                    if (!showUserAuthModal.value || userAuthMode.value === 'login') resetTurnstile();
                 });
                 watch(selectedCard, (card) => {
                     if (!card) {
@@ -6247,8 +6590,9 @@
 
                 onMounted(() => {
                     loadPublicSettings();
-                    checkAdminToken();
-                    checkUserToken();
+                    // A shared address opens once the session is known, so permissions and the R18 choice are the visitor's own.
+                    Promise.allSettled([checkAdminToken(), checkUserToken()]).then(applyLocationRoute);
+                    window.addEventListener('popstate', applyLocationRoute);
                     fetchCards({ page: 1 });
                     trackVisit();
                     fetchVisits();
@@ -6256,7 +6600,8 @@
                     window.addEventListener('resize', handleWindowResize);
                     window.addEventListener('focus', handleWindowFocus);
                     document.addEventListener('visibilitychange', handleVisibilityChange);
-                    document.addEventListener('click', () => { showSortDropdown.value = false; showUserMenu.value = false; });
+                    document.addEventListener('click', () => { showSortDropdown.value = false; showUserMenu.value = false; showNotifications.value = false; });
+                    notificationTimer = setInterval(loadNotifications, 60000);
                     window.addEventListener('message', handleWindowMessage);
                     if (window.parent !== window) window.parent.postMessage({ type: 'RPH_FORUM_READY' }, '*');
                 });
@@ -6272,6 +6617,10 @@
                     window.removeEventListener('focus', handleWindowFocus);
                     document.removeEventListener('visibilitychange', handleVisibilityChange);
                     window.removeEventListener('message', handleWindowMessage);
+                    window.removeEventListener('popstate', applyLocationRoute);
+                    clearInterval(notificationTimer);
+                    clearInterval(authorBackdropTimer);
+                    clearInterval(danmakuTimer);
                     if (commentsLoadObserver) commentsLoadObserver.disconnect();
                     if (tagLibraryLoadObserver) tagLibraryLoadObserver.disconnect();
                     clearTimeout(filterFetchTimer);
@@ -6287,8 +6636,8 @@
                     cooldownTimers.clear();
                 });
 
-                // Lists that mix audiences ("全部", my cards, author pages, the review queue) name it on the detail.
-                const cardAudienceLabel = computed(() => currentTab.value !== 'all' || cardAudience.value === 'all'
+                // My cards and author pages mix audiences, so the detail names it there; the plaza never does.
+                const cardAudienceLabel = computed(() => currentTab.value !== 'all'
                     ? CARD_AUDIENCES.find(option => option.value === (selectedCard.value?.audience || 'general'))?.label || ''
                     : '');
                 provide('cardDetail', {
@@ -6315,7 +6664,10 @@
                 return {
                     isDark, themeFollowsParent, toggleTheme,
                     cards, uiTemplates, cardSectionCounts, cardPageLoading, pendingCardPage, cardSort, showSortDropdown, cardAudience, gateAudiences: GATE_AUDIENCES, audiencePreviews, audienceCoverStyle, showAudienceGate,
-                    viewingAuthor, openAuthor, leaveAuthor, submitSearch, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    viewingAuthor, openAuthor, leaveAuthor, submitSearch, sizedThumbnailUrl,
+                    notifications, unreadNotifications, showNotifications, notificationsLoading, toggleNotifications, notificationAction, formatNoticeTime,
+                    openNotificationTarget, openNotificationActor, authorBackdropCovers, authorBackdropIndex, authorBioEditing, authorBioDraft, authorBioSaving, startAuthorBioEdit, saveAuthorBio,
+                    TIP_PRESETS, tipsEnabled, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
@@ -6338,19 +6690,19 @@
                     announcement, showAnnouncementModal, announcementConfirmCountdown, closeAnnouncement,
                     authTitle, authSubtitle, emailCodeSending, emailCodeCooldown, emailCodeMessage,
                     handleUserAuth, handleUserLogout, sendAuthEmailCode,
-                    showEmailBindModal, bindEmailForm, bindEmailError, bindEmailMessage, bindEmailSending, bindEmailCooldown, sendBindEmailCode, handleBindEmail,
+                    showEmailBindModal, emailChangeMode, openEmailChange, bindEmailForm, bindEmailError, bindEmailMessage, bindEmailSending, bindEmailCooldown, sendBindEmailCode, handleBindEmail,
                     showNewApiModal, newApiRewardLoading, newApiSaving, newApiUnbinding, newApiRedeeming, newApiReward, newApiForm,
                     openNewApiModal, bindNewApiUser, unbindNewApiUser, redeemNewApiQuota, formatCookieAmount,
                     showUserSettingsModal, userSettingsSaving, userSettingsForm, openUserSettingsModal, saveUserSettings,
                     authTurnstileRef, bindTurnstileRef, turnstileState, resetTurnstile,
                     // R18
-                    r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18, r18Countdown,
+                    r18Confirmed, showR18Modal, isR18Card, showR18Disclaimer, confirmR18,
                     // Edit Card
                     editingCard, showEditModal, isEditUploading, startEditCard, handleEditFileSelect, confirmEditCard,
                     // Visit Tracking
                     totalVisits,
                     tagsExpanded, showTagLibrary, allTags, visibleTagLibrary, tagLibraryLoadSentinel, tagLibraryDisplayTotal, tagLibraryLoading,
-                    currentPage, totalPages, pageNumbers, currentListLength, goToPage, jumpPageInput, jumpToPage
+                    PAGE_SIZE, currentPage, totalPages, pageNumbers, currentListLength, goToPage, jumpPageInput, jumpToPage
                 };
             }
         });
@@ -6386,6 +6738,13 @@
                 cardImageObserver?.unobserve(element);
             }
         });
+        // A press that starts inside a dialog and is released on its backdrop is a drag, not a click on the backdrop,
+        // so the dialog stays open.
+        let pressTarget = null;
+        document.addEventListener('pointerdown', (event) => { pressTarget = event.target; }, true);
+        document.addEventListener('click', (event) => {
+            if (event.target !== pressTarget && event.target.matches?.('.fixed.inset-0')) event.stopPropagation();
+        }, true);
         app.mount('#app');
     </script>
 </body>
