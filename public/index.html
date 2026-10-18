@@ -259,7 +259,7 @@
                     <div @click="handleLogoClick"
                          class="brand-mark w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-200 transform transition-all active:scale-90 hover:scale-105 cursor-pointer overflow-hidden relative">
                         <svg class="w-6 h-6 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
-                        <div v-if="isAdmin" class="absolute inset-0 bg-yellow-400 opacity-20 animate-pulse"></div>
+                        <div v-if="isAdmin" class="absolute inset-0 bg-yellow-400 opacity-20"></div>
                     </div>
 
                     <div class="brand-copy" @click="handleLogoClick">
@@ -436,7 +436,7 @@
                 </div>
                 <div v-if="authorBackdropCovers.length" class="author-hero-backdrop" aria-hidden="true">
                     <transition name="backdrop-fade">
-                        <img :key="authorBackdropCovers[authorBackdropIndex]" :src="authorBackdropCovers[authorBackdropIndex]" alt="" decoding="async">
+                        <img :key="authorBackdropCovers[authorBackdropIndex]?.url" :src="authorBackdropCovers[authorBackdropIndex]?.url" :class="{ 'is-veiled': authorBackdropCovers[authorBackdropIndex]?.veiled }" alt="" decoding="async">
                     </transition>
                 </div>
                 <button type="button" class="author-back" @click="leaveAuthor">
@@ -6313,11 +6313,21 @@
                     showNotifications.value = false;
                 });
 
-                // Author header backdrop: a few of the author's covers take turns, at random, faintly behind it.
+                // Author header backdrop: a few of the author's covers take turns, at random, faintly behind it. R18 covers count
+                // too, heavily blurred until the viewer has confirmed they are an adult, as on the tiles; clear covers come first.
                 const authorBackdropIndex = ref(0);
-                const authorBackdropCovers = computed(() => (currentTab.value !== 'author' ? [] : [...new Set(cards.value
-                    .filter(card => card.uploader_user_id === viewingAuthor.value?.id && card.thumbnail_url && !isR18Card(card))
-                    .map(card => sizedThumbnailUrl(card.thumbnail_url, 480)))].slice(0, 6)));
+                const authorBackdropCovers = computed(() => {
+                    if (currentTab.value !== 'author') return [];
+                    const covers = new Map();
+                    cards.value
+                        .filter(card => card.uploader_user_id === viewingAuthor.value?.id && card.thumbnail_url)
+                        .sort((a, b) => isR18Card(a) - isR18Card(b))
+                        .forEach((card) => {
+                            const url = sizedThumbnailUrl(card.thumbnail_url, 480);
+                            if (!covers.has(url)) covers.set(url, { url, veiled: isR18Card(card) && !r18Confirmed.value });
+                        });
+                    return [...covers.values()].slice(0, 6);
+                });
                 let authorBackdropTimer = null;
 
                 // Tips in 🍪 from the tipper's own STA1N account, straight into the author's withdrawable earnings.

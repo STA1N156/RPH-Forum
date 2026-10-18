@@ -1229,6 +1229,8 @@ body.forum-shell {
     object-position: center 28%;
     opacity: 0.7;
 }
+/* Scaled up a little so the blur does not leave soft, see-through edges. */
+.author-hero-backdrop img.is-veiled { filter: blur(18px) saturate(1.1); transform: scale(1.15); }
 .backdrop-fade-enter-active,
 .backdrop-fade-leave-active { transition: opacity 1.6s ease; }
 .author-hero-backdrop .backdrop-fade-enter-from,
