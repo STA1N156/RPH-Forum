@@ -1382,6 +1382,19 @@ function sendFeaturedNotificationEmail({ to, username, itemType, title }) {
     });
 }
 
+function sendTipNotificationEmail({ to, username, tipperName, cookies, message }) {
+    const amount = `${Number(Number(cookies).toFixed(2))}🍪`;
+    const tipper = tipperName || '有人';
+    sendResendEmailQuietly({
+        to,
+        subject: `${tipper} 打赏了你 ${amount}`,
+        html: `<p>${escapeHtml(username || '你好')}，${escapeHtml(tipper)} 在万相广场打赏了你 <strong>${amount}</strong>。</p>`
+            + (message ? `<p>留言：</p><blockquote style="margin:12px 0;padding:12px;border-left:4px solid #fde68a;background:#fffbeb;">${escapeHtml(message)}</blockquote>` : '')
+            + '<p>打赏已计入你的可提现收益，可以在广场的「提现收益」里查看和提现。</p>',
+        text: `${username || '你好'}，${tipper} 在万相广场打赏了你 ${amount}。${message ? `\n留言：${message}` : ''}\n打赏已计入你的可提现收益，可以在广场的「提现收益」里查看和提现。`
+    });
+}
+
 function sendAdminReviewPendingEmail({ itemType, title, uploader, ip }) {
     const recipients = getAdminNotificationEmails();
     if (recipients.length === 0) return;
@@ -2399,17 +2412,21 @@ app.delete('/api/user/newapi/bind', authenticateUser, (req, res) => {
 const TIP_MIN_COOKIES = 10;
 const TIP_MAX_COOKIES = 10000;
 const TIPS_PER_10_MINUTES = 20;
+const TIP_MESSAGE_MAX_CHARS = 10;
 app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
     let tipId = null;
     try {
         const authorId = parseAuthorId(req.params.id);
-        const author = authorId && db.prepare('SELECT id, username FROM users WHERE id = ? AND COALESCE(is_banned, 0) = 0').get(authorId);
+        const author = authorId && db.prepare('SELECT id, username, email, email_verified FROM users WHERE id = ? AND COALESCE(is_banned, 0) = 0').get(authorId);
         if (!author) return res.status(404).json({ error: '作者不存在' });
         if (author.id === req.user.id) return res.status(400).json({ error: '不能打赏自己' });
         const cookies = parseCookieAmount(req.body.cookies);
         if (cookies === null || cookies < TIP_MIN_COOKIES || cookies > TIP_MAX_COOKIES) {
             return res.status(400).json({ error: `打赏数量需在 ${TIP_MIN_COOKIES}～${TIP_MAX_COOKIES}🍪 之间，最多两位小数` });
         }
+        // An optional note on one line; it shows in the author's notice and email and in the danmaku.
+        const message = String(req.body.message ?? '').replace(/[\p{Cc}\s]+/gu, ' ').trim();
+        if ([...message].length > TIP_MESSAGE_MAX_CHARS) return res.status(400).json({ error: `留言最多 ${TIP_MESSAGE_MAX_CHARS} 个字` });
         if (!isNewApiConfigured()) return res.status(400).json({ error: 'STA1N API 未配置，暂时不能打赏' });
         const tipper = db.prepare('SELECT newapi_user_id FROM users WHERE id = ?').get(req.user.id);
         if (!tipper?.newapi_user_id) return res.status(400).json({ error: '请先在「提现收益」里绑定你的 STA1N 账号，打赏会从这个账号扣除🍪' });
@@ -2419,12 +2436,15 @@ app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
         }
         const quota = Math.round(cookies * NEWAPI_QUOTA_PER_COOKIE);
         tipId = db.prepare(
-            'INSERT INTO author_tips (tipper_user_id, author_user_id, newapi_user_id, cookies, quota, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(req.user.id, author.id, tipper.newapi_user_id, cookies, quota, new Date().toISOString()).lastInsertRowid;
+            'INSERT INTO author_tips (tipper_user_id, author_user_id, newapi_user_id, cookies, quota, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).run(req.user.id, author.id, tipper.newapi_user_id, cookies, quota, message || null, new Date().toISOString()).lastInsertRowid;
         const charged = await adjustNewApiQuota(tipper.newapi_user_id, quota, req.user, 'subtract');
         db.prepare("UPDATE author_tips SET status = 'success', quota_before = ?, quota_after = ?, completed_at = ? WHERE id = ?")
             .run(charged.quotaBefore, charged.quotaAfter, new Date().toISOString(), tipId);
         addNotification({ userId: author.id, type: 'tip', actorUserId: req.user.id, tipId });
+        if (userEmailBound(author)) {
+            sendTipNotificationEmail({ to: author.email, username: author.username, tipperName: req.user.username, cookies, message });
+        }
         logOperation({
             userType: 'user',
             userId: req.user.id,
@@ -2433,9 +2453,9 @@ app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
             targetType: 'user',
             targetId: String(author.id),
             ip: getRequestIp(req),
-            details: { author: author.username, cookies, newapi_user_id: tipper.newapi_user_id, quota_before: charged.quotaBefore, quota_after: charged.quotaAfter }
+            details: { author: author.username, cookies, message, newapi_user_id: tipper.newapi_user_id, quota_before: charged.quotaBefore, quota_after: charged.quotaAfter }
         });
-        res.json({ success: true, cookies });
+        res.json({ success: true, cookies, message });
     } catch (err) {
         if (tipId) {
             db.prepare("UPDATE author_tips SET status = 'failed', error = ?, completed_at = ? WHERE id = ?")
@@ -2449,7 +2469,7 @@ app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
 app.get('/api/user/tips', authenticateUser, (req, res) => {
     try {
         const items = db.prepare(
-            `SELECT t.id, t.cookies, t.completed_at, u.id AS tipper_id, u.username AS tipper_name, u.avatar_updated_at AS tipper_avatar_at
+            `SELECT t.id, t.cookies, t.message, t.completed_at, u.id AS tipper_id, u.username AS tipper_name, u.avatar_updated_at AS tipper_avatar_at
              FROM author_tips t LEFT JOIN users u ON u.id = t.tipper_user_id
              WHERE t.author_user_id = ? AND t.status = 'success'
              ORDER BY t.id DESC LIMIT 50`
@@ -3477,7 +3497,7 @@ app.get('/api/authors/:id', optionalUserAuth, (req, res) => {
             ).get(req.user.id, authorId)),
             // The latest tips, shown as danmaku across the header.
             recent_tips: db.prepare(
-                `SELECT t.cookies, u.username AS tipper_name
+                `SELECT t.cookies, t.message, u.username AS tipper_name
                  FROM author_tips t LEFT JOIN users u ON u.id = t.tipper_user_id
                  WHERE t.author_user_id = ? AND t.status = 'success'
                  ORDER BY t.id DESC LIMIT 30`
@@ -3523,7 +3543,7 @@ app.get('/api/notifications', authenticateUser, (req, res) => {
     try {
         const readId = Number(db.prepare('SELECT notifications_read_id FROM users WHERE id = ?').get(req.user.id)?.notifications_read_id || 0);
         const rows = db.prepare(
-            `SELECT n.id, n.type, n.card_id, n.template_id, n.created_at, tip.cookies AS tip_cookies,
+            `SELECT n.id, n.type, n.card_id, n.template_id, n.created_at, tip.cookies AS tip_cookies, tip.message AS tip_message,
                     u.id AS actor_id, u.username AS actor_name, u.avatar_updated_at AS actor_avatar_at,
                     cc.name AS card_name, cc.review_status AS card_status, t.title AS template_title, t.review_status AS template_status
              FROM user_notifications n
@@ -3549,7 +3569,8 @@ app.get('/api/notifications', authenticateUser, (req, res) => {
                 card_id: row.card_id,
                 template_id: row.template_id,
                 target_name: row.card_name || row.template_title || '',
-                tip_cookies: row.tip_cookies
+                tip_cookies: row.tip_cookies,
+                tip_message: row.tip_message || ''
             }));
         res.set('Cache-Control', 'no-store');
         res.json({ unread: items.filter(item => item.unread).length, items });
@@ -7091,7 +7112,7 @@ app.get('/api/admin/tips', authenticateAdmin, (req, res) => {
         const params = status ? [status] : [];
         const total = db.prepare(`SELECT COUNT(*) AS count FROM author_tips t ${where}`).get(...params).count;
         const tips = db.prepare(
-            `SELECT t.id, t.cookies, t.quota, t.newapi_user_id, t.quota_before, t.quota_after, t.status, t.error, t.created_at, t.completed_at,
+            `SELECT t.id, t.cookies, t.message, t.quota, t.newapi_user_id, t.quota_before, t.quota_after, t.status, t.error, t.created_at, t.completed_at,
                     t.tipper_user_id AS tipper_id, tipper.username AS tipper_name, t.author_user_id AS author_id, author.username AS author_name
              FROM author_tips t
              LEFT JOIN users tipper ON tipper.id = t.tipper_user_id

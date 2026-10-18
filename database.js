@@ -455,6 +455,7 @@ function initDatabase() {
     // Heat earned by approved work that has since been deleted; it still counts towards the author's 🍪.
     try { db.exec('ALTER TABLE users ADD COLUMN newapi_retained_heat REAL DEFAULT 0'); } catch (e) { /* column exists */ }
     try { db.exec('ALTER TABLE user_notifications ADD COLUMN tip_id INTEGER'); } catch (e) { /* column exists */ }
+    try { db.exec('ALTER TABLE author_tips ADD COLUMN message TEXT'); } catch (e) { /* column exists */ }
     // Tips in 🍪: taken from the tipper's STA1N balance; once successful they count towards the author's withdrawable 🍪.
     db.exec(`
         CREATE TABLE IF NOT EXISTS author_tips (

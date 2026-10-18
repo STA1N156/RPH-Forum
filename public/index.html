@@ -309,7 +309,7 @@
                                         <div class="notice-item__body">
                                             <p class="notice-item__text">
                                                 <button type="button" class="notice-item__actor" @click="openNotificationActor(item)">{{ item.actor.username }}</button>
-                                                {{ notificationAction(item) }}<b v-if="item.target_name">「{{ item.target_name }}」</b>{{ item.type === 'reply' ? '的评论' : '' }}<b v-if="item.type === 'tip'">{{ formatCookieAmount(item.tip_cookies) }}🍪</b>
+                                                {{ notificationAction(item) }}<b v-if="item.target_name">「{{ item.target_name }}」</b>{{ item.type === 'reply' ? '的评论' : '' }}<b v-if="item.type === 'tip'">{{ formatCookieAmount(item.tip_cookies) }}🍪</b><template v-if="item.type === 'tip' && item.tip_message">，留言「{{ item.tip_message }}」</template>
                                             </p>
                                             <span class="notice-item__time">{{ formatNoticeTime(item.created_at) }}</span>
                                         </div>
@@ -431,7 +431,7 @@
             <section v-if="currentTab === 'author' && viewingAuthor" class="author-hero" :style="authorHueStyle(viewingAuthor.id)">
                 <div v-if="danmakuItems.length" class="author-danmaku" aria-hidden="true">
                     <span v-for="item in danmakuItems" :key="item.key" class="author-danmaku__item" :class="'is-lane-' + item.lane" @animationend="removeDanmaku(item.key)">
-                        <b>{{ item.name }}</b>打赏了<em>{{ item.amount }}🍪</em>
+                        <b>{{ item.name }}</b><em>{{ item.amount }}🍪</em><span v-if="item.message" class="author-danmaku__note">{{ item.message }}</span>
                     </span>
                 </div>
                 <div v-if="authorBackdropCovers.length" class="author-hero-backdrop" aria-hidden="true">
@@ -1676,7 +1676,7 @@
                         <ul v-if="receivedTips.length" class="earn-tips">
                             <li v-for="tip in receivedTips" :key="tip.id">
                                 <user-avatar class="earn-tips__avatar" :user-id="tip.tipper_id" :name="tip.tipper_name || '?'" :avatar-at="tip.tipper_avatar_at"></user-avatar>
-                                <div><b>{{ tip.tipper_name || '已注销用户' }}</b><time>{{ formatNoticeTime(tip.completed_at) }}</time></div>
+                                <div><b>{{ tip.tipper_name || '已注销用户' }}</b><p v-if="tip.message" class="earn-tips__note">{{ tip.message }}</p><time>{{ formatNoticeTime(tip.completed_at) }}</time></div>
                                 <strong>+{{ formatCookieAmount(tip.cookies) }}🍪</strong>
                             </li>
                         </ul>
@@ -1704,6 +1704,10 @@
                         <span>🍪</span>
                     </div>
                     <p v-if="tipCookies && !tipCookiesValid" class="earn-note is-warn">数量需在 10～10000🍪 之间，最多两位小数</p>
+                    <div class="earn-input-wrap">
+                        <input v-model="tipMessage" maxlength="10" placeholder="留言（选填）" class="earn-input" aria-label="打赏留言">
+                        <span class="tip-note-count">{{ tipMessage.length }}/10</span>
+                    </div>
                     <p v-if="currentUser?.newapi_user_id" class="earn-note">从绑定的 STA1N 账号（ID {{ currentUser.newapi_user_id }}）扣除，作者收到后会收到通知并可提现。</p>
                     <p v-else class="earn-note is-warn">打赏会从你的 STA1N 账号扣除🍪，请先<button type="button" class="earn-link" @click="showTipModal = false; openNewApiModal()">绑定 STA1N 账号</button></p>
                     <button type="button" class="earn-button is-block" :disabled="!tipCookiesValid || tipSubmitting || !currentUser?.newapi_user_id" @click="submitTip">{{ tipSubmitting ? '正在打赏…' : '打赏 ' + (tipCookiesValid ? tipCookies : '') + '🍪' }}</button>
@@ -3365,9 +3369,11 @@
                     uiTemplatePageCache.clear();
                 };
 
-                const getCardRequestHeaders = () => {
+                // Admin mode browses with the admin cookie alone, which says nothing about whom the user follows,
+                // so requests that depend on it carry the user's own token when there is one.
+                const getCardRequestHeaders = (asUser = false) => {
                     const headers = {};
-                    if (isAdmin.value) Object.assign(headers, adminAuthHeaders());
+                    if (isAdmin.value && !(asUser && userToken.value)) Object.assign(headers, adminAuthHeaders());
                     else if (userToken.value) Object.assign(headers, userAuthHeaders());
                     return headers;
                 };
@@ -3522,7 +3528,7 @@
                     pendingCardPage.value = requestedPage;
                     try {
                         const resp = await fetch(API_BASE + '/api/cards?' + params.toString(), {
-                            headers: getCardRequestHeaders(),
+                            headers: getCardRequestHeaders(requestedSort === 'following'),
                             signal: controller.signal
                         });
                         if (!resp.ok) throw new Error('加载失败');
@@ -3604,7 +3610,7 @@
                     pendingCardPage.value = requestedPage;
                     try {
                         const resp = await fetch(API_BASE + '/api/ui-templates?' + params.toString(), {
-                            headers: getCardRequestHeaders(),
+                            headers: getCardRequestHeaders(requestedSort === 'following'),
                             signal: controller.signal
                         });
                         if (!resp.ok) throw new Error('加载失败');
@@ -4294,7 +4300,7 @@
                     if (unchanged) fetchCards({ page: 1 });
                     window.scrollTo(0, 0);
                     try {
-                        const resp = await fetch(API_BASE + '/api/authors/' + authorId, { headers: getCardRequestHeaders() });
+                        const resp = await fetch(API_BASE + '/api/authors/' + authorId, { headers: getCardRequestHeaders(true) });
                         if (!resp.ok) throw new Error('author');
                         const author = await resp.json();
                         if (viewingAuthor.value?.id !== authorId) return;
@@ -6335,6 +6341,7 @@
                 const tipsEnabled = ref(false);
                 const showTipModal = ref(false);
                 const tipCookies = ref('');
+                const tipMessage = ref('');
                 const tipSubmitting = ref(false);
                 const tipCookiesValid = computed(() => /^\d+(\.\d{1,2})?$/.test(tipCookies.value) && Number(tipCookies.value) >= 10 && Number(tipCookies.value) <= 10000);
                 const openTipModal = () => {
@@ -6344,6 +6351,7 @@
                         return;
                     }
                     tipCookies.value = '66';
+                    tipMessage.value = '';
                     showTipModal.value = true;
                 };
                 const submitTip = async () => {
@@ -6352,14 +6360,14 @@
                         const resp = await fetch(`${API_BASE}/api/authors/${viewingAuthor.value.id}/tip`, {
                             method: 'POST',
                             headers: userAuthHeaders(),
-                            body: JSON.stringify({ cookies: tipCookies.value })
+                            body: JSON.stringify({ cookies: tipCookies.value, message: tipMessage.value.trim() })
                         });
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok) throw new Error(data.error || '打赏失败');
                         showTipModal.value = false;
                         showToast(`已打赏 ${formatCookieAmount(data.cookies)}🍪，谢谢你的支持！`, 'success');
                         // The new tip flies across the header at once and joins the loop.
-                        const tip = { tipper_name: currentUser.value?.username, cookies: data.cookies };
+                        const tip = { tipper_name: currentUser.value?.username, cookies: data.cookies, message: data.message };
                         viewingAuthor.value.recent_tips?.unshift(tip);
                         spawnDanmaku(tip);
                     } catch (err) {
@@ -6404,7 +6412,8 @@
                         key: danmakuSeq,
                         lane: danmakuSeq % DANMAKU_LANES,
                         name: tip.tipper_name || '已注销用户',
-                        amount: String(Number(Number(tip.cookies).toFixed(2)))
+                        amount: String(Number(Number(tip.cookies).toFixed(2))),
+                        message: tip.message || ''
                     }];
                 };
                 const removeDanmaku = (key) => {
@@ -6677,7 +6686,7 @@
                     viewingAuthor, openAuthor, leaveAuthor, submitSearch, sizedThumbnailUrl,
                     notifications, unreadNotifications, showNotifications, notificationsLoading, toggleNotifications, notificationAction, formatNoticeTime,
                     openNotificationTarget, openNotificationActor, authorBackdropCovers, authorBackdropIndex, authorBioEditing, authorBioDraft, authorBioSaving, startAuthorBioEdit, saveAuthorBio,
-                    TIP_PRESETS, tipsEnabled, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    TIP_PRESETS, tipsEnabled, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipMessage, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,

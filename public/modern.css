@@ -541,6 +541,8 @@ body.forum-shell {
 .earn-tips li > div { display: flex; flex: 1; min-width: 0; flex-direction: column; }
 .earn-tips b { overflow: hidden; color: var(--c-text); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .earn-tips time { color: var(--c-text-4); font-size: 12px; }
+.earn-tips__note { overflow: hidden; color: var(--c-text-2); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.tip-note-count { color: var(--c-text-4); font-size: 12px; font-variant-numeric: tabular-nums; }
 .earn-tips strong { flex: none; color: rgb(var(--amber-text-700, var(--amber-700))); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .tip-presets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
@@ -1274,6 +1276,9 @@ body.forum-shell {
 }
 .author-danmaku__item.is-lane-1 { top: 46px; }
 .author-danmaku__item b { color: var(--c-text); font-weight: 600; }
+.author-danmaku__note { color: var(--c-text); }
+.author-danmaku__note::before { content: '“'; }
+.author-danmaku__note::after { content: '”'; }
 .author-danmaku__item em { color: rgb(var(--amber-text-700, var(--amber-700))); font-style: normal; font-weight: 700; font-variant-numeric: tabular-nums; }
 @keyframes danmaku-fly { to { left: 0; transform: translateX(-100%); } }
 .author-back {

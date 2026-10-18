@@ -774,7 +774,10 @@
                                                 <div class="font-medium whitespace-nowrap">{{ tip.author_name || '已注销用户' }}</div>
                                                 <div class="text-xs text-gray-400 font-mono mt-1">ID {{ tip.author_id }}</div>
                                             </td>
-                                            <td class="px-4 py-3 text-sm text-amber-700 font-semibold whitespace-nowrap">{{ formatCookieAmount(tip.cookies) }}🍪</td>
+                                            <td class="px-4 py-3 text-sm text-amber-700 font-semibold whitespace-nowrap">
+                                                {{ formatCookieAmount(tip.cookies) }}🍪
+                                                <div v-if="tip.message" class="text-xs font-normal text-gray-500 mt-1">留言「{{ tip.message }}」</div>
+                                            </td>
                                             <td class="px-4 py-3 text-xs text-gray-600">
                                                 <div class="font-mono">STA1N ID {{ tip.newapi_user_id }}</div>
                                                 <div v-if="tip.quota_before !== null" class="text-gray-400 mt-1">余额 {{ tip.quota_before }} → {{ tip.quota_after }}</div>
