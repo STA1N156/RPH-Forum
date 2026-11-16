@@ -2420,6 +2420,11 @@ app.post('/api/authors/:id/tip', authenticateUser, async (req, res) => {
         const author = authorId && db.prepare('SELECT id, username, email, email_verified FROM users WHERE id = ? AND COALESCE(is_banned, 0) = 0').get(authorId);
         if (!author) return res.status(404).json({ error: '作者不存在' });
         if (author.id === req.user.id) return res.status(400).json({ error: '不能打赏自己' });
+        const hasWorks = db.prepare(
+            `SELECT 1 FROM character_card_catalog WHERE uploader_user_id = ? AND review_status IN ('approved', 'unreviewed')
+             UNION ALL SELECT 1 FROM ui_templates WHERE uploader_user_id = ? AND review_status = 'approved' LIMIT 1`
+        ).get(author.id, author.id);
+        if (!hasWorks) return res.status(400).json({ error: '对方还没有公开作品，暂时不能打赏' });
         const cookies = parseCookieAmount(req.body.cookies);
         if (cookies === null || cookies < TIP_MIN_COOKIES || cookies > TIP_MAX_COOKIES) {
             return res.status(400).json({ error: `打赏数量需在 ${TIP_MIN_COOKIES}～${TIP_MAX_COOKIES}🍪 之间，最多两位小数` });

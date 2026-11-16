@@ -458,7 +458,7 @@
                         <span v-else class="author-skeleton is-line"></span>
                     </div>
                     <div v-if="viewingAuthor.username && !isSelf(viewingAuthor.id)" class="author-actions">
-                        <button v-if="tipsEnabled" type="button" class="author-tip" @click="openTipModal">
+                        <button v-if="canTipAuthor" type="button" class="author-tip" @click="openTipModal">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
                             打赏
                         </button>
@@ -6356,12 +6356,15 @@
                 // Tips in 🍪 from the tipper's own STA1N account, straight into the author's withdrawable earnings.
                 const TIP_PRESETS = [10, 66, 88, 188, 288];
                 const tipsEnabled = ref(false);
+                const canTipAuthor = computed(() => tipsEnabled.value && viewingAuthor.value && !isSelf(viewingAuthor.value.id)
+                    && (viewingAuthor.value.card_count > 0 || viewingAuthor.value.unreviewed_count > 0 || viewingAuthor.value.template_count > 0));
                 const showTipModal = ref(false);
                 const tipCookies = ref('');
                 const tipMessage = ref('');
                 const tipSubmitting = ref(false);
                 const tipCookiesValid = computed(() => /^\d+(\.\d{1,2})?$/.test(tipCookies.value) && Number(tipCookies.value) >= 10 && Number(tipCookies.value) <= 10000);
                 const openTipModal = () => {
+                    if (!canTipAuthor.value) return;
                     if (!isLoggedIn.value) {
                         showUserAuthModal.value = true;
                         userAuthMode.value = 'login';
@@ -6372,6 +6375,7 @@
                     showTipModal.value = true;
                 };
                 const submitTip = async () => {
+                    if (!canTipAuthor.value) return;
                     tipSubmitting.value = true;
                     try {
                         const resp = await fetch(`${API_BASE}/api/authors/${viewingAuthor.value.id}/tip`, {
@@ -6703,7 +6707,7 @@
                     viewingAuthor, openAuthor, leaveAuthor, submitSearch, sizedThumbnailUrl,
                     notifications, unreadNotifications, showNotifications, notificationsLoading, toggleNotifications, notificationAction, formatNoticeTime,
                     openNotification, opensComments, authorBackdropCovers, authorBackdropIndex, authorBioEditing, authorBioDraft, authorBioSaving, startAuthorBioEdit, saveAuthorBio,
-                    TIP_PRESETS, tipsEnabled, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipMessage, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
+                    TIP_PRESETS, tipsEnabled, canTipAuthor, showTipModal, danmakuItems, removeDanmaku, tipCookies, tipMessage, tipCookiesValid, tipSubmitting, openTipModal, submitTip, receivedTips, authorHueStyle, formatJoinDate, isSelf, followBusy, toggleFollow, pickAvatar, currentAudienceLabel, pickAudience, leaveAudience, loading, searchQuery, selectedTag, clearCardFilters, filteredCards, filteredUiTemplates, pagedCards, pagedUiTemplates, defaultAvatar,
                     showUploadModal, showSearchModal, showUserMenu, uploadingCard, uploadingTemplate, isUploading, isUploadingTemplate,
                     editingTemplate, showTemplateEditModal, isTemplateEditSaving, startEditTemplate, handleEditTemplateFileSelect, confirmEditTemplate,
                     selectedTemplate, selectedTemplateLoading, selectedTemplatePreviewItems, openTemplateDetail, closeTemplateDetail,
